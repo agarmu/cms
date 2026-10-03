@@ -1,1 +1,2 @@
 bun.lock -diff
+migrations/meta/** -diff
