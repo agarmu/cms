@@ -16,5 +16,8 @@
         "format:check": "prettier . --check",
         "test": "bun test"
     },
-    "type": "module"
+    "type": "module",
+    "dependencies": {
+        "drizzle-orm": "^0.45.3"
+    }
 }
