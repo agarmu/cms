@@ -1,0 +1,16 @@
+{
+    "$schema": "https://www.schemastore.org/tsconfig",
+    "extends": "@tsconfig/strictest/tsconfig.json",
+    "compilerOptions": {
+        "target": "ESNext",
+        "lib": ["ESNext"],
+        "module": "Preserve",
+        "moduleDetection": "force",
+        "moduleResolution": "Bundler",
+        "allowImportingTsExtensions": true,
+        "verbatimModuleSyntax": true,
+        "noEmit": true,
+        "types": ["bun"]
+    },
+    "include": ["src/**/*.ts"]
+}
