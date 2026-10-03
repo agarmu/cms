@@ -1,5 +1,5 @@
 import type { UUID } from "node:crypto";
-import { sql } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import * as pg from "drizzle-orm/pg-core";
 
 export const cameras = pg.pgTable("cameras", {
@@ -51,6 +51,33 @@ export const imageAssets = pg.pgTable(
         pg.check("image_assets_height_positive", sql`${table.height} > 0`),
     ],
 );
+
+export const camerasRelations = relations(cameras, ({ many }) => ({
+    images: many(images),
+}));
+
+export const lensesRelations = relations(lenses, ({ many }) => ({
+    images: many(images),
+}));
+
+export const imagesRelations = relations(images, ({ one, many }) => ({
+    camera: one(cameras, {
+        fields: [images.cameraId],
+        references: [cameras.id],
+    }),
+    lens: one(lenses, {
+        fields: [images.lensId],
+        references: [lenses.id],
+    }),
+    assets: many(imageAssets),
+}));
+
+export const imageAssetsRelations = relations(imageAssets, ({ one }) => ({
+    image: one(images, {
+        fields: [imageAssets.photoId],
+        references: [images.id],
+    }),
+}));
 
 export type Camera = typeof cameras.$inferSelect;
 export type NewCamera = typeof cameras.$inferInsert;
