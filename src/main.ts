@@ -1,29 +1,44 @@
-import { SQL } from "bun";
-import { fileURLToPath } from "node:url";
-import { migrate } from "drizzle-orm/bun-sql/migrator";
-import { z } from "zod";
-import { createDatabase } from "./db";
-import { createApp } from "./http/app";
+import { startTelemetry } from "./telemetry/setup";
 
-const config = z
-    .object({
-        databaseUrl: z.url({ protocol: /^postgres(ql)?$/ }),
-        port: z.coerce.number().int().min(1).max(65535).default(3000),
-    })
-    .parse({
-        databaseUrl: process.env["DATABASE_URL"],
-        port: process.env["PORT"],
-    });
-
-const client = new SQL(config.databaseUrl);
+const telemetry = startTelemetry();
+let client: import("bun").SQL | undefined;
 try {
-    const db = createDatabase(client);
-    await migrate(db, {
-        migrationsFolder: fileURLToPath(
-            new URL("../migrations/", import.meta.url),
-        ),
-    });
-    const app = createApp({
+    // Load application and database modules only after the provider has registered.
+    const [bun, url, migrator, validation, database, http, tracing] =
+        await Promise.all([
+            import("bun"),
+            import("node:url"),
+            import("drizzle-orm/bun-sql/migrator"),
+            import("zod"),
+            import("./db"),
+            import("./http/app"),
+            import("./telemetry/tracing"),
+        ]);
+    const config = validation.z
+        .object({
+            databaseUrl: validation.z.url({ protocol: /^postgres(ql)?$/ }),
+            port: validation.z.coerce
+                .number()
+                .int()
+                .min(1)
+                .max(65535)
+                .default(3000),
+        })
+        .parse({
+            databaseUrl: process.env["DATABASE_URL"],
+            port: process.env["PORT"],
+        });
+
+    client = new bun.SQL(config.databaseUrl);
+    const db = database.createDatabase(client);
+    await tracing.withSpan("db.migrate", () =>
+        migrator.migrate(db, {
+            migrationsFolder: url.fileURLToPath(
+                new URL("../migrations/", import.meta.url),
+            ),
+        }),
+    );
+    const app = http.createApp({
         db,
         reportError: (error) => console.error(error),
     });
@@ -38,8 +53,12 @@ try {
     } finally {
         process.off("SIGINT", stop);
         process.off("SIGTERM", stop);
-        await server.stop(true);
+        await server.stop();
     }
 } finally {
-    await client.close();
+    try {
+        await client?.close();
+    } finally {
+        await telemetry?.shutdown();
+    }
 }

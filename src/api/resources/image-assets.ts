@@ -1,3 +1,4 @@
+import { traced } from "../../telemetry/tracing";
 import { requireReference } from "../references";
 import * as validation from "../validation";
 import { asc, eq } from "drizzle-orm";
@@ -10,6 +11,7 @@ import { Scope } from "../scope";
 
 export class ImageAssetApi {
     @scoped(Scope.ImageAssetsRead)
+    @traced("image-assets.list")
     static async list(db: ReadDatabase, page: Page) {
         const { limit, offset } = validation.pagination.parse(page);
         return db
@@ -22,6 +24,7 @@ export class ImageAssetApi {
     }
 
     @scoped(Scope.ImageAssetsRead)
+    @traced("image-assets.read")
     static async read(db: ReadDatabase, id: number) {
         id = validation.assetId.parse(id);
         return db
@@ -32,6 +35,7 @@ export class ImageAssetApi {
     }
 
     @scoped(Scope.ImageAssetsWrite)
+    @traced("image-assets.create")
     static async create(db: Database, value: Omit<NewImageAsset, "id">) {
         value = validation.imageAsset.parse(value);
         if (value.photoId !== undefined)
@@ -45,6 +49,7 @@ export class ImageAssetApi {
     }
 
     @scoped(Scope.ImageAssetsWrite)
+    @traced("image-assets.update")
     static async update(
         db: Database,
         id: number,
@@ -68,6 +73,7 @@ export class ImageAssetApi {
     }
 
     @scoped(Scope.ImageAssetsWrite)
+    @traced("image-assets.remove")
     static async remove(db: Database, id: number) {
         id = validation.assetId.parse(id);
         return db

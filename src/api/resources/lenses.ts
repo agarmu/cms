@@ -1,3 +1,4 @@
+import { traced } from "../../telemetry/tracing";
 import { preventReferencedDeletion } from "../references";
 import * as validation from "../validation";
 import type { UUID } from "node:crypto";
@@ -11,6 +12,7 @@ import { Scope } from "../scope";
 
 export class LensApi {
     @scoped(Scope.LensesRead)
+    @traced("lenses.list")
     static async list(db: ReadDatabase, page: Page) {
         const { limit, offset } = validation.pagination.parse(page);
         return db
@@ -23,18 +25,21 @@ export class LensApi {
     }
 
     @scoped(Scope.LensesRead)
+    @traced("lenses.read")
     static async read(db: ReadDatabase, id: UUID) {
         id = validation.uuid.parse(id);
         return db.select().from(lenses).where(eq(lenses.id, id)).execute();
     }
 
     @scoped(Scope.LensesWrite)
+    @traced("lenses.create")
     static async create(db: Database, value: Omit<NewLens, "id">) {
         value = validation.equipment.parse(value);
         return db.insert(lenses).values(value).returning().execute();
     }
 
     @scoped(Scope.LensesWrite)
+    @traced("lenses.update")
     static async update(db: Database, id: UUID, value: Changes<NewLens>) {
         value = validation.equipmentChanges.parse(value);
         id = validation.uuid.parse(id);
@@ -47,6 +52,7 @@ export class LensApi {
     }
 
     @scoped(Scope.LensesWrite)
+    @traced("lenses.remove")
     static async remove(db: Database, id: UUID) {
         id = validation.uuid.parse(id);
         await preventReferencedDeletion(

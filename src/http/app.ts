@@ -1,3 +1,4 @@
+import { httpInstrumentationMiddleware } from "@hono/otel";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { CameraApi } from "../api/resources/cameras";
@@ -14,6 +15,7 @@ export function createApp(options: {
 }) {
     const app = new Hono();
     const withScope = scopeWrapper(options.db);
+    app.use("*", httpInstrumentationMiddleware());
     app.use("*", bodyLimit({ maxSize: 64 * 1024 }));
 
     app.route("/cameras", equipmentRoutes(CameraApi, withScope));

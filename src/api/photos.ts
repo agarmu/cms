@@ -1,3 +1,4 @@
+import { traced, withSpan } from "../telemetry/tracing";
 import type { UUID } from "node:crypto";
 import { asc, desc, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -52,28 +53,45 @@ async function replaceAssets(
     photoId: UUID,
     assets: NonNullable<z.infer<typeof photo>["assets"]>,
 ) {
-    await db
-        .delete(imageAssets)
-        .where(eq(imageAssets.photoId, photoId))
-        .execute();
-    for (const asset of assets)
-        await ImageAssetApi.create(db, { ...asset, photoId });
+    return withSpan(
+        "photo.assets.replace",
+        async () => {
+            await db
+                .delete(imageAssets)
+                .where(eq(imageAssets.photoId, photoId))
+                .execute();
+            for (const asset of assets)
+                await ImageAssetApi.create(db, { ...asset, photoId });
+        },
+        { "photo.assets.count": assets.length },
+    );
 }
 
 async function lockPhoto(db: Database, id: UUID) {
     // Serialize modifications and deletion, including requests that only replace assets.
-    const [row] = await db
-        .select({ id: images.id })
-        .from(images)
-        .where(eq(images.id, id))
-        .for("update")
-        .execute();
-    if (!row) throw new NotFoundError("Photo not found");
+    return withSpan(
+        "photo.lock",
+        async () => {
+            const [row] = await db
+                .select({ id: images.id })
+                .from(images)
+                .where(eq(images.id, id))
+                .for("update")
+                .execute();
+            if (!row) throw new NotFoundError("Photo not found");
+        },
+        {
+            "db.system.name": "postgresql",
+            "db.operation.name": "SELECT",
+            "db.collection.name": "images",
+        },
+    );
 }
 
 // Photo writes are atomic: inline equipment and assets cannot outlive a failed write.
 export class PhotoApi {
     @scoped(Scope.ImagesRead)
+    @traced("photo.list")
     static async list(db: ReadDatabase, page: Page) {
         const { limit, offset } = validation.pagination.parse(page);
         return db.query.images.findMany({
@@ -85,6 +103,7 @@ export class PhotoApi {
     }
 
     @scoped(Scope.ImagesRead)
+    @traced("photo.read")
     static async read(db: ReadDatabase, id: UUID) {
         id = validation.uuid.parse(id);
         const row = await db.query.images.findFirst({
@@ -96,23 +115,27 @@ export class PhotoApi {
     }
 
     @scoped(Scope.ImagesWrite)
+    @traced("photo.create")
     static async create(db: Database, input: z.infer<typeof photo>) {
         const { camera, lens, assets, ...metadata } = photo.parse(input);
-        return db.transaction(async (tx) => {
-            const cameraId = await equipmentId(tx, camera, "camera");
-            const lensId = await equipmentId(tx, lens, "lens");
-            const [row] = await ImageApi.create(tx, {
-                ...metadata,
-                cameraId,
-                lensId,
-            });
-            if (!row) throw new Error("Photo insert returned no record");
-            if (assets) await replaceAssets(tx, row.id, assets);
-            return PhotoApi.read(tx, row.id);
-        });
+        return withSpan("photo.transaction", () =>
+            db.transaction(async (tx) => {
+                const cameraId = await equipmentId(tx, camera, "camera");
+                const lensId = await equipmentId(tx, lens, "lens");
+                const [row] = await ImageApi.create(tx, {
+                    ...metadata,
+                    cameraId,
+                    lensId,
+                });
+                if (!row) throw new Error("Photo insert returned no record");
+                if (assets) await replaceAssets(tx, row.id, assets);
+                return PhotoApi.read(tx, row.id);
+            }),
+        );
     }
 
     @scoped(Scope.ImagesWrite)
+    @traced("photo.update")
     static async update(
         db: Database,
         id: UUID,
@@ -120,39 +143,44 @@ export class PhotoApi {
     ) {
         id = validation.uuid.parse(id);
         const { camera, lens, assets, ...metadata } = photoChanges.parse(input);
-        return db.transaction(async (tx) => {
-            await lockPhoto(tx, id);
-            const cameraId = await equipmentId(tx, camera, "camera");
-            const lensId = await equipmentId(tx, lens, "lens");
-            if (
-                Object.values({ ...metadata, cameraId, lensId }).some(
-                    (value) => value !== undefined,
-                )
-            ) {
-                const [row] = await ImageApi.update(tx, id, {
-                    ...metadata,
-                    cameraId,
-                    lensId,
-                });
-                if (!row) throw new NotFoundError("Photo not found");
-            }
-            if (assets !== undefined) await replaceAssets(tx, id, assets);
-            return PhotoApi.read(tx, id);
-        });
+        return withSpan("photo.transaction", () =>
+            db.transaction(async (tx) => {
+                await lockPhoto(tx, id);
+                const cameraId = await equipmentId(tx, camera, "camera");
+                const lensId = await equipmentId(tx, lens, "lens");
+                if (
+                    Object.values({ ...metadata, cameraId, lensId }).some(
+                        (value) => value !== undefined,
+                    )
+                ) {
+                    const [row] = await ImageApi.update(tx, id, {
+                        ...metadata,
+                        cameraId,
+                        lensId,
+                    });
+                    if (!row) throw new NotFoundError("Photo not found");
+                }
+                if (assets !== undefined) await replaceAssets(tx, id, assets);
+                return PhotoApi.read(tx, id);
+            }),
+        );
     }
 
     @scoped(Scope.ImagesWrite)
+    @traced("photo.remove")
     static async remove(db: Database, id: UUID) {
         id = validation.uuid.parse(id);
-        return db.transaction(async (tx) => {
-            await lockPhoto(tx, id);
-            await tx
-                .delete(imageAssets)
-                .where(eq(imageAssets.photoId, id))
-                .execute();
-            const [row] = await ImageApi.remove(tx, id);
-            if (!row) throw new NotFoundError("Photo not found");
-            // Equipment is retained; removal is always a separate explicit operation.
-        });
+        return withSpan("photo.transaction", () =>
+            db.transaction(async (tx) => {
+                await lockPhoto(tx, id);
+                await tx
+                    .delete(imageAssets)
+                    .where(eq(imageAssets.photoId, id))
+                    .execute();
+                const [row] = await ImageApi.remove(tx, id);
+                if (!row) throw new NotFoundError("Photo not found");
+                // Equipment is retained; removal is always a separate explicit operation.
+            }),
+        );
     }
 }

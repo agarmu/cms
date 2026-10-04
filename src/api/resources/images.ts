@@ -1,3 +1,4 @@
+import { traced } from "../../telemetry/tracing";
 import { requireReference, preventReferencedDeletion } from "../references";
 import * as validation from "../validation";
 import type { UUID } from "node:crypto";
@@ -11,6 +12,7 @@ import { Scope } from "../scope";
 
 export class ImageApi {
     @scoped(Scope.ImagesRead)
+    @traced("images.list")
     static async list(db: ReadDatabase, page: Page) {
         const { limit, offset } = validation.pagination.parse(page);
         return db
@@ -23,12 +25,14 @@ export class ImageApi {
     }
 
     @scoped(Scope.ImagesRead)
+    @traced("images.read")
     static async read(db: ReadDatabase, id: UUID) {
         id = validation.uuid.parse(id);
         return db.select().from(images).where(eq(images.id, id)).execute();
     }
 
     @scoped(Scope.ImagesWrite)
+    @traced("images.create")
     static async create(db: Database, value: Omit<NewImage, "id">) {
         value = validation.image.parse(value);
         if (value.cameraId != null)
@@ -49,6 +53,7 @@ export class ImageApi {
     }
 
     @scoped(Scope.ImagesWrite)
+    @traced("images.update")
     static async update(db: Database, id: UUID, value: Changes<NewImage>) {
         value = validation.imageChanges.parse(value);
         id = validation.uuid.parse(id);
@@ -75,6 +80,7 @@ export class ImageApi {
     }
 
     @scoped(Scope.ImagesWrite)
+    @traced("images.remove")
     static async remove(db: Database, id: UUID) {
         id = validation.uuid.parse(id);
         await preventReferencedDeletion(
