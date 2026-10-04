@@ -82,7 +82,7 @@ test("adds, reads, modifies, and removes a photo with assets and explicit new eq
     expect(photo.camera?.name).toBe("Camera");
     expect(photo.lens?.name).toBe("Lens");
     expect(photo.assets).toMatchObject([{ ...asset, photoId: photo.id }]);
-    const loaded = await request(`/images/${photo.id}`);
+    const loaded = await request(`/images/${photo.id}/metadata`);
     expect(await loaded.json()).toMatchObject({ ...metadata, ...photo });
     const updated = await request(`/images/${photo.id}`, "PATCH", {
         enabled: false,
@@ -183,7 +183,9 @@ test("failed modification rolls back equipment and leaves the photo unchanged", 
     expect(response.status).toBe(409);
     expect(await db.query.cameras.findMany()).toEqual(before);
     expect(
-        photoRecord.parse(await (await request(`/images/${photo.id}`)).json()),
+        photoRecord.parse(
+            await (await request(`/images/${photo.id}/metadata`)).json(),
+        ),
     ).toEqual(photo);
 });
 
@@ -227,11 +229,11 @@ test("an asset insertion failure rolls back replaced assets, metadata, and new e
         expect(await db.query.cameras.findMany()).toEqual(before);
         expect(
             photoRecord.parse(
-                await (await request(`/images/${photo.id}`)).json(),
+                await (await request(`/images/${photo.id}/metadata`)).json(),
             ),
         ).toEqual(photo);
         expect(
-            await (await request(`/images/${photo.id}`)).json(),
+            await (await request(`/images/${photo.id}/metadata`)).json(),
         ).toMatchObject({ enabled: true });
     } finally {
         await client.exec(

@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { HTTPException } from "hono/http-exception";
 import { validator } from "hono/validator";
 import type { Context, Env } from "hono";
 import type { z } from "zod";
@@ -6,6 +7,8 @@ import { PhotoApi } from "../api/photos";
 import { getScope } from "../api/call";
 import type { ScopeWrapper } from "./scope";
 import * as validation from "./validation";
+import type { ImageStorage } from "../services/image-storage";
+import { imageAssetUrl } from "../services/image-storage";
 
 type PhotoContext<Schema extends z.ZodType> = Context<
     Env,
@@ -13,7 +16,10 @@ type PhotoContext<Schema extends z.ZodType> = Context<
     { out: { json: z.output<Schema> } }
 >;
 
-export function photoRoutes(withScope: ScopeWrapper) {
+export function photoRoutes(
+    withScope: ScopeWrapper,
+    getStorage: () => ImageStorage,
+) {
     const routes = new Hono();
     routes.get(
         "/",
@@ -27,7 +33,7 @@ export function photoRoutes(withScope: ScopeWrapper) {
         }),
     );
     routes.get(
-        "/:id",
+        "/:id/metadata",
         withScope(getScope(PhotoApi.read, "read"), async (db, context) => {
             return context.json(
                 await PhotoApi.read(
@@ -35,6 +41,53 @@ export function photoRoutes(withScope: ScopeWrapper) {
                     validation.uuid.parse(context.req.param("id")),
                 ),
             );
+        }),
+    );
+    routes.get(
+        "/:id",
+        withScope(getScope(PhotoApi.read, "read"), async (db, context) => {
+            const id = validation.uuid.parse(context.req.param("id"));
+            const photo = await PhotoApi.read(db, id);
+            const asset = photo.assets.toSorted(
+                (left, right) =>
+                    right.width * right.height - left.width * left.height,
+            )[0];
+            if (!asset)
+                throw new HTTPException(404, {
+                    message: "Photo has no image assets",
+                });
+            return context.redirect(
+                imageAssetUrl(id, asset.assetLocation),
+                302,
+            );
+        }),
+    );
+    routes.get(
+        "/:id/:filename",
+        withScope(getScope(PhotoApi.read, "read"), async (db, context) => {
+            const id = validation.uuid.parse(context.req.param("id"));
+            const filename = context.req.param("filename");
+            const photo = await PhotoApi.read(db, id);
+            if (
+                !filename ||
+                !photo.assets.some((asset) => asset.assetLocation === filename)
+            ) {
+                throw new HTTPException(404, {
+                    message: "Image asset not found",
+                });
+            }
+            const stored = await getStorage().read(id, filename);
+            if (!stored)
+                throw new HTTPException(404, {
+                    message: "Image asset not found",
+                });
+            if ("url" in stored) return context.redirect(stored.url, 302);
+            return new Response(stored.file, {
+                headers: {
+                    "Content-Type": stored.file.type,
+                    "Cache-Control": "public, max-age=31536000, immutable",
+                },
+            });
         }),
     );
     routes.post(

@@ -4,16 +4,20 @@ import { withSpan } from "./telemetry/tracing";
 const telemetry = startTelemetry();
 let client: import("bun").SQL | undefined;
 let processServer: ReturnType<typeof Bun.serve> | undefined;
+let stopImageUploadWorker: (() => Promise<void>) | undefined;
 try {
     // Load application and database modules only after the provider has registered.
     await withSpan("runtime.startup", async () => {
-        const [url, migrator, validation, database, http] = await Promise.all([
-            import("node:url"),
-            import("drizzle-orm/bun-sql/migrator"),
-            import("zod"),
-            import("./db"),
-            import("./http/app"),
-        ]);
+        const [url, migrator, validation, database, http, storage, uploads] =
+            await Promise.all([
+                import("node:url"),
+                import("drizzle-orm/bun-sql/migrator"),
+                import("zod"),
+                import("./db"),
+                import("./http/app"),
+                import("./services/image-storage"),
+                import("./services/image-upload-worker"),
+            ]);
         // Bun SQL instrumentation patches require("bun").SQL before this lookup.
         const bun = require("bun") as typeof import("bun");
         const config = validation.z
@@ -45,16 +49,25 @@ try {
                 ),
             }),
         );
+        let imageStorage: InstanceType<typeof storage.ImageStorage> | undefined;
+        const getStorage = () =>
+            (imageStorage ??= storage.ImageStorage.fromEnv());
         const app = await withSpan("http.app.initialize", async () =>
             http.createApp({
                 db,
                 reportError: (error) => console.error(error),
+                getImageStorage: getStorage,
             }),
         );
         const server = await withSpan("http.server.start", async () =>
             Bun.serve({ port: config.port, fetch: app.fetch }),
         );
         processServer = server;
+        stopImageUploadWorker = uploads.startImageUploadWorker({
+            db,
+            getStorage,
+            reportError: (error) => console.error(error),
+        });
     });
     const server = processServer!;
     const shutdown = Promise.withResolvers<void>();
@@ -71,10 +84,14 @@ try {
     }
 } finally {
     try {
-        if (client) {
-            await withSpan("db.client.close", () => client!.close());
-        }
+        if (stopImageUploadWorker) await stopImageUploadWorker();
     } finally {
-        await telemetry?.shutdown();
+        try {
+            if (client) {
+                await withSpan("db.client.close", () => client!.close());
+            }
+        } finally {
+            await telemetry?.shutdown();
+        }
     }
 }

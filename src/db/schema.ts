@@ -52,6 +52,63 @@ export const imageAssets = pg.pgTable(
     ],
 );
 
+// Persist pending checks and completion receipts across service restarts.
+export const imageUploads = pg.pgTable(
+    "image_uploads",
+    {
+        id: pg.uuid("id").$type<UUID>().primaryKey(),
+        photoId: pg
+            .uuid("photo_id")
+            .$type<UUID>()
+            .notNull()
+            .references(() => images.id, { onDelete: "cascade" }),
+        created: pg
+            .timestamp("created", { withTimezone: true, mode: "date" })
+            .notNull()
+            .defaultNow(),
+        tokenHash: pg.text("token_hash").notNull(),
+        completed: pg.timestamp("completed", {
+            withTimezone: true,
+            mode: "date",
+        }),
+        cancelled: pg.timestamp("cancelled", {
+            withTimezone: true,
+            mode: "date",
+        }),
+        failed: pg.text("failed"),
+        nextCheck: pg
+            .timestamp("next_check", { withTimezone: true, mode: "date" })
+            .notNull()
+            .default(sql`now() + interval '15 minutes'`),
+    },
+    (table) => [
+        pg.index("image_uploads_photo_id_idx").on(table.photoId),
+        pg
+            .index("image_uploads_pending_idx")
+            .on(table.nextCheck)
+            .where(
+                sql`completed IS NULL AND failed IS NULL AND cancelled IS NULL`,
+            ),
+    ],
+);
+
+// No foreign key: queued objects must survive deletion of their photo.
+export const imageAssetGarbage = pg.pgTable(
+    "image_asset_garbage",
+    {
+        photoId: pg.uuid("photo_id").$type<UUID>().notNull(),
+        assetLocation: pg.text("asset_location").notNull(),
+        nextCheck: pg
+            .timestamp("next_check", { withTimezone: true, mode: "date" })
+            .notNull()
+            .default(sql`now() + interval '1 hour'`),
+    },
+    (table) => [
+        pg.primaryKey({ columns: [table.photoId, table.assetLocation] }),
+        pg.index("image_asset_garbage_next_check_idx").on(table.nextCheck),
+    ],
+);
+
 export const camerasRelations = relations(cameras, ({ many }) => ({
     images: many(images),
 }));
