@@ -7,6 +7,8 @@ import {
 } from "@opentelemetry/resources";
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
+import { registerInstrumentations } from "@opentelemetry/instrumentation";
+import { BunSqlInstrumentation } from "@8monkey/opentelemetry-instrumentation-bun-sql";
 import type { SpanExporter } from "@opentelemetry/sdk-trace-base";
 
 export function startTelemetry(exporter?: SpanExporter) {
@@ -23,5 +25,8 @@ export function startTelemetry(exporter?: SpanExporter) {
     });
     // Registers AsyncLocalStorage context and W3C tracecontext/baggage propagation.
     provider.register();
+    registerInstrumentations({
+        instrumentations: [new BunSqlInstrumentation()],
+    });
     return provider;
 }
