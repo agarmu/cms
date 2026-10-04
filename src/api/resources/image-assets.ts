@@ -1,5 +1,7 @@
+import { requireReference } from "../references";
+import * as validation from "../validation";
 import { asc, eq } from "drizzle-orm";
-import { imageAssets } from "../../db/schema";
+import { imageAssets, images } from "../../db/schema";
 import type { NewImageAsset } from "../../db/schema";
 import type { Database, ReadDatabase } from "../database";
 import type { Changes, Page } from "../types";
@@ -8,7 +10,8 @@ import { Scope } from "../scope";
 
 export class ImageAssetApi {
     @scoped(Scope.ImageAssetsRead)
-    static list(db: ReadDatabase, { limit, offset }: Page) {
+    static async list(db: ReadDatabase, page: Page) {
+        const { limit, offset } = validation.pagination.parse(page);
         return db
             .select()
             .from(imageAssets)
@@ -19,7 +22,8 @@ export class ImageAssetApi {
     }
 
     @scoped(Scope.ImageAssetsRead)
-    static read(db: ReadDatabase, id: number) {
+    static async read(db: ReadDatabase, id: number) {
+        id = validation.assetId.parse(id);
         return db
             .select()
             .from(imageAssets)
@@ -28,12 +32,33 @@ export class ImageAssetApi {
     }
 
     @scoped(Scope.ImageAssetsWrite)
-    static create(db: Database, value: Omit<NewImageAsset, "id">) {
+    static async create(db: Database, value: Omit<NewImageAsset, "id">) {
+        value = validation.imageAsset.parse(value);
+        if (value.photoId !== undefined)
+            await requireReference(
+                db,
+                images,
+                eq(images.id, value.photoId),
+                "photoId",
+            );
         return db.insert(imageAssets).values(value).returning().execute();
     }
 
     @scoped(Scope.ImageAssetsWrite)
-    static update(db: Database, id: number, value: Changes<NewImageAsset>) {
+    static async update(
+        db: Database,
+        id: number,
+        value: Changes<NewImageAsset>,
+    ) {
+        value = validation.imageAssetChanges.parse(value);
+        id = validation.assetId.parse(id);
+        if (value.photoId !== undefined)
+            await requireReference(
+                db,
+                images,
+                eq(images.id, value.photoId),
+                "photoId",
+            );
         return db
             .update(imageAssets)
             .set(value)
@@ -43,7 +68,8 @@ export class ImageAssetApi {
     }
 
     @scoped(Scope.ImageAssetsWrite)
-    static remove(db: Database, id: number) {
+    static async remove(db: Database, id: number) {
+        id = validation.assetId.parse(id);
         return db
             .delete(imageAssets)
             .where(eq(imageAssets.id, id))
