@@ -1,4 +1,4 @@
-export type ErrorCode = "conflict" | "auth_unavailable";
+export type ErrorCode = "conflict" | "not_found";
 
 /** Expected application failures whose messages are safe to show to callers. */
 export class AppError extends Error {
@@ -18,12 +18,8 @@ export class ConflictError extends AppError {
     }
 }
 
-export class AuthUnavailableError extends AppError {
-    constructor(options?: ErrorOptions) {
-        super(
-            "auth_unavailable",
-            "Authentication provider unavailable",
-            options,
-        );
+export class NotFoundError extends AppError {
+    constructor(message: string, options?: ErrorOptions) {
+        super("not_found", message, options);
     }
 }
