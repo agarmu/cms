@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, unlink, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
 import sharp from "sharp";
 import { ConflictError, NotFoundError } from "../lib/errors";
+import type { BlobStorage } from "./blob-storage";
+import { LocalStorage } from "./local-storage";
+import { S3Storage } from "./s3-storage";
 
 const variants = [
     { name: "large", minSide: 1920 },
@@ -53,53 +54,28 @@ export function imageAssetUrl(photoId: string, filename: string) {
     return `/images/${encodeURIComponent(photoId)}/${encodeURIComponent(filename)}`;
 }
 
-export type ImageS3Client = Pick<
-    Bun.S3Client,
-    "presign" | "write" | "delete"
-> & {
-    file(key: string): Pick<Bun.S3File, "exists" | "stat" | "stream">;
-};
-type StorageBackend = { client: ImageS3Client } | { localDirectory: string };
-
 export class ImageStorage {
-    constructor(private readonly backend: StorageBackend) {}
+    constructor(private readonly storage: BlobStorage) {}
 
     static fromEnv() {
         const localDirectory = process.env["IMAGE_STORAGE_DIR"];
-        if (localDirectory) return new ImageStorage({ localDirectory });
-
-        const bucket = process.env["S3_BUCKET"];
-        const region = process.env["AWS_REGION"];
-        if (!bucket || !region)
-            throw new Error(
-                "S3_BUCKET and AWS_REGION are required for image storage",
-            );
-        const endpoint = process.env["S3_ENDPOINT"];
-        return new ImageStorage({
-            client: new Bun.S3Client({
-                bucket,
-                region,
-                ...(endpoint ? { endpoint } : {}),
-            }),
-        });
+        return new ImageStorage(
+            localDirectory
+                ? new LocalStorage(localDirectory)
+                : S3Storage.fromEnv(),
+        );
     }
 
-    createUpload(photoId: string, uploadId: string, contentType: string) {
-        if (!("client" in this.backend))
-            throw new Error("Direct uploads require S3 storage");
+    async createUpload(photoId: string, uploadId: string, contentType: string) {
+        if (!this.storage.createUpload)
+            throw new Error("Storage does not support direct uploads");
         const key = this.originalKey(photoId, uploadId);
         const expiresIn = 900;
         return {
+            ...(await this.storage.createUpload(key, contentType, expiresIn)),
             uploadId,
             key,
-            method: "PUT" as const,
             expiresIn,
-            url: this.backend.client.presign(key, {
-                method: "PUT",
-                type: contentType,
-                expiresIn,
-            }),
-            headers: { "Content-Type": contentType },
         };
     }
 
@@ -112,17 +88,15 @@ export class ImageStorage {
         uploadId: string,
         checkActive: () => Promise<void> = async () => {},
     ) {
-        if (!("client" in this.backend))
-            throw new Error("Direct uploads require S3 storage");
         await checkActive();
-        const file = this.backend.client.file(
+        const file = await this.storage.get(
             this.originalKey(photoId, uploadId),
         );
-        if (!(await file.exists()))
+        if (!file)
             throw new MissingOriginalError(
                 "Original image has not been uploaded",
             );
-        const { size } = await file.stat();
+        const { size } = file;
         if (size > maxImageBytes)
             throw new ImageTooLargeError("Image must not exceed 25 MiB");
         if (size === 0) throw new InvalidImageError("Image must not be empty");
@@ -160,48 +134,17 @@ export class ImageStorage {
         return this.processAndStore(input, photoId, checkActive);
     }
 
-    async read(
-        photoId: string,
-        filename: string,
-    ): Promise<{ url: string } | { file: Bun.BunFile } | undefined> {
+    async read(photoId: string, filename: string) {
         // Only a single filename beneath a validated photo ID may be read.
         if (!assetFilename.test(filename)) return undefined;
         const key = `images/${photoId}/${filename}`;
-        if ("client" in this.backend) {
-            return {
-                url: this.backend.client.presign(key, { expiresIn: 3600 }),
-            };
-        }
-        const file = Bun.file(join(this.backend.localDirectory, key));
-        return (await file.exists()) ? { file } : undefined;
+        return this.storage.read(key, 3600);
     }
 
     async deleteAsset(photoId: string, filename: string) {
         if (!assetFilename.test(filename))
             throw new InvalidAssetLocationError("Invalid image asset filename");
-        await this.remove(`images/${photoId}/${filename}`);
-    }
-
-    private async store(key: string, data: Uint8Array, mimeType: string) {
-        if ("client" in this.backend) {
-            await this.backend.client.write(key, data, { type: mimeType });
-        } else {
-            const path = join(this.backend.localDirectory, key);
-            await mkdir(dirname(path), { recursive: true });
-            await writeFile(path, data);
-        }
-    }
-
-    private async remove(key: string) {
-        if ("client" in this.backend) {
-            await this.backend.client.delete(key);
-        } else {
-            await unlink(join(this.backend.localDirectory, key)).catch(
-                (error: NodeJS.ErrnoException) => {
-                    if (error.code !== "ENOENT") throw error;
-                },
-            );
-        }
+        await this.storage.delete(`images/${photoId}/${filename}`);
     }
 
     private async processAndStore(
@@ -215,7 +158,7 @@ export class ImageStorage {
         const assets: ProcessedAsset[] = [];
         const keys: string[] = [];
         const cleanup = async () => {
-            await Promise.all(keys.map((key) => this.remove(key)));
+            await Promise.all(keys.map((key) => this.storage.delete(key)));
         };
         try {
             for (const image of prepared) {
@@ -223,7 +166,7 @@ export class ImageStorage {
                 const filename = `${generationId}-${image.filename}`;
                 const key = `images/${photoId}/${filename}`;
                 keys.push(key);
-                await this.store(key, image.data, image.mimeType);
+                await this.storage.write(key, image.data, image.mimeType);
                 assets.push({ ...image.dimensions, assetLocation: filename });
             }
             await checkActive();

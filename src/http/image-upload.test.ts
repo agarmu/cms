@@ -14,7 +14,9 @@ import {
     InvalidAssetLocationError,
     maxImageBytes,
 } from "../services/image-storage";
-import type { ImageS3Client, ProcessedAsset } from "../services/image-storage";
+import type { ProcessedAsset } from "../services/image-storage";
+import { S3Storage } from "../services/s3-storage";
+import type { S3Client } from "../services/s3-storage";
 import { checkImageUploads } from "../services/image-upload-worker";
 import { collectImageGarbage } from "../services/image-garbage-collector";
 import { createApp } from "./app";
@@ -28,7 +30,7 @@ const signer = new Bun.S3Client({
     accessKeyId: "test-key",
     secretAccessKey: "test-secret",
 });
-const s3: ImageS3Client = {
+const s3: S3Client = {
     presign: (key, options) => signer.presign(key, options),
     file: (key) => ({
         exists: async () => objects.has(key),
@@ -54,7 +56,7 @@ const s3: ImageS3Client = {
     },
 };
 const errors: Error[] = [];
-const storage = new ImageStorage({ client: s3 });
+const storage = new ImageStorage(new S3Storage(s3));
 const reportError = (error: Error) => errors.push(error);
 const app = createApp({ db, imageStorage: storage, reportError });
 const check = () =>
@@ -299,7 +301,7 @@ test("replacement queues obsolete assets and GC respects the grace period", asyn
     // Recreate storage as after a restart; the database retains the GC schedule.
     await collectImageGarbage({
         db,
-        getStorage: () => new ImageStorage({ client: s3 }),
+        getStorage: () => new ImageStorage(new S3Storage(s3)),
         reportError,
     });
     expect(objects.has(`images/${id}/${first.assets[0]!.assetLocation}`)).toBe(
@@ -668,7 +670,7 @@ test("a new worker resumes persisted jobs and expires abandoned uploads", async 
     // Recreate the worker's storage dependency, as happens after a process restart.
     await checkImageUploads({
         db,
-        getStorage: () => new ImageStorage({ client: s3 }),
+        getStorage: () => new ImageStorage(new S3Storage(s3)),
         reportError,
     });
     expect((await status(arrived)).status).toBe("completed");

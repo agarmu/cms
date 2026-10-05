@@ -72,7 +72,11 @@ export class ImageUploadApi {
         photoId = (await PhotoApi.read(db, photoId)).id;
         const uploadId = randomUUID();
         const token = randomBytes(32).toString("hex");
-        const upload = storage.createUpload(photoId, uploadId, contentType);
+        const upload = await storage.createUpload(
+            photoId,
+            uploadId,
+            contentType,
+        );
         await db
             .insert(imageUploads)
             .values({
