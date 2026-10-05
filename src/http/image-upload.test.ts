@@ -1,16 +1,22 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import sharp from "sharp";
 import * as schema from "../db/schema";
 import { ImageUploadApi } from "../api/image-uploads";
+import { PhotoApi } from "../api/photos";
 import { uuid } from "../api/validation";
-import { ImageStorage, maxImageBytes } from "../services/image-storage";
-import type { ImageS3Client } from "../services/image-storage";
+import {
+    ImageStorage,
+    InvalidAssetLocationError,
+    maxImageBytes,
+} from "../services/image-storage";
+import type { ImageS3Client, ProcessedAsset } from "../services/image-storage";
 import { checkImageUploads } from "../services/image-upload-worker";
+import { collectImageGarbage } from "../services/image-garbage-collector";
 import { createApp } from "./app";
 
 const client = new PGlite();
@@ -118,6 +124,31 @@ const png = await sharp({
 })
     .png()
     .toBuffer();
+const collect = () =>
+    collectImageGarbage({ db, getStorage: () => storage, reportError });
+const garbageFor = (id: string) =>
+    db
+        .select()
+        .from(schema.imageAssetGarbage)
+        .where(eq(schema.imageAssetGarbage.photoId, uuid.parse(id)))
+        .execute();
+const garbageDue = (id: string) =>
+    db
+        .update(schema.imageAssetGarbage)
+        .set({ nextCheck: new Date(0) })
+        .where(eq(schema.imageAssetGarbage.photoId, uuid.parse(id)))
+        .execute();
+const assetInput = ({ width, height, assetLocation }: ProcessedAsset) => ({
+    width,
+    height,
+    assetLocation,
+});
+
+async function uploadedPhoto(id: string) {
+    const upload = await initiate(id);
+    objects.set(upload.key, png);
+    return process(id, upload.uploadId);
+}
 
 test("issues a presigned PUT and automatically processes the original on a scheduled check", async () => {
     const { id } = await photo();
@@ -187,6 +218,53 @@ test("repeated and concurrent processing does not create additional assets", asy
     expect([...objects.keys()]).toEqual(before);
 });
 
+test("uppercase photo IDs use canonical keys for scheduled uploads and asset reads", async () => {
+    const { id } = await photo();
+    const upload = await initiate(id.toUpperCase());
+    expect(upload.key).toBe(`originals/${id}/${upload.uploadId}`);
+    expect(upload.statusUrl).toBe(`/images/${id}/uploads/${upload.uploadId}`);
+    objects.set(upload.key, png);
+    await due(upload.uploadId);
+    await check();
+    expect((await status(upload)).status).toBe("completed");
+
+    const redirect = await app.request(`/images/${id.toUpperCase()}`);
+    expect(redirect.status).toBe(302);
+    const assetUrl = redirect.headers.get("Location")!;
+    expect(assetUrl.startsWith(`/images/${id}/`)).toBe(true);
+    const download = await app.request(assetUrl.replace(id, id.toUpperCase()));
+    expect(download.status).toBe(302);
+    const key = new URL(download.headers.get("Location")!).pathname
+        .split("/")
+        .slice(-3)
+        .join("/");
+    expect(objects.has(key)).toBe(true);
+});
+
+test("uppercase photo and upload IDs can complete an upload immediately", async () => {
+    const { id } = await photo();
+    const upload = await initiate(id);
+    objects.set(upload.key, png);
+    const response = await control(
+        `/images/${id.toUpperCase()}/uploads/${upload.uploadId.toUpperCase()}/interrupt`,
+        "POST",
+        {
+            token: upload.token,
+            ready: true,
+        },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+        status: "completed",
+        photo: { id },
+    });
+    const result = await process(id, upload.uploadId);
+    expect(result.assets).toHaveLength(1);
+    expect(objects.has(`images/${id}/${result.assets[0]!.assetLocation}`)).toBe(
+        true,
+    );
+});
+
 test("completed jobs cannot replace a newer upload", async () => {
     const { id } = await photo();
     const first = await initiate(id);
@@ -198,11 +276,231 @@ test("completed jobs cannot replace a newer upload", async () => {
     expect(await process(id, first.uploadId)).toEqual(saved);
 });
 
+test("replacement queues obsolete assets and GC respects the grace period", async () => {
+    const { id } = await photo();
+    const first = await uploadedPhoto(id);
+    await PhotoApi.update(db, uuid.parse(id), {
+        assets: first.assets.map(assetInput),
+    });
+    expect(await garbageFor(id)).toEqual([]);
+    const second = await uploadedPhoto(id);
+    const garbage = await garbageFor(id);
+    expect(garbage.map((asset) => asset.assetLocation)).toEqual(
+        first.assets.map((asset) => asset.assetLocation),
+    );
+    expect(garbage[0]!.nextCheck.getTime()).toBeGreaterThan(
+        Date.now() + 59 * 60 * 1000,
+    );
+    await collect();
+    expect(objects.has(`images/${id}/${first.assets[0]!.assetLocation}`)).toBe(
+        true,
+    );
+    await garbageDue(id);
+    // Recreate storage as after a restart; the database retains the GC schedule.
+    await collectImageGarbage({
+        db,
+        getStorage: () => new ImageStorage({ client: s3 }),
+        reportError,
+    });
+    expect(objects.has(`images/${id}/${first.assets[0]!.assetLocation}`)).toBe(
+        false,
+    );
+    expect(objects.has(`images/${id}/${second.assets[0]!.assetLocation}`)).toBe(
+        true,
+    );
+    expect(await garbageFor(id)).toEqual([]);
+});
+
+test("photo deletion preserves queued object keys for GC", async () => {
+    const { id } = await photo();
+    const saved = await uploadedPhoto(id);
+    expect(
+        (await app.request(`/images/${id.toUpperCase()}`, { method: "DELETE" }))
+            .status,
+    ).toBe(204);
+    expect(await garbageFor(id)).toHaveLength(1);
+    await garbageDue(id);
+    await collect();
+    expect(objects.has(`images/${id}/${saved.assets[0]!.assetLocation}`)).toBe(
+        false,
+    );
+    expect(await garbageFor(id)).toEqual([]);
+});
+
+test("GC keeps assets that were reattached and their next removal restarts the grace period", async () => {
+    const { id } = await photo();
+    const saved = await uploadedPhoto(id);
+    await PhotoApi.update(db, uuid.parse(id), { assets: [] });
+    await garbageDue(id);
+    await PhotoApi.update(db, uuid.parse(id), {
+        assets: [...saved.assets, ...saved.assets].map(assetInput),
+    });
+    await collect();
+    expect(objects.has(`images/${id}/${saved.assets[0]!.assetLocation}`)).toBe(
+        true,
+    );
+    expect(await garbageFor(id)).toEqual([]);
+    await PhotoApi.update(db, uuid.parse(id), { assets: [] });
+    expect(await garbageFor(id)).toHaveLength(1);
+    await garbageDue(id);
+    // Remove again before GC runs: even an existing queue entry gets a new grace period.
+    await PhotoApi.update(db, uuid.parse(id), {
+        assets: saved.assets.map(assetInput),
+    });
+    await PhotoApi.update(db, uuid.parse(id), { assets: [] });
+    expect((await garbageFor(id))[0]!.nextCheck.getTime()).toBeGreaterThan(
+        Date.now() + 59 * 60 * 1000,
+    );
+    await collect();
+    expect(objects.has(`images/${id}/${saved.assets[0]!.assetLocation}`)).toBe(
+        true,
+    );
+    await garbageDue(id);
+    await collect();
+    expect(objects.has(`images/${id}/${saved.assets[0]!.assetLocation}`)).toBe(
+        false,
+    );
+});
+
+test("failed replacement rolls back the GC queue along with assets", async () => {
+    const { id } = await photo();
+    const saved = await uploadedPhoto(id);
+    const assets = saved.assets.map(assetInput);
+    await client.exec(`
+    CREATE FUNCTION reject_gc_replacement() RETURNS trigger AS $$
+    BEGIN
+      RAISE EXCEPTION 'Test replacement failure' USING ERRCODE = '23514';
+    END;
+    $$ LANGUAGE plpgsql;
+    CREATE TRIGGER reject_gc_replacement BEFORE INSERT ON image_assets
+      FOR EACH ROW EXECUTE FUNCTION reject_gc_replacement();
+  `);
+    try {
+        const response = await control(`/images/${id}`, "PATCH", {
+            assets: assets.map((asset) => ({
+                ...asset,
+                assetLocation: "new.webp",
+            })),
+        });
+        expect(response.status).toBe(400);
+        expect(await garbageFor(id)).toEqual([]);
+        expect((await PhotoApi.read(db, uuid.parse(id))).assets).toEqual(
+            saved.assets,
+        );
+    } finally {
+        await client.exec(
+            "DROP TRIGGER reject_gc_replacement ON image_assets; DROP FUNCTION reject_gc_replacement();",
+        );
+    }
+});
+
+test("GC retains failed deletions for retry", async () => {
+    const { id } = await photo();
+    const saved = await uploadedPhoto(id);
+    await PhotoApi.update(db, uuid.parse(id), { assets: [] });
+    // PostgreSQL stores microseconds; retry scheduling must not depend on Date equality.
+    await db
+        .update(schema.imageAssetGarbage)
+        .set({ nextCheck: sql`'2026-01-01 00:00:00.123456+00'::timestamptz` })
+        .where(eq(schema.imageAssetGarbage.photoId, uuid.parse(id)))
+        .execute();
+    const key = `images/${id}/${saved.assets[0]!.assetLocation}`;
+    const deletionError = new Error("Temporary S3 failure");
+    const gcErrors: Error[] = [];
+    const originalDelete = s3.delete;
+    s3.delete = async (objectKey) => {
+        if (objectKey === key) throw deletionError;
+        await originalDelete(objectKey);
+    };
+    try {
+        await collectImageGarbage({
+            db,
+            getStorage: () => storage,
+            reportError: (error) => gcErrors.push(error),
+        });
+        expect(gcErrors).toEqual([deletionError]);
+        expect(objects.has(key)).toBe(true);
+        expect((await garbageFor(id))[0]!.nextCheck.getTime()).toBeGreaterThan(
+            Date.now(),
+        );
+    } finally {
+        s3.delete = originalDelete;
+    }
+    await collect();
+    expect(objects.has(key)).toBe(true);
+    await garbageDue(id);
+    await collect();
+    expect(objects.has(key)).toBe(false);
+    expect(await garbageFor(id)).toEqual([]);
+});
+
+test("a failed GC transaction keeps the entry for an idempotent retry", async () => {
+    const { id } = await photo();
+    const saved = await uploadedPhoto(id);
+    await PhotoApi.update(db, uuid.parse(id), { assets: [] });
+    await garbageDue(id);
+    const key = `images/${id}/${saved.assets[0]!.assetLocation}`;
+    const gcErrors: Error[] = [];
+    await client.exec(`
+    CREATE FUNCTION reject_gc_acknowledgement() RETURNS trigger AS $$
+    BEGIN
+      RAISE EXCEPTION 'Test GC transaction failure' USING ERRCODE = '23514';
+    END;
+    $$ LANGUAGE plpgsql;
+    CREATE TRIGGER reject_gc_acknowledgement BEFORE DELETE ON image_asset_garbage
+      FOR EACH ROW EXECUTE FUNCTION reject_gc_acknowledgement();
+  `);
+    try {
+        await collectImageGarbage({
+            db,
+            getStorage: () => storage,
+            reportError: (error) => gcErrors.push(error),
+        });
+        expect(gcErrors).toHaveLength(1);
+        expect(objects.has(key)).toBe(false);
+        expect(await garbageFor(id)).toHaveLength(1);
+    } finally {
+        await client.exec(
+            "DROP TRIGGER reject_gc_acknowledgement ON image_asset_garbage; DROP FUNCTION reject_gc_acknowledgement();",
+        );
+    }
+    await collect();
+    expect(objects.has(key)).toBe(false);
+    expect(await garbageFor(id)).toEqual([]);
+});
+
+test("GC reports unsupported asset locations and retains their records", async () => {
+    const { id } = await photo();
+    await PhotoApi.update(db, uuid.parse(id), {
+        assets: [{ width: 640, height: 320, assetLocation: "../outside.webp" }],
+    });
+    await PhotoApi.update(db, uuid.parse(id), { assets: [] });
+    await garbageDue(id);
+    const gcErrors: Error[] = [];
+    const before = [...objects.keys()];
+    await collectImageGarbage({
+        db,
+        getStorage: () => storage,
+        reportError: (error) => gcErrors.push(error),
+    });
+    expect(gcErrors).toHaveLength(1);
+    expect(gcErrors[0]).toBeInstanceOf(InvalidAssetLocationError);
+    expect([...objects.keys()]).toEqual(before);
+    expect(await garbageFor(id)).toHaveLength(1);
+    expect((await garbageFor(id))[0]!.nextCheck.getTime()).toBeGreaterThan(
+        Date.now(),
+    );
+});
+
 test("invalid and oversized originals fail without changing photo assets", async () => {
     const { id } = await photo();
+    const truncated = png.subarray(0, Math.floor(png.length / 2));
+    // Metadata can be readable even when the pixel data fails during conversion.
+    expect((await sharp(truncated).metadata()).width).toBe(1000);
     for (const bytes of [
         new Uint8Array(),
         new TextEncoder().encode("broken"),
+        truncated,
         new Uint8Array(maxImageBytes + 1),
     ]) {
         const upload = await initiate(id);
@@ -296,6 +594,62 @@ test("database failure removes variants, retains the original, and schedules ano
     await due(upload.uploadId);
     await check();
     expect((await status(upload)).status).toBe("completed");
+});
+
+test("a database failure during image preparation keeps its error type and is retried", async () => {
+    const { id } = await photo();
+    const upload = await initiate(id);
+    objects.set(upload.key, png);
+    const before = [...objects.keys()];
+    class DatabaseConnectionError extends Error {}
+    const connectionError = new DatabaseConnectionError(
+        "Temporary database connection failure",
+    );
+    let receiptReads = 0;
+    const retryDb = drizzle(client, {
+        schema,
+        logger: {
+            logQuery(query) {
+                if (
+                    query.startsWith("select") &&
+                    query.includes('from "image_uploads"') &&
+                    !query.includes("order by")
+                ) {
+                    // Initial receipt, pre-download check, post-download check, then the
+                    // check inside preparation immediately before decoding a variant.
+                    if (++receiptReads === 4) throw connectionError;
+                }
+            },
+        },
+    });
+    const retryErrors: Error[] = [];
+    const retryCheck = () =>
+        checkImageUploads({
+            db: retryDb,
+            getStorage: () => storage,
+            reportError: (error) => retryErrors.push(error),
+        });
+    await due(upload.uploadId);
+    await retryCheck();
+    expect(receiptReads).toBe(4);
+    expect(retryErrors).toEqual([connectionError]);
+    expect(retryErrors[0]).toBeInstanceOf(DatabaseConnectionError);
+    expect(await status(upload)).toMatchObject({
+        status: "pending",
+        error: null,
+    });
+    expect([...objects.keys()]).toEqual(before);
+    const [receipt] = await db
+        .select()
+        .from(schema.imageUploads)
+        .where(eq(schema.imageUploads.id, uuid.parse(upload.uploadId)))
+        .execute();
+    expect(receipt!.nextCheck.getTime()).toBeGreaterThan(Date.now());
+
+    await due(upload.uploadId);
+    await retryCheck();
+    expect((await status(upload)).status).toBe("completed");
+    expect(retryErrors).toEqual([connectionError]);
 });
 
 test("a new worker resumes persisted jobs and expires abandoned uploads", async () => {

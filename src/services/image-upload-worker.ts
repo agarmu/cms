@@ -9,6 +9,7 @@ import {
     UploadCancelledError,
 } from "./image-storage";
 import type { ImageStorage } from "./image-storage";
+import { collectImageGarbage } from "./image-garbage-collector";
 
 const pending = and(
     isNull(imageUploads.completed),
@@ -76,7 +77,21 @@ export function startImageUploadWorker(
     let timer: ReturnType<typeof setTimeout> | undefined;
     let running: Promise<void> | undefined;
     const run = () => {
-        running = checkImageUploads(options)
+        running = Promise.allSettled([
+            checkImageUploads(options),
+            collectImageGarbage(options),
+        ])
+            .then((results) => {
+                for (const result of results) {
+                    if (result.status === "rejected") {
+                        options.reportError(
+                            result.reason instanceof Error
+                                ? result.reason
+                                : new Error(String(result.reason)),
+                        );
+                    }
+                }
+            })
             .catch((error: unknown) =>
                 options.reportError(
                     error instanceof Error ? error : new Error(String(error)),

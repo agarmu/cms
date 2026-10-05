@@ -69,7 +69,7 @@ export class ImageUploadApi {
         photoId: UUID,
         contentType: string,
     ) {
-        await PhotoApi.read(db, photoId);
+        photoId = (await PhotoApi.read(db, photoId)).id;
         const uploadId = randomUUID();
         const token = randomBytes(32).toString("hex");
         const upload = storage.createUpload(photoId, uploadId, contentType);
@@ -177,6 +177,8 @@ export class ImageUploadApi {
         uploadId: UUID,
     ) {
         const upload = await receipt(db, photoId, uploadId);
+        photoId = upload.photoId;
+        uploadId = upload.id;
         if (upload.completed) return PhotoApi.read(db, photoId);
         requirePending(upload);
         // Keep S3 downloads and conversion outside the transaction so cancellation

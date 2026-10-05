@@ -2,14 +2,15 @@ import { randomUUID } from "node:crypto";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import sharp from "sharp";
-import { AppError, ConflictError, NotFoundError } from "../lib/errors";
+import { ConflictError, NotFoundError } from "../lib/errors";
 
 const variants = [
-    { name: "large", minWidth: 1920 },
-    { name: "medium", minWidth: 960 },
-    { name: "thumbnail", minWidth: 320 },
+    { name: "large", minSide: 1920 },
+    { name: "medium", minSide: 960 },
+    { name: "thumbnail", minSide: 320 },
 ] as const;
 const inputOptions = { failOn: "error", limitInputPixels: 60_000_000 } as const;
+const assetFilename = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 const supportedFormats = {
     jpeg: true,
     png: true,
@@ -27,13 +28,26 @@ type PreparedImage = {
     filename: string;
     data: Uint8Array;
     mimeType: string;
-    dimensions?: { width: number; height: number };
+    dimensions: { width: number; height: number };
 };
 export class MissingOriginalError extends NotFoundError {}
 export class UploadCancelledError extends ConflictError {}
 export class InvalidImageError extends Error {}
 export class ImageTooLargeError extends Error {}
+export class InvalidAssetLocationError extends Error {}
 export const maxImageBytes = 25 * 1024 * 1024;
+
+// Only decoder failures are invalid images. Database and storage failures keep
+// their original error types so the worker can report and retry them.
+async function decodeImage<T>(decode: () => Promise<T>): Promise<T> {
+    try {
+        return await decode();
+    } catch (error) {
+        throw new InvalidImageError("Unsupported or invalid image", {
+            cause: error,
+        });
+    }
+}
 
 export function imageAssetUrl(photoId: string, filename: string) {
     return `/images/${encodeURIComponent(photoId)}/${encodeURIComponent(filename)}`;
@@ -151,7 +165,7 @@ export class ImageStorage {
         filename: string,
     ): Promise<{ url: string } | { file: Bun.BunFile } | undefined> {
         // Only a single filename beneath a validated photo ID may be read.
-        if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(filename)) return undefined;
+        if (!assetFilename.test(filename)) return undefined;
         const key = `images/${photoId}/${filename}`;
         if ("client" in this.backend) {
             return {
@@ -160,6 +174,12 @@ export class ImageStorage {
         }
         const file = Bun.file(join(this.backend.localDirectory, key));
         return (await file.exists()) ? { file } : undefined;
+    }
+
+    async deleteAsset(photoId: string, filename: string) {
+        if (!assetFilename.test(filename))
+            throw new InvalidAssetLocationError("Invalid image asset filename");
+        await this.remove(`images/${photoId}/${filename}`);
     }
 
     private async store(key: string, data: Uint8Array, mimeType: string) {
@@ -191,7 +211,7 @@ export class ImageStorage {
     ) {
         // Decode every variant before writing anything; client errors cannot leave partial uploads.
         const prepared = await this.prepare(input, checkActive);
-        const uploadId = randomUUID();
+        const generationId = randomUUID();
         const assets: ProcessedAsset[] = [];
         const keys: string[] = [];
         const cleanup = async () => {
@@ -200,15 +220,11 @@ export class ImageStorage {
         try {
             for (const image of prepared) {
                 await checkActive();
-                const filename = `${uploadId}-${image.filename}`;
+                const filename = `${generationId}-${image.filename}`;
                 const key = `images/${photoId}/${filename}`;
                 keys.push(key);
                 await this.store(key, image.data, image.mimeType);
-                if (image.dimensions)
-                    assets.push({
-                        ...image.dimensions,
-                        assetLocation: filename,
-                    });
+                assets.push({ ...image.dimensions, assetLocation: filename });
             }
             await checkActive();
         } catch (error) {
@@ -226,47 +242,43 @@ export class ImageStorage {
     }
 
     private async prepare(input: Uint8Array, checkActive: () => Promise<void>) {
-        try {
-            // Filenames and multipart MIME types are client supplied; trust the decoder.
-            const metadata = await sharp(input, inputOptions).metadata();
-            const format =
-                metadata.format === "heif" && metadata.compression === "av1"
-                    ? "avif"
-                    : metadata.format;
-            const supported =
-                supportedFormats[format as keyof typeof supportedFormats];
-            if (!metadata.width || !metadata.height || !supported) {
-                throw new InvalidImageError("Unsupported image type");
-            }
-            const images: PreparedImage[] = [];
-            const minSide = Math.min(metadata.width, metadata.height);
-            for (const variant of variants) {
-                if (minSide < variant.minWidth) continue;
-                await checkActive();
-                const { data, info } = await sharp(input, inputOptions)
+        // Validate the original with the decoder rather than the client-supplied content type.
+        const metadata = await decodeImage(() =>
+            sharp(input, inputOptions).metadata(),
+        );
+        const format =
+            metadata.format === "heif" && metadata.compression === "av1"
+                ? "avif"
+                : metadata.format;
+        const supported =
+            supportedFormats[format as keyof typeof supportedFormats];
+        if (!metadata.width || !metadata.height || !supported) {
+            throw new InvalidImageError("Unsupported image type");
+        }
+        const images: PreparedImage[] = [];
+        const minSide = Math.min(metadata.width, metadata.height);
+        for (const variant of variants) {
+            if (minSide < variant.minSide) continue;
+            await checkActive();
+            const { data, info } = await decodeImage(() =>
+                sharp(input, inputOptions)
                     .rotate()
                     .resize({
-                        width: variant.minWidth,
-                        height: variant.minWidth,
+                        width: variant.minSide,
+                        height: variant.minSide,
                         fit: "outside",
                         withoutEnlargement: true,
                     })
                     .webp({ quality: 82 })
-                    .toBuffer({ resolveWithObject: true });
-                images.push({
-                    filename: `${variant.name}.webp`,
-                    data,
-                    mimeType: "image/webp",
-                    dimensions: { width: info.width, height: info.height },
-                });
-            }
-            return images;
-        } catch (error) {
-            if (error instanceof InvalidImageError || error instanceof AppError)
-                throw error;
-            throw new InvalidImageError("Unsupported or invalid image", {
-                cause: error,
+                    .toBuffer({ resolveWithObject: true }),
+            );
+            images.push({
+                filename: `${variant.name}.webp`,
+                data,
+                mimeType: "image/webp",
+                dimensions: { width: info.width, height: info.height },
             });
         }
+        return images;
     }
 }

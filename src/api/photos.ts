@@ -1,8 +1,8 @@
 import { traced, withSpan } from "../telemetry/tracing";
 import type { UUID } from "node:crypto";
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { images, imageAssets } from "../db/schema";
+import { images, imageAssets, imageAssetGarbage } from "../db/schema";
 import { NotFoundError } from "../lib/errors";
 import type { Database, ReadDatabase } from "./database";
 import { CameraApi } from "./resources/cameras";
@@ -56,10 +56,35 @@ async function replaceAssets(
     return withSpan(
         "photo.assets.replace",
         async () => {
-            await db
+            const removed = await db
                 .delete(imageAssets)
                 .where(eq(imageAssets.photoId, photoId))
+                .returning({
+                    photoId: imageAssets.photoId,
+                    assetLocation: imageAssets.assetLocation,
+                })
                 .execute();
+            const retained = new Set(
+                assets.map((asset) => asset.assetLocation),
+            );
+            const obsolete = new Map(
+                removed.map((asset) => [asset.assetLocation, asset]),
+            );
+            for (const filename of retained) obsolete.delete(filename);
+            if (obsolete.size) {
+                await db
+                    .insert(imageAssetGarbage)
+                    .values([...obsolete.values()])
+                    .onConflictDoUpdate({
+                        target: [
+                            imageAssetGarbage.photoId,
+                            imageAssetGarbage.assetLocation,
+                        ],
+                        // Reattachment and removal restart the grace period for signed URLs.
+                        set: { nextCheck: sql`now() + interval '1 hour'` },
+                    })
+                    .execute();
+            }
             for (const asset of assets)
                 await ImageAssetApi.create(db, { ...asset, photoId });
         },
@@ -173,10 +198,7 @@ export class PhotoApi {
         return withSpan("photo.transaction", () =>
             db.transaction(async (tx) => {
                 await lockPhoto(tx, id);
-                await tx
-                    .delete(imageAssets)
-                    .where(eq(imageAssets.photoId, id))
-                    .execute();
+                await replaceAssets(tx, id, []);
                 const [row] = await ImageApi.remove(tx, id);
                 if (!row) throw new NotFoundError("Photo not found");
                 // Equipment is retained; removal is always a separate explicit operation.

@@ -57,7 +57,7 @@ export function photoRoutes(
                     message: "Photo has no image assets",
                 });
             return context.redirect(
-                imageAssetUrl(id, asset.assetLocation),
+                imageAssetUrl(photo.id, asset.assetLocation),
                 302,
             );
         }),
@@ -76,7 +76,7 @@ export function photoRoutes(
                     message: "Image asset not found",
                 });
             }
-            const stored = await getStorage().read(id, filename);
+            const stored = await getStorage().read(photo.id, filename);
             if (!stored)
                 throw new HTTPException(404, {
                     message: "Image asset not found",
