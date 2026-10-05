@@ -1,3 +1,10 @@
+import {
+    recordSpanError,
+    withRootSpan,
+    withSpan,
+    withSyncSpan,
+} from "../telemetry/tracing";
+
 export function startBackgroundWorker(options: {
     tasks: (() => Promise<void>)[];
     reportError: (error: Error) => void;
@@ -8,12 +15,15 @@ export function startBackgroundWorker(options: {
     let timer: ReturnType<typeof setTimeout>;
     let running: Promise<void> | undefined;
     const run = () => {
-        running = Promise.allSettled(
-            options.tasks.map((task) => Promise.resolve().then(task)),
-        )
-            .then((results) => {
+        running = withRootSpan(
+            "worker.cycle",
+            async () => {
+                const results = await Promise.allSettled(
+                    options.tasks.map((task) => Promise.resolve().then(task)),
+                );
                 for (const result of results) {
                     if (result.status === "rejected") {
+                        recordSpanError(result.reason);
                         options.reportError(
                             result.reason instanceof Error
                                 ? result.reason
@@ -21,16 +31,20 @@ export function startBackgroundWorker(options: {
                         );
                     }
                 }
-            })
-            .finally(() => {
-                // Schedule after all tasks finish so consecutive cycles cannot overlap.
-                if (!stopped) timer = setTimeout(run, intervalMs);
-            });
+            },
+            { "worker.tasks.count": options.tasks.length },
+        ).finally(() => {
+            // Schedule after all tasks finish so consecutive cycles cannot overlap.
+            if (!stopped) timer = setTimeout(run, intervalMs);
+        });
     };
-    timer = setTimeout(run, intervalMs);
-    return async () => {
-        stopped = true;
-        clearTimeout(timer);
-        await running;
-    };
+    timer = withSyncSpan("worker.start", () => setTimeout(run, intervalMs), {
+        "worker.interval_ms": intervalMs,
+    });
+    return () =>
+        withSpan("worker.stop", async () => {
+            stopped = true;
+            clearTimeout(timer);
+            await running;
+        });
 }

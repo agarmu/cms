@@ -13,7 +13,7 @@ import {
     UploadCancelledError,
 } from "../services/image-storage";
 import type { ImageStorage } from "../services/image-storage";
-import { traced } from "../telemetry/tracing";
+import { traced, withSpan } from "../telemetry/tracing";
 import type { Database, ReadDatabase } from "./database";
 import { scoped } from "./call";
 import { Scope } from "./scope";
@@ -196,41 +196,43 @@ export class ImageUploadApi {
         );
         let published = false;
         try {
-            const result = await db.transaction(async (tx) => {
-                const [photo] = await tx
-                    .select({ id: images.id })
-                    .from(images)
-                    .where(eq(images.id, photoId))
-                    .for("update")
-                    .execute();
-                if (!photo) throw new NotFoundError("Photo not found");
-                // Lock the receipt before publishing: cancellation either wins here or
-                // observes completion after commit. It cannot race asset publication.
-                const [current] = await tx
-                    .select()
-                    .from(imageUploads)
-                    .where(
-                        and(
-                            eq(imageUploads.id, uploadId),
-                            eq(imageUploads.photoId, photoId),
-                        ),
-                    )
-                    .for("update")
-                    .execute();
-                if (!current) throw new NotFoundError("Upload not found");
-                if (current.completed) return PhotoApi.read(tx, photoId);
-                requirePending(current);
-                const updated = await PhotoApi.update(tx, photoId, {
-                    assets: processed.assets,
-                });
-                await tx
-                    .update(imageUploads)
-                    .set({ completed: new Date() })
-                    .where(eq(imageUploads.id, uploadId))
-                    .execute();
-                published = true;
-                return updated;
-            });
+            const result = await withSpan("image.upload.publish", () =>
+                db.transaction(async (tx) => {
+                    const [photo] = await tx
+                        .select({ id: images.id })
+                        .from(images)
+                        .where(eq(images.id, photoId))
+                        .for("update")
+                        .execute();
+                    if (!photo) throw new NotFoundError("Photo not found");
+                    // Lock the receipt before publishing: cancellation either wins here or
+                    // observes completion after commit. It cannot race asset publication.
+                    const [current] = await tx
+                        .select()
+                        .from(imageUploads)
+                        .where(
+                            and(
+                                eq(imageUploads.id, uploadId),
+                                eq(imageUploads.photoId, photoId),
+                            ),
+                        )
+                        .for("update")
+                        .execute();
+                    if (!current) throw new NotFoundError("Upload not found");
+                    if (current.completed) return PhotoApi.read(tx, photoId);
+                    requirePending(current);
+                    const updated = await PhotoApi.update(tx, photoId, {
+                        assets: processed.assets,
+                    });
+                    await tx
+                        .update(imageUploads)
+                        .set({ completed: new Date() })
+                        .where(eq(imageUploads.id, uploadId))
+                        .execute();
+                    published = true;
+                    return updated;
+                }),
+            );
             if (!published) await processed.cleanup();
             return result;
         } catch (error) {

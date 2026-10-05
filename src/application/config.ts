@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { withSyncSpan } from "../telemetry/tracing";
 
 const config = z.object({
     databaseUrl: z.url({ protocol: /^postgres(ql)?$/ }),
@@ -11,8 +12,7 @@ export type ApplicationConfig = z.infer<typeof config>;
 export function readConfig(
     env: Record<string, string | undefined> = process.env,
 ): ApplicationConfig {
-    return config.parse({
-        databaseUrl: env["DATABASE_URL"],
-        port: env["PORT"],
-    });
+    return withSyncSpan("application.config", () =>
+        config.parse({ databaseUrl: env["DATABASE_URL"], port: env["PORT"] }),
+    );
 }

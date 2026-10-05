@@ -9,6 +9,7 @@ import type { ScopeWrapper } from "./scope";
 import * as validation from "./validation";
 import type { ImageStorage } from "../services/image-storage";
 import { imageAssetUrl } from "../services/image-storage";
+import { tracedStream } from "../telemetry/tracing";
 
 type PhotoContext<Schema extends z.ZodType> = Context<
     Env,
@@ -82,12 +83,17 @@ export function photoRoutes(
                     message: "Image asset not found",
                 });
             if ("url" in stored) return context.redirect(stored.url, 302);
-            return new Response(stored.file, {
-                headers: {
-                    "Content-Type": stored.file.type,
-                    "Cache-Control": "public, max-age=31536000, immutable",
+            return new Response(
+                tracedStream("image.asset.download", () =>
+                    stored.file.stream(),
+                ),
+                {
+                    headers: {
+                        "Content-Type": stored.file.type,
+                        "Cache-Control": "public, max-age=31536000, immutable",
+                    },
                 },
-            });
+            );
         }),
     );
     routes.post(

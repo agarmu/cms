@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import sharp from "sharp";
 import { ConflictError, NotFoundError } from "../lib/errors";
 import type { BlobStorage } from "./blob-storage";
+import { setSpanAttributes, traced, withSpan } from "../telemetry/tracing";
 
 const variants = [
     { name: "large", minSide: 1920 },
@@ -55,6 +56,7 @@ export function imageAssetUrl(photoId: string, filename: string) {
 export class ImageStorage {
     constructor(private readonly storage: BlobStorage) {}
 
+    @traced("image.storage.upload.create")
     async createUpload(photoId: string, uploadId: string, contentType: string) {
         if (!this.storage.createUpload)
             throw new Error("Storage does not support direct uploads");
@@ -72,11 +74,13 @@ export class ImageStorage {
         return `originals/${photoId}/${uploadId}`;
     }
 
+    @traced("image.storage.process")
     async processUpload(
         photoId: string,
         uploadId: string,
         checkActive: () => Promise<void> = async () => {},
     ) {
+        setSpanAttributes({ "photo.id": photoId, "image.upload.id": uploadId });
         await checkActive();
         const file = await this.storage.get(
             this.originalKey(photoId, uploadId),
@@ -123,6 +127,7 @@ export class ImageStorage {
         return this.processAndStore(input, photoId, checkActive);
     }
 
+    @traced("image.storage.read")
     async read(photoId: string, filename: string) {
         // Only a single filename beneath a validated photo ID may be read.
         if (!assetFilename.test(filename)) return undefined;
@@ -130,12 +135,14 @@ export class ImageStorage {
         return this.storage.read(key, 3600);
     }
 
+    @traced("image.storage.delete")
     async deleteAsset(photoId: string, filename: string) {
         if (!assetFilename.test(filename))
             throw new InvalidAssetLocationError("Invalid image asset filename");
         await this.storage.delete(`images/${photoId}/${filename}`);
     }
 
+    @traced("image.storage.publish")
     private async processAndStore(
         input: Uint8Array,
         photoId: string,
@@ -146,9 +153,21 @@ export class ImageStorage {
         const generationId = randomUUID();
         const assets: ProcessedAsset[] = [];
         const keys: string[] = [];
-        const cleanup = async () => {
-            await Promise.all(keys.map((key) => this.storage.delete(key)));
-        };
+        const cleanup = () =>
+            withSpan(
+                "image.storage.cleanup",
+                async () => {
+                    // Wait for every deletion before ending the cleanup span, even on failure.
+                    const results = await Promise.allSettled(
+                        keys.map((key) => this.storage.delete(key)),
+                    );
+                    const failures = results
+                        .filter((result) => result.status === "rejected")
+                        .map((result) => result.reason);
+                    if (failures.length) throw failures[0];
+                },
+                { "image.assets.count": keys.length },
+            );
         try {
             for (const image of prepared) {
                 await checkActive();
@@ -170,13 +189,15 @@ export class ImageStorage {
             }
             throw error;
         }
+        setSpanAttributes({ "image.assets.count": assets.length });
         return { assets, cleanup };
     }
 
+    @traced("image.prepare")
     private async prepare(input: Uint8Array, checkActive: () => Promise<void>) {
         // Validate the original with the decoder rather than the client-supplied content type.
-        const metadata = await decodeImage(() =>
-            sharp(input, inputOptions).metadata(),
+        const metadata = await withSpan("image.metadata", () =>
+            decodeImage(() => sharp(input, inputOptions).metadata()),
         );
         const format =
             metadata.format === "heif" && metadata.compression === "av1"
@@ -187,22 +208,35 @@ export class ImageStorage {
         if (!metadata.width || !metadata.height || !supported) {
             throw new InvalidImageError("Unsupported image type");
         }
+        setSpanAttributes({
+            "image.format": format,
+            "image.width": metadata.width,
+            "image.height": metadata.height,
+        });
         const images: PreparedImage[] = [];
         const minSide = Math.min(metadata.width, metadata.height);
         for (const variant of variants) {
             if (minSide < variant.minSide) continue;
             await checkActive();
-            const { data, info } = await decodeImage(() =>
-                sharp(input, inputOptions)
-                    .rotate()
-                    .resize({
-                        width: variant.minSide,
-                        height: variant.minSide,
-                        fit: "outside",
-                        withoutEnlargement: true,
-                    })
-                    .webp({ quality: 82 })
-                    .toBuffer({ resolveWithObject: true }),
+            const { data, info } = await withSpan(
+                "image.convert",
+                () =>
+                    decodeImage(() =>
+                        sharp(input, inputOptions)
+                            .rotate()
+                            .resize({
+                                width: variant.minSide,
+                                height: variant.minSide,
+                                fit: "outside",
+                                withoutEnlargement: true,
+                            })
+                            .webp({ quality: 82 })
+                            .toBuffer({ resolveWithObject: true }),
+                    ),
+                {
+                    "image.variant": variant.name,
+                    "image.variant.min_side": variant.minSide,
+                },
             );
             images.push({
                 filename: `${variant.name}.webp`,

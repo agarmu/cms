@@ -20,7 +20,7 @@ export async function startApplication(
     let server: ReturnType<typeof Bun.serve> | undefined;
     let stopping: Promise<void> | undefined;
     const stop = () =>
-        (stopping ??= (async () => {
+        (stopping ??= withSpan("runtime.shutdown", async () => {
             // Drain requests and workers before releasing their database dependency.
             try {
                 if (server)
@@ -32,22 +32,19 @@ export async function startApplication(
                     await connection?.close();
                 }
             }
-        })());
+        }));
 
     try {
         await withSpan("runtime.startup", async () => {
             connection = await (options.connect ?? openDatabase)(
                 config.databaseUrl,
             );
-            application = await withSpan("http.app.initialize", async () =>
-                createApplication({
-                    db: connection!.db,
-                    getBlobStorage: options.getBlobStorage ?? createBlobStorage,
-                    reportError:
-                        options.reportError ??
-                        ((error) => console.error(error)),
-                }),
-            );
+            application = createApplication({
+                db: connection!.db,
+                getBlobStorage: options.getBlobStorage ?? createBlobStorage,
+                reportError:
+                    options.reportError ?? ((error) => console.error(error)),
+            });
             server = await withSpan("http.server.start", async () =>
                 Bun.serve({
                     port: config.port,

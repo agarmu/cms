@@ -1,6 +1,7 @@
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import type { BlobDownload, BlobStorage, StoredBlob } from "./blob-storage";
+import { setSpanAttributes, traced, tracedStream } from "../telemetry/tracing";
 
 export class LocalStorage implements BlobStorage {
     private readonly directory: string;
@@ -25,25 +26,40 @@ export class LocalStorage implements BlobStorage {
         return path;
     }
 
+    @traced("storage.local.get")
     async get(key: string): Promise<StoredBlob | undefined> {
         const file = Bun.file(this.path(key));
         const exists = await file.exists();
+        setSpanAttributes({ "storage.object.exists": exists });
         if (!exists) return undefined;
-        return { size: file.size, stream: () => file.stream() };
+        setSpanAttributes({ "storage.object.size": file.size });
+        return {
+            size: file.size,
+            stream: () =>
+                tracedStream("storage.local.download", () => file.stream()),
+        };
     }
 
+    @traced("storage.local.read")
     async read(key: string): Promise<BlobDownload | undefined> {
         const file = Bun.file(this.path(key));
         const exists = await file.exists();
+        setSpanAttributes({ "storage.object.exists": exists });
         return exists ? { file } : undefined;
     }
 
-    async write(key: string, data: Uint8Array, _contentType: string) {
+    @traced("storage.local.write")
+    async write(key: string, data: Uint8Array, contentType: string) {
+        setSpanAttributes({
+            "storage.object.size": data.byteLength,
+            "storage.content_type": contentType,
+        });
         const path = this.path(key);
         await mkdir(dirname(path), { recursive: true });
         await writeFile(path, data);
     }
 
+    @traced("storage.local.delete")
     async delete(key: string) {
         await unlink(this.path(key)).catch((error: NodeJS.ErrnoException) => {
             if (error.code !== "ENOENT") throw error;
