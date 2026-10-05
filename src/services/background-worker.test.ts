@@ -1,5 +1,6 @@
+import { WorkerConfiguration } from "./worker-config";
 import { expect, test } from "bun:test";
-import { startBackgroundWorker } from "./background-worker";
+import { BackgroundWorker } from "./background-worker";
 
 test("stopping waits for active tasks and prevents another cycle", async () => {
     const started = Promise.withResolvers<void>();
@@ -7,21 +8,23 @@ test("stopping waits for active tasks and prevents another cycle", async () => {
     const errors: Error[] = [];
     let runs = 0;
     let finished = false;
-    const stop = startBackgroundWorker({
-        intervalMs: 1,
-        tasks: [
-            async () => {
-                runs++;
-                started.resolve();
-                await release.promise;
-                finished = true;
-            },
-        ],
-        reportError: (error) => errors.push(error),
-    });
+    const worker = new BackgroundWorker(
+        {
+            tasks: [
+                async () => {
+                    runs++;
+                    started.resolve();
+                    await release.promise;
+                    finished = true;
+                },
+            ],
+            reportError: (error) => errors.push(error),
+        },
+        new WorkerConfiguration({ intervalMs: 1 }),
+    ).start();
     try {
         await started.promise;
-        const stopping = stop();
+        const stopping = worker.stop();
         expect(finished).toBe(false);
         release.resolve();
         await stopping;
@@ -31,7 +34,7 @@ test("stopping waits for active tasks and prevents another cycle", async () => {
         expect(errors).toEqual([]);
     } finally {
         release.resolve();
-        await stop();
+        await worker.stop();
     }
 });
 
@@ -40,24 +43,26 @@ test("a failing task does not prevent other tasks or the next cycle", async () =
     const failure = new Error("Temporary failure");
     const errors: Error[] = [];
     let runs = 0;
-    const stop = startBackgroundWorker({
-        intervalMs: 1,
-        tasks: [
-            () => {
-                throw failure;
-            },
-            async () => {
-                if (++runs === 2) secondCycle.resolve();
-            },
-        ],
-        reportError: (error) => errors.push(error),
-    });
+    const worker = new BackgroundWorker(
+        {
+            tasks: [
+                () => {
+                    throw failure;
+                },
+                async () => {
+                    if (++runs === 2) secondCycle.resolve();
+                },
+            ],
+            reportError: (error) => errors.push(error),
+        },
+        new WorkerConfiguration({ intervalMs: 1 }),
+    ).start();
     try {
         await secondCycle.promise;
-        await stop();
+        await worker.stop();
         expect(runs).toBe(2);
         expect(errors).toEqual([failure, failure]);
     } finally {
-        await stop();
+        await worker.stop();
     }
 });

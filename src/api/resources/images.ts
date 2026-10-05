@@ -1,94 +1,109 @@
-import { traced } from "../../telemetry/tracing";
-import { requireReference, preventReferencedDeletion } from "../references";
-import * as validation from "../validation";
+import { Tracing } from "../../telemetry/tracing";
+import { References } from "../references";
+import { ApiValidation as validation } from "../validation";
 import type { UUID } from "node:crypto";
 import { asc, desc, eq } from "drizzle-orm";
-import { images, cameras, lenses, imageAssets } from "../../db/schema";
+import { DatabaseSchema } from "../../db/schema";
 import type { NewImage } from "../../db/schema";
 import type { Database, ReadDatabase } from "../database";
 import type { Changes, Page } from "../types";
-import { scoped } from "../call";
+import { ApiScope } from "../call";
 import { Scope } from "../scope";
 
 export class ImageApi {
-    @scoped(Scope.ImagesRead)
-    @traced("images.list")
+    @ApiScope.scoped(Scope.ImagesRead)
+    @Tracing.traced("images.list")
     static async list(db: ReadDatabase, page: Page) {
         const { limit, offset } = validation.pagination.parse(page);
         return db
             .select()
-            .from(images)
-            .orderBy(desc(images.posted), asc(images.id))
+            .from(DatabaseSchema.images)
+            .orderBy(
+                desc(DatabaseSchema.images.posted),
+                asc(DatabaseSchema.images.id),
+            )
             .limit(limit)
             .offset(offset)
             .execute();
     }
 
-    @scoped(Scope.ImagesRead)
-    @traced("images.read")
+    @ApiScope.scoped(Scope.ImagesRead)
+    @Tracing.traced("images.read")
     static async read(db: ReadDatabase, id: UUID) {
         id = validation.uuid.parse(id);
-        return db.select().from(images).where(eq(images.id, id)).execute();
+        return db
+            .select()
+            .from(DatabaseSchema.images)
+            .where(eq(DatabaseSchema.images.id, id))
+            .execute();
     }
 
-    @scoped(Scope.ImagesWrite)
-    @traced("images.create")
+    @ApiScope.scoped(Scope.ImagesWrite)
+    @Tracing.traced("images.create")
     static async create(db: Database, value: Omit<NewImage, "id">) {
         value = validation.image.parse(value);
         if (value.cameraId != null)
-            await requireReference(
+            await References.requireReference(
                 db,
-                cameras,
-                eq(cameras.id, value.cameraId),
+                DatabaseSchema.cameras,
+                eq(DatabaseSchema.cameras.id, value.cameraId),
                 "cameraId",
             );
         if (value.lensId != null)
-            await requireReference(
+            await References.requireReference(
                 db,
-                lenses,
-                eq(lenses.id, value.lensId),
-                "lensId",
-            );
-        return db.insert(images).values(value).returning().execute();
-    }
-
-    @scoped(Scope.ImagesWrite)
-    @traced("images.update")
-    static async update(db: Database, id: UUID, value: Changes<NewImage>) {
-        value = validation.imageChanges.parse(value);
-        id = validation.uuid.parse(id);
-        if (value.cameraId != null)
-            await requireReference(
-                db,
-                cameras,
-                eq(cameras.id, value.cameraId),
-                "cameraId",
-            );
-        if (value.lensId != null)
-            await requireReference(
-                db,
-                lenses,
-                eq(lenses.id, value.lensId),
+                DatabaseSchema.lenses,
+                eq(DatabaseSchema.lenses.id, value.lensId),
                 "lensId",
             );
         return db
-            .update(images)
-            .set(value)
-            .where(eq(images.id, id))
+            .insert(DatabaseSchema.images)
+            .values(value)
             .returning()
             .execute();
     }
 
-    @scoped(Scope.ImagesWrite)
-    @traced("images.remove")
+    @ApiScope.scoped(Scope.ImagesWrite)
+    @Tracing.traced("images.update")
+    static async update(db: Database, id: UUID, value: Changes<NewImage>) {
+        value = validation.imageChanges.parse(value);
+        id = validation.uuid.parse(id);
+        if (value.cameraId != null)
+            await References.requireReference(
+                db,
+                DatabaseSchema.cameras,
+                eq(DatabaseSchema.cameras.id, value.cameraId),
+                "cameraId",
+            );
+        if (value.lensId != null)
+            await References.requireReference(
+                db,
+                DatabaseSchema.lenses,
+                eq(DatabaseSchema.lenses.id, value.lensId),
+                "lensId",
+            );
+        return db
+            .update(DatabaseSchema.images)
+            .set(value)
+            .where(eq(DatabaseSchema.images.id, id))
+            .returning()
+            .execute();
+    }
+
+    @ApiScope.scoped(Scope.ImagesWrite)
+    @Tracing.traced("images.remove")
     static async remove(db: Database, id: UUID) {
         id = validation.uuid.parse(id);
-        await preventReferencedDeletion(
+        await References.preventReferencedDeletion(
             db,
-            imageAssets,
-            eq(imageAssets.photoId, id),
+            DatabaseSchema.imageAssets,
+            eq(DatabaseSchema.imageAssets.photoId, id),
             "Image",
         );
-        return db.delete(images).where(eq(images.id, id)).returning().execute();
+        return db
+            .delete(DatabaseSchema.images)
+            .where(eq(DatabaseSchema.images.id, id))
+            .returning()
+            .execute();
     }
 }

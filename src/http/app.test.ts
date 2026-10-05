@@ -4,14 +4,15 @@ import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { z } from "zod";
-import * as schema from "../db/schema";
-import { createApplication } from "../application";
-import { uuid, assetId } from "../api/validation";
+import { DatabaseSchema as schema } from "../db/schema";
+import { Application } from "../application";
+import { ApplicationConfig } from "../application/config";
+import { ApiValidation } from "../api/validation";
 
 const client = new PGlite();
-const db = drizzle(client, { schema });
+const db = drizzle(client, { schema: schema.definition });
 const reportedErrors: Error[] = [];
-const { http: app } = createApplication({
+const { http: app } = new Application({
     db,
     getBlobStorage: () => {
         throw new Error("Metadata requests must not initialize blob storage");
@@ -49,18 +50,43 @@ const metadata = {
     description: "Evening light",
     enabled: true,
 };
+
+test("application instances enforce their configured HTTP body limits independently", async () => {
+    const config = new ApplicationConfig({
+        databaseUrl: "postgres://localhost/test",
+        http: { maxBodyBytes: 32 },
+    });
+    const custom = new Application({
+        db,
+        getBlobStorage: () => {
+            throw new Error(
+                "Metadata requests must not initialize blob storage",
+            );
+        },
+        reportError: (error) => reportedErrors.push(error),
+        httpConfig: config.http,
+    });
+    const init = {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(metadata),
+    };
+    expect((await custom.http.request("/images", init)).status).toBe(413);
+    expect((await app.request("/images", init)).status).toBe(201);
+});
+
 const asset = { width: 640, height: 320, assetLocation: "images/photo.webp" };
-const equipment = z.object({ id: uuid, name: z.string() });
+const equipment = z.object({ id: ApiValidation.uuid, name: z.string() });
 const photoRecord = z.object({
-    id: uuid,
-    cameraId: uuid.nullable(),
-    lensId: uuid.nullable(),
+    id: ApiValidation.uuid,
+    cameraId: ApiValidation.uuid.nullable(),
+    lensId: ApiValidation.uuid.nullable(),
     camera: equipment.nullable(),
     lens: equipment.nullable(),
     assets: z.array(
         z.object({
-            id: assetId,
-            photoId: uuid,
+            id: ApiValidation.assetId,
+            photoId: ApiValidation.uuid,
             width: z.number(),
             height: z.number(),
             assetLocation: z.string(),

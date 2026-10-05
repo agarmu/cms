@@ -1,62 +1,97 @@
 import type { Database } from "../api/database";
-import { createApp } from "../http/app";
+import { HttpApplication } from "../http/app";
+import { HttpConfiguration } from "../http/config";
 import type { BlobStorage } from "../services/blob-storage";
-import { startBackgroundWorker } from "../services/background-worker";
-import { collectImageGarbage } from "../services/image-garbage-collector";
+import { BackgroundWorker } from "../services/background-worker";
+import { ImageGarbageCollector } from "../services/image-garbage-collector";
 import { ImageStorage } from "../services/image-storage";
-import { checkImageUploads } from "../services/image-upload-worker";
-import { withSpan, withSyncSpan } from "../telemetry/tracing";
+import { ImageUploadWorker } from "../services/image-upload-worker";
+import { ImageConfiguration } from "../services/image-config";
+import { WorkerConfiguration } from "../services/worker-config";
+import { Tracing } from "../telemetry/tracing";
 
 export type ApplicationDependencies = {
     db: Database;
     getBlobStorage: () => BlobStorage;
     reportError: (error: Error) => void;
+    imageConfig?: ImageConfiguration;
+    workerConfig?: WorkerConfiguration;
+    httpConfig?: HttpConfiguration;
 };
 
-// Assembling an application does not open sockets or start background work.
-export function createApplication(options: ApplicationDependencies) {
-    return withSyncSpan("application.initialize", () => {
-        let storage: ImageStorage | undefined;
-        const getImageStorage = () =>
-            (storage ??= withSyncSpan(
-                "image.storage.initialize",
-                () => new ImageStorage(options.getBlobStorage()),
-            ));
-        const dependencies = {
-            db: options.db,
-            getStorage: getImageStorage,
-            reportError: options.reportError,
-        };
-        const http = createApp({
-            db: options.db,
-            getImageStorage,
-            reportError: options.reportError,
+export class Application {
+    readonly http: HttpApplication;
+    private storage: ImageStorage | undefined;
+    private readonly worker: BackgroundWorker;
+    private stopped = false;
+
+    constructor(private readonly options: ApplicationDependencies) {
+        const components = Tracing.withSyncSpan(
+            "application.initialize",
+            () => {
+                const dependencies = {
+                    db: options.db,
+                    getStorage: this.getImageStorage,
+                    reportError: options.reportError,
+                };
+                const workerConfig =
+                    options.workerConfig ?? new WorkerConfiguration();
+                const uploads = new ImageUploadWorker(
+                    dependencies,
+                    workerConfig,
+                );
+                const garbage = new ImageGarbageCollector(
+                    dependencies,
+                    workerConfig,
+                );
+                return {
+                    http: new HttpApplication(
+                        {
+                            db: options.db,
+                            getImageStorage: this.getImageStorage,
+                            reportError: options.reportError,
+                        },
+                        options.httpConfig ?? new HttpConfiguration(),
+                    ),
+                    worker: new BackgroundWorker(
+                        {
+                            tasks: [
+                                () => uploads.check(),
+                                () => garbage.collect(),
+                            ],
+                            reportError: options.reportError,
+                        },
+                        workerConfig,
+                    ),
+                };
+            },
+        );
+        this.http = components.http;
+        this.worker = components.worker;
+    }
+
+    private readonly getImageStorage = () =>
+        (this.storage ??= Tracing.withSyncSpan(
+            "image.storage.initialize",
+            () =>
+                new ImageStorage(
+                    this.options.getBlobStorage(),
+                    this.options.imageConfig,
+                ),
+        ));
+
+    start() {
+        return Tracing.withSyncSpan("application.start", () => {
+            if (this.stopped) throw new Error("Application has stopped");
+            this.worker.start();
+            return this;
         });
-        let stopWorker: (() => Promise<void>) | undefined;
-        let stopped = false;
+    }
 
-        return {
-            http,
-            start() {
-                return withSyncSpan("application.start", () => {
-                    if (stopped) throw new Error("Application has stopped");
-                    stopWorker ??= startBackgroundWorker({
-                        tasks: [
-                            () => checkImageUploads(dependencies),
-                            () => collectImageGarbage(dependencies),
-                        ],
-                        reportError: options.reportError,
-                    });
-                });
-            },
-            stop() {
-                return withSpan("application.stop", async () => {
-                    stopped = true;
-                    await stopWorker?.();
-                });
-            },
-        };
-    });
+    stop() {
+        return Tracing.withSpan("application.stop", async () => {
+            this.stopped = true;
+            await this.worker.stop();
+        });
+    }
 }
-
-export type Application = ReturnType<typeof createApplication>;

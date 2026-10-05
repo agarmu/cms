@@ -1,7 +1,9 @@
 import type { SQL } from "bun";
 import { drizzle } from "drizzle-orm/bun-sql";
-import * as schema from "./schema";
+import { DatabaseSchema } from "./schema";
 
-export function createDatabase(client: SQL) {
-    return drizzle(client, { schema });
+export class DatabaseFactory {
+    static create(client: SQL) {
+        return drizzle(client, { schema: DatabaseSchema.definition });
+    }
 }

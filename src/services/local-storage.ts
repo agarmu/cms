@@ -1,7 +1,7 @@
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import type { BlobDownload, BlobStorage, StoredBlob } from "./blob-storage";
-import { setSpanAttributes, traced, tracedStream } from "../telemetry/tracing";
+import { Tracing } from "../telemetry/tracing";
 
 export class LocalStorage implements BlobStorage {
     private readonly directory: string;
@@ -26,31 +26,33 @@ export class LocalStorage implements BlobStorage {
         return path;
     }
 
-    @traced("storage.local.get")
+    @Tracing.traced("storage.local.get")
     async get(key: string): Promise<StoredBlob | undefined> {
         const file = Bun.file(this.path(key));
         const exists = await file.exists();
-        setSpanAttributes({ "storage.object.exists": exists });
+        Tracing.setSpanAttributes({ "storage.object.exists": exists });
         if (!exists) return undefined;
-        setSpanAttributes({ "storage.object.size": file.size });
+        Tracing.setSpanAttributes({ "storage.object.size": file.size });
         return {
             size: file.size,
             stream: () =>
-                tracedStream("storage.local.download", () => file.stream()),
+                Tracing.tracedStream("storage.local.download", () =>
+                    file.stream(),
+                ),
         };
     }
 
-    @traced("storage.local.read")
+    @Tracing.traced("storage.local.read")
     async read(key: string): Promise<BlobDownload | undefined> {
         const file = Bun.file(this.path(key));
         const exists = await file.exists();
-        setSpanAttributes({ "storage.object.exists": exists });
+        Tracing.setSpanAttributes({ "storage.object.exists": exists });
         return exists ? { file } : undefined;
     }
 
-    @traced("storage.local.write")
+    @Tracing.traced("storage.local.write")
     async write(key: string, data: Uint8Array, contentType: string) {
-        setSpanAttributes({
+        Tracing.setSpanAttributes({
             "storage.object.size": data.byteLength,
             "storage.content_type": contentType,
         });
@@ -59,7 +61,7 @@ export class LocalStorage implements BlobStorage {
         await writeFile(path, data);
     }
 
-    @traced("storage.local.delete")
+    @Tracing.traced("storage.local.delete")
     async delete(key: string) {
         await unlink(this.path(key)).catch((error: NodeJS.ErrnoException) => {
             if (error.code !== "ENOENT") throw error;

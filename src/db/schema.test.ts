@@ -4,11 +4,11 @@ import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
-import * as schema from "./schema";
+import { DatabaseSchema as schema } from "./schema";
 
 const { cameras, imageAssets, images, lenses } = schema;
 const client = new PGlite();
-const testDb = drizzle(client, { schema });
+const testDb = drizzle(client, { schema: schema.definition });
 
 beforeAll(
     () =>

@@ -1,69 +1,77 @@
-import { traced } from "../../telemetry/tracing";
-import { preventReferencedDeletion } from "../references";
-import * as validation from "../validation";
+import { Tracing } from "../../telemetry/tracing";
+import { References } from "../references";
+import { ApiValidation as validation } from "../validation";
 import type { UUID } from "node:crypto";
 import { asc, eq } from "drizzle-orm";
-import { cameras, images } from "../../db/schema";
+import { DatabaseSchema } from "../../db/schema";
 import type { NewCamera } from "../../db/schema";
 import type { Database, ReadDatabase } from "../database";
 import type { Changes, Page } from "../types";
-import { scoped } from "../call";
+import { ApiScope } from "../call";
 import { Scope } from "../scope";
 
 export class CameraApi {
-    @scoped(Scope.CamerasRead)
-    @traced("cameras.list")
+    @ApiScope.scoped(Scope.CamerasRead)
+    @Tracing.traced("cameras.list")
     static async list(db: ReadDatabase, page: Page) {
         const { limit, offset } = validation.pagination.parse(page);
         return db
             .select()
-            .from(cameras)
-            .orderBy(asc(cameras.id))
+            .from(DatabaseSchema.cameras)
+            .orderBy(asc(DatabaseSchema.cameras.id))
             .limit(limit)
             .offset(offset)
             .execute();
     }
 
-    @scoped(Scope.CamerasRead)
-    @traced("cameras.read")
+    @ApiScope.scoped(Scope.CamerasRead)
+    @Tracing.traced("cameras.read")
     static async read(db: ReadDatabase, id: UUID) {
         id = validation.uuid.parse(id);
-        return db.select().from(cameras).where(eq(cameras.id, id)).execute();
+        return db
+            .select()
+            .from(DatabaseSchema.cameras)
+            .where(eq(DatabaseSchema.cameras.id, id))
+            .execute();
     }
 
-    @scoped(Scope.CamerasWrite)
-    @traced("cameras.create")
+    @ApiScope.scoped(Scope.CamerasWrite)
+    @Tracing.traced("cameras.create")
     static async create(db: Database, value: Omit<NewCamera, "id">) {
         value = validation.equipment.parse(value);
-        return db.insert(cameras).values(value).returning().execute();
-    }
-
-    @scoped(Scope.CamerasWrite)
-    @traced("cameras.update")
-    static async update(db: Database, id: UUID, value: Changes<NewCamera>) {
-        value = validation.equipmentChanges.parse(value);
-        id = validation.uuid.parse(id);
         return db
-            .update(cameras)
-            .set(value)
-            .where(eq(cameras.id, id))
+            .insert(DatabaseSchema.cameras)
+            .values(value)
             .returning()
             .execute();
     }
 
-    @scoped(Scope.CamerasWrite)
-    @traced("cameras.remove")
+    @ApiScope.scoped(Scope.CamerasWrite)
+    @Tracing.traced("cameras.update")
+    static async update(db: Database, id: UUID, value: Changes<NewCamera>) {
+        value = validation.equipmentChanges.parse(value);
+        id = validation.uuid.parse(id);
+        return db
+            .update(DatabaseSchema.cameras)
+            .set(value)
+            .where(eq(DatabaseSchema.cameras.id, id))
+            .returning()
+            .execute();
+    }
+
+    @ApiScope.scoped(Scope.CamerasWrite)
+    @Tracing.traced("cameras.remove")
     static async remove(db: Database, id: UUID) {
         id = validation.uuid.parse(id);
-        await preventReferencedDeletion(
+        await References.preventReferencedDeletion(
             db,
-            images,
-            eq(images.cameraId, id),
+            DatabaseSchema.images,
+            eq(DatabaseSchema.images.cameraId, id),
             "cameras",
         );
         return db
-            .delete(cameras)
-            .where(eq(cameras.id, id))
+            .delete(DatabaseSchema.cameras)
+            .where(eq(DatabaseSchema.cameras.id, id))
             .returning()
             .execute();
     }

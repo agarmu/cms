@@ -9,22 +9,26 @@ export enum Scope {
     ImageAssetsWrite = "image-assets:write",
 }
 
-const readScopes = [
-    Scope.CamerasRead,
-    Scope.LensesRead,
-    Scope.ImagesRead,
-    Scope.ImageAssetsRead,
-] as const;
-export type ReadScope = (typeof readScopes)[number];
+export type ReadScope =
+    | Scope.CamerasRead
+    | Scope.LensesRead
+    | Scope.ImagesRead
+    | Scope.ImageAssetsRead;
 export type WriteScope = Exclude<Scope, ReadScope>;
 
-const acceptedScopes = new Set<string>(Object.values(Scope));
-const readonlyScopes = new Set<Scope>(readScopes);
+export class Scopes {
+    private static readonly accepted = new Set<string>(Object.values(Scope));
+    private static readonly readable = new Set<Scope>([
+        Scope.CamerasRead,
+        Scope.LensesRead,
+        Scope.ImagesRead,
+        Scope.ImageAssetsRead,
+    ]);
 
-export function isScope(value: string): value is Scope {
-    return acceptedScopes.has(value);
-}
-
-export function isReadScope(scope: Scope): scope is ReadScope {
-    return readonlyScopes.has(scope);
+    static isScope(value: string): value is Scope {
+        return Scopes.accepted.has(value);
+    }
+    static isReadScope(scope: Scope): scope is ReadScope {
+        return Scopes.readable.has(scope);
+    }
 }

@@ -4,35 +4,43 @@ import { bodyLimit } from "hono/body-limit";
 import { CameraApi } from "../api/resources/cameras";
 import { LensApi } from "../api/resources/lenses";
 import type { Database } from "../api/database";
-import { photoRoutes } from "./photos";
-import { equipmentRoutes } from "./equipment";
-import { errorHandler } from "./errors";
-import { scopeWrapper } from "./scope";
-import { imageUploadRoutes } from "./image-upload";
+import { PhotoRoutes } from "./photos";
+import { EquipmentRoutes } from "./equipment";
+import { HttpErrorHandler } from "./errors";
+import { ScopeMiddleware } from "./scope";
+import { ImageUploadRoutes } from "./image-upload";
+import { HttpConfiguration } from "./config";
 import type { ImageStorage } from "../services/image-storage";
-import { withSyncSpan } from "../telemetry/tracing";
+import { Tracing } from "../telemetry/tracing";
 
-export function createApp(options: {
-    db: Database;
-    reportError: (error: Error) => void;
-    getImageStorage: () => ImageStorage;
-}) {
-    return withSyncSpan("http.app.initialize", () => {
-        const app = new Hono();
-        const withScope = scopeWrapper(options.db);
-        app.use("*", httpInstrumentationMiddleware());
-        const getStorage = options.getImageStorage;
-
-        app.use("*", bodyLimit({ maxSize: 64 * 1024 }));
-        app.route("/images", imageUploadRoutes(withScope, getStorage));
-        app.route("/cameras", equipmentRoutes(CameraApi, withScope));
-        app.route("/lenses", equipmentRoutes(LensApi, withScope));
-        app.route("/images", photoRoutes(withScope, getStorage));
-
-        app.notFound((context) =>
-            context.json({ error: "Route not found" }, 404),
-        );
-        app.onError(errorHandler(options.reportError));
-        return app;
-    });
+export class HttpApplication extends Hono {
+    constructor(
+        options: {
+            db: Database;
+            reportError: (error: Error) => void;
+            getImageStorage: () => ImageStorage;
+        },
+        config = new HttpConfiguration(),
+    ) {
+        super();
+        Tracing.withSyncSpan("http.app.initialize", () => {
+            const withScope = new ScopeMiddleware(options.db).wrap;
+            this.use("*", httpInstrumentationMiddleware());
+            this.use("*", bodyLimit({ maxSize: config.maxBodyBytes }));
+            this.route(
+                "/images",
+                new ImageUploadRoutes(withScope, options.getImageStorage),
+            );
+            this.route("/cameras", new EquipmentRoutes(CameraApi, withScope));
+            this.route("/lenses", new EquipmentRoutes(LensApi, withScope));
+            this.route(
+                "/images",
+                new PhotoRoutes(withScope, options.getImageStorage),
+            );
+            this.notFound((context) =>
+                context.json({ error: "Route not found" }, 404),
+            );
+            this.onError(new HttpErrorHandler(options.reportError).handle);
+        });
+    }
 }

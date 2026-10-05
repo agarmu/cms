@@ -6,63 +6,73 @@ import {
 } from "node:crypto";
 import type { UUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
-import { images, imageUploads } from "../db/schema";
+import { DatabaseSchema } from "../db/schema";
 import { ConflictError, NotFoundError } from "../lib/errors";
 import {
     MissingOriginalError,
     UploadCancelledError,
 } from "../services/image-storage";
 import type { ImageStorage } from "../services/image-storage";
-import { traced, withSpan } from "../telemetry/tracing";
+import { Tracing } from "../telemetry/tracing";
 import type { Database, ReadDatabase } from "./database";
-import { scoped } from "./call";
+import { ApiScope } from "./call";
 import { Scope } from "./scope";
 import { PhotoApi } from "./photos";
 
 export class InvalidUploadTokenError extends Error {}
-const tokenHash = (token: string) =>
-    createHash("sha256").update(token).digest();
-
-async function receipt(db: ReadDatabase, photoId: UUID, uploadId: UUID) {
-    const [upload] = await db
-        .select()
-        .from(imageUploads)
-        .where(
-            and(
-                eq(imageUploads.id, uploadId),
-                eq(imageUploads.photoId, photoId),
-            ),
-        )
-        .execute();
-    if (!upload) throw new NotFoundError("Upload not found");
-    return upload;
-}
-
-async function authorize(
-    db: ReadDatabase,
-    photoId: UUID,
-    uploadId: UUID,
-    token: string,
-) {
-    const upload = await receipt(db, photoId, uploadId);
-    if (
-        !timingSafeEqual(tokenHash(token), Buffer.from(upload.tokenHash, "hex"))
-    ) {
-        throw new InvalidUploadTokenError("Invalid upload token");
-    }
-    return upload;
-}
-
-function requirePending(upload: typeof imageUploads.$inferSelect) {
-    if (upload.cancelled)
-        throw new UploadCancelledError("Upload has been cancelled");
-    if (upload.failed)
-        throw new ConflictError("Upload has failed; start a new upload");
-}
-
 export class ImageUploadApi {
-    @scoped(Scope.ImagesWrite)
-    @traced("image.upload.create")
+    private static tokenHash(token: string) {
+        return createHash("sha256").update(token).digest();
+    }
+
+    private static async receipt(
+        db: ReadDatabase,
+        photoId: UUID,
+        uploadId: UUID,
+    ) {
+        const [upload] = await db
+            .select()
+            .from(DatabaseSchema.imageUploads)
+            .where(
+                and(
+                    eq(DatabaseSchema.imageUploads.id, uploadId),
+                    eq(DatabaseSchema.imageUploads.photoId, photoId),
+                ),
+            )
+            .execute();
+        if (!upload) throw new NotFoundError("Upload not found");
+        return upload;
+    }
+
+    private static async authorize(
+        db: ReadDatabase,
+        photoId: UUID,
+        uploadId: UUID,
+        token: string,
+    ) {
+        const upload = await ImageUploadApi.receipt(db, photoId, uploadId);
+        if (
+            !timingSafeEqual(
+                ImageUploadApi.tokenHash(token),
+                Buffer.from(upload.tokenHash, "hex"),
+            )
+        ) {
+            throw new InvalidUploadTokenError("Invalid upload token");
+        }
+        return upload;
+    }
+
+    private static requirePending(
+        upload: typeof DatabaseSchema.imageUploads.$inferSelect,
+    ) {
+        if (upload.cancelled)
+            throw new UploadCancelledError("Upload has been cancelled");
+        if (upload.failed)
+            throw new ConflictError("Upload has failed; start a new upload");
+    }
+
+    @ApiScope.scoped(Scope.ImagesWrite)
+    @Tracing.traced("image.upload.create")
     static async create(
         db: Database,
         storage: ImageStorage,
@@ -78,11 +88,11 @@ export class ImageUploadApi {
             contentType,
         );
         await db
-            .insert(imageUploads)
+            .insert(DatabaseSchema.imageUploads)
             .values({
                 id: uploadId,
                 photoId,
-                tokenHash: tokenHash(token).toString("hex"),
+                tokenHash: ImageUploadApi.tokenHash(token).toString("hex"),
             })
             .execute();
         const statusUrl = `/images/${photoId}/uploads/${uploadId}`;
@@ -95,10 +105,10 @@ export class ImageUploadApi {
         };
     }
 
-    @scoped(Scope.ImagesRead)
-    @traced("image.upload.read")
+    @ApiScope.scoped(Scope.ImagesRead)
+    @Tracing.traced("image.upload.read")
     static async read(db: ReadDatabase, photoId: UUID, uploadId: UUID) {
-        const upload = await receipt(db, photoId, uploadId);
+        const upload = await ImageUploadApi.receipt(db, photoId, uploadId);
         return {
             uploadId: upload.id,
             status: upload.completed
@@ -114,23 +124,28 @@ export class ImageUploadApi {
         };
     }
 
-    @scoped(Scope.ImagesWrite)
-    @traced("image.upload.cancel")
+    @ApiScope.scoped(Scope.ImagesWrite)
+    @Tracing.traced("image.upload.cancel")
     static async cancel(
         db: Database,
         photoId: UUID,
         uploadId: UUID,
         token: string,
     ) {
-        const upload = await authorize(db, photoId, uploadId, token);
+        const upload = await ImageUploadApi.authorize(
+            db,
+            photoId,
+            uploadId,
+            token,
+        );
         if (upload.cancelled) return ImageUploadApi.read(db, photoId, uploadId);
         const [cancelled] = await db
-            .update(imageUploads)
+            .update(DatabaseSchema.imageUploads)
             .set({ cancelled: new Date() })
             .where(
                 and(
-                    eq(imageUploads.id, uploadId),
-                    isNull(imageUploads.completed),
+                    eq(DatabaseSchema.imageUploads.id, uploadId),
+                    isNull(DatabaseSchema.imageUploads.completed),
                 ),
             )
             .returning()
@@ -140,8 +155,8 @@ export class ImageUploadApi {
         return ImageUploadApi.read(db, photoId, uploadId);
     }
 
-    @scoped(Scope.ImagesWrite)
-    @traced("image.upload.interrupt")
+    @ApiScope.scoped(Scope.ImagesWrite)
+    @Tracing.traced("image.upload.interrupt")
     static async interrupt(
         db: Database,
         storage: ImageStorage,
@@ -150,7 +165,7 @@ export class ImageUploadApi {
         token: string,
         ready: boolean,
     ) {
-        await authorize(db, photoId, uploadId, token);
+        await ImageUploadApi.authorize(db, photoId, uploadId, token);
         if (!ready) return ImageUploadApi.cancel(db, photoId, uploadId, token);
         try {
             const photo = await ImageUploadApi.complete(
@@ -172,36 +187,38 @@ export class ImageUploadApi {
         }
     }
 
-    @scoped(Scope.ImagesWrite)
-    @traced("image.upload.complete")
+    @ApiScope.scoped(Scope.ImagesWrite)
+    @Tracing.traced("image.upload.complete")
     static async complete(
         db: Database,
         storage: ImageStorage,
         photoId: UUID,
         uploadId: UUID,
     ) {
-        const upload = await receipt(db, photoId, uploadId);
+        const upload = await ImageUploadApi.receipt(db, photoId, uploadId);
         photoId = upload.photoId;
         uploadId = upload.id;
         if (upload.completed) return PhotoApi.read(db, photoId);
-        requirePending(upload);
+        ImageUploadApi.requirePending(upload);
         // Keep S3 downloads and conversion outside the transaction so cancellation
         // can be persisted immediately, including from another service instance.
         const processed = await storage.processUpload(
             photoId,
             uploadId,
             async () => {
-                requirePending(await receipt(db, photoId, uploadId));
+                ImageUploadApi.requirePending(
+                    await ImageUploadApi.receipt(db, photoId, uploadId),
+                );
             },
         );
         let published = false;
         try {
-            const result = await withSpan("image.upload.publish", () =>
+            const result = await Tracing.withSpan("image.upload.publish", () =>
                 db.transaction(async (tx) => {
                     const [photo] = await tx
-                        .select({ id: images.id })
-                        .from(images)
-                        .where(eq(images.id, photoId))
+                        .select({ id: DatabaseSchema.images.id })
+                        .from(DatabaseSchema.images)
+                        .where(eq(DatabaseSchema.images.id, photoId))
                         .for("update")
                         .execute();
                     if (!photo) throw new NotFoundError("Photo not found");
@@ -209,25 +226,28 @@ export class ImageUploadApi {
                     // observes completion after commit. It cannot race asset publication.
                     const [current] = await tx
                         .select()
-                        .from(imageUploads)
+                        .from(DatabaseSchema.imageUploads)
                         .where(
                             and(
-                                eq(imageUploads.id, uploadId),
-                                eq(imageUploads.photoId, photoId),
+                                eq(DatabaseSchema.imageUploads.id, uploadId),
+                                eq(
+                                    DatabaseSchema.imageUploads.photoId,
+                                    photoId,
+                                ),
                             ),
                         )
                         .for("update")
                         .execute();
                     if (!current) throw new NotFoundError("Upload not found");
                     if (current.completed) return PhotoApi.read(tx, photoId);
-                    requirePending(current);
+                    ImageUploadApi.requirePending(current);
                     const updated = await PhotoApi.update(tx, photoId, {
                         assets: processed.assets,
                     });
                     await tx
-                        .update(imageUploads)
+                        .update(DatabaseSchema.imageUploads)
                         .set({ completed: new Date() })
-                        .where(eq(imageUploads.id, uploadId))
+                        .where(eq(DatabaseSchema.imageUploads.id, uploadId))
                         .execute();
                     published = true;
                     return updated;

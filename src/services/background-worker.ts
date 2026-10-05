@@ -1,30 +1,51 @@
-import {
-    recordSpanError,
-    withRootSpan,
-    withSpan,
-    withSyncSpan,
-} from "../telemetry/tracing";
+import { Tracing } from "../telemetry/tracing";
+import { WorkerConfiguration } from "./worker-config";
 
-export function startBackgroundWorker(options: {
-    tasks: (() => Promise<void>)[];
-    reportError: (error: Error) => void;
-    intervalMs?: number;
-}) {
-    const intervalMs = options.intervalMs ?? 5000;
-    let stopped = false;
-    let timer: ReturnType<typeof setTimeout>;
-    let running: Promise<void> | undefined;
-    const run = () => {
-        running = withRootSpan(
+export class BackgroundWorker {
+    private timer: ReturnType<typeof setTimeout> | undefined;
+    private running: Promise<void> | undefined;
+    private stopped = false;
+    private started = false;
+
+    constructor(
+        private readonly options: {
+            tasks: (() => Promise<void>)[];
+            reportError: (error: Error) => void;
+        },
+        private readonly config = new WorkerConfiguration(),
+    ) {}
+
+    start() {
+        return Tracing.withSyncSpan(
+            "worker.start",
+            () => {
+                if (this.stopped) throw new Error("Worker has stopped");
+                if (!this.started) {
+                    this.started = true;
+                    this.timer = setTimeout(
+                        () => this.run(),
+                        this.config.intervalMs,
+                    );
+                }
+                return this;
+            },
+            { "worker.interval_ms": this.config.intervalMs },
+        );
+    }
+
+    private run() {
+        this.running = Tracing.withRootSpan(
             "worker.cycle",
             async () => {
                 const results = await Promise.allSettled(
-                    options.tasks.map((task) => Promise.resolve().then(task)),
+                    this.options.tasks.map((task) =>
+                        Promise.resolve().then(task),
+                    ),
                 );
                 for (const result of results) {
                     if (result.status === "rejected") {
-                        recordSpanError(result.reason);
-                        options.reportError(
+                        Tracing.recordSpanError(result.reason);
+                        this.options.reportError(
                             result.reason instanceof Error
                                 ? result.reason
                                 : new Error(String(result.reason)),
@@ -32,19 +53,21 @@ export function startBackgroundWorker(options: {
                     }
                 }
             },
-            { "worker.tasks.count": options.tasks.length },
+            { "worker.tasks.count": this.options.tasks.length },
         ).finally(() => {
-            // Schedule after all tasks finish so consecutive cycles cannot overlap.
-            if (!stopped) timer = setTimeout(run, intervalMs);
+            if (!this.stopped)
+                this.timer = setTimeout(
+                    () => this.run(),
+                    this.config.intervalMs,
+                );
         });
-    };
-    timer = withSyncSpan("worker.start", () => setTimeout(run, intervalMs), {
-        "worker.interval_ms": intervalMs,
-    });
-    return () =>
-        withSpan("worker.stop", async () => {
-            stopped = true;
-            clearTimeout(timer);
-            await running;
+    }
+
+    stop() {
+        return Tracing.withSpan("worker.stop", async () => {
+            this.stopped = true;
+            clearTimeout(this.timer);
+            await this.running;
         });
+    }
 }

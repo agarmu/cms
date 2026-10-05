@@ -4,14 +4,14 @@ import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { z } from "zod";
-import * as schema from "../db/schema";
+import { DatabaseSchema as schema } from "../db/schema";
 import { CameraApi } from "./resources/cameras";
 import { ImageApi } from "./resources/images";
 import { ImageAssetApi } from "./resources/image-assets";
 import { ConflictError } from "../lib/errors";
 
 const client = new PGlite();
-const db = drizzle(client, { schema });
+const db = drizzle(client, { schema: schema.definition });
 beforeAll(
     () =>
         migrate(db, {

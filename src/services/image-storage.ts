@@ -1,23 +1,9 @@
 import { randomUUID } from "node:crypto";
 import sharp from "sharp";
 import { ConflictError, NotFoundError } from "../lib/errors";
+import { ImageConfiguration } from "./image-config";
 import type { BlobStorage } from "./blob-storage";
-import { setSpanAttributes, traced, withSpan } from "../telemetry/tracing";
-
-const variants = [
-    { name: "large", minSide: 1920 },
-    { name: "medium", minSide: 960 },
-    { name: "thumbnail", minSide: 320 },
-] as const;
-const inputOptions = { failOn: "error", limitInputPixels: 60_000_000 } as const;
-const assetFilename = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
-const supportedFormats = {
-    jpeg: true,
-    png: true,
-    webp: true,
-    avif: true,
-    tiff: true,
-} as const;
+import { Tracing } from "../telemetry/tracing";
 
 export type ProcessedAsset = {
     width: number;
@@ -35,28 +21,45 @@ export class UploadCancelledError extends ConflictError {}
 export class InvalidImageError extends Error {}
 export class ImageTooLargeError extends Error {}
 export class InvalidAssetLocationError extends Error {}
-export const maxImageBytes = 25 * 1024 * 1024;
-
-// Only decoder failures are invalid images. Database and storage failures keep
-// their original error types so the worker can report and retry them.
-async function decodeImage<T>(decode: () => Promise<T>): Promise<T> {
-    try {
-        return await decode();
-    } catch (error) {
-        throw new InvalidImageError("Unsupported or invalid image", {
-            cause: error,
-        });
-    }
-}
-
-export function imageAssetUrl(photoId: string, filename: string) {
-    return `/images/${encodeURIComponent(photoId)}/${encodeURIComponent(filename)}`;
-}
 
 export class ImageStorage {
-    constructor(private readonly storage: BlobStorage) {}
+    private static readonly assetFilename = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
+    private readonly supportedFormats = new Set([
+        "jpeg",
+        "png",
+        "webp",
+        "avif",
+        "tiff",
+    ]);
+    private readonly inputOptions;
 
-    @traced("image.storage.upload.create")
+    constructor(
+        private readonly storage: BlobStorage,
+        private readonly config = new ImageConfiguration(),
+    ) {
+        this.inputOptions = {
+            failOn: "error",
+            limitInputPixels: config.maxPixels,
+        } as const;
+    }
+
+    // Only decoder failures are invalid images. Database and storage failures keep
+    // their original error types so the worker can report and retry them.
+    private async decodeImage<T>(decode: () => Promise<T>): Promise<T> {
+        try {
+            return await decode();
+        } catch (error) {
+            throw new InvalidImageError("Unsupported or invalid image", {
+                cause: error,
+            });
+        }
+    }
+
+    static assetUrl(photoId: string, filename: string) {
+        return `/images/${encodeURIComponent(photoId)}/${encodeURIComponent(filename)}`;
+    }
+
+    @Tracing.traced("image.storage.upload.create")
     async createUpload(photoId: string, uploadId: string, contentType: string) {
         if (!this.storage.createUpload)
             throw new Error("Storage does not support direct uploads");
@@ -74,13 +77,16 @@ export class ImageStorage {
         return `originals/${photoId}/${uploadId}`;
     }
 
-    @traced("image.storage.process")
+    @Tracing.traced("image.storage.process")
     async processUpload(
         photoId: string,
         uploadId: string,
         checkActive: () => Promise<void> = async () => {},
     ) {
-        setSpanAttributes({ "photo.id": photoId, "image.upload.id": uploadId });
+        Tracing.setSpanAttributes({
+            "photo.id": photoId,
+            "image.upload.id": uploadId,
+        });
         await checkActive();
         const file = await this.storage.get(
             this.originalKey(photoId, uploadId),
@@ -90,8 +96,10 @@ export class ImageStorage {
                 "Original image has not been uploaded",
             );
         const { size } = file;
-        if (size > maxImageBytes)
-            throw new ImageTooLargeError("Image must not exceed 25 MiB");
+        if (size > this.config.maxBytes)
+            throw new ImageTooLargeError(
+                `Image must not exceed ${this.config.maxBytes / (1024 * 1024)} MiB`,
+            );
         if (size === 0) throw new InvalidImageError("Image must not be empty");
 
         // Bound the download too, in case the object changed after the HEAD request.
@@ -103,9 +111,9 @@ export class ImageStorage {
                 const { done, value } = await reader.read();
                 if (done) break;
                 bytes += value.length;
-                if (bytes > maxImageBytes)
+                if (bytes > this.config.maxBytes)
                     throw new ImageTooLargeError(
-                        "Image must not exceed 25 MiB",
+                        `Image must not exceed ${this.config.maxBytes / (1024 * 1024)} MiB`,
                     );
                 chunks.push(value);
             }
@@ -127,22 +135,22 @@ export class ImageStorage {
         return this.processAndStore(input, photoId, checkActive);
     }
 
-    @traced("image.storage.read")
+    @Tracing.traced("image.storage.read")
     async read(photoId: string, filename: string) {
         // Only a single filename beneath a validated photo ID may be read.
-        if (!assetFilename.test(filename)) return undefined;
+        if (!ImageStorage.assetFilename.test(filename)) return undefined;
         const key = `images/${photoId}/${filename}`;
         return this.storage.read(key, 3600);
     }
 
-    @traced("image.storage.delete")
+    @Tracing.traced("image.storage.delete")
     async deleteAsset(photoId: string, filename: string) {
-        if (!assetFilename.test(filename))
+        if (!ImageStorage.assetFilename.test(filename))
             throw new InvalidAssetLocationError("Invalid image asset filename");
         await this.storage.delete(`images/${photoId}/${filename}`);
     }
 
-    @traced("image.storage.publish")
+    @Tracing.traced("image.storage.publish")
     private async processAndStore(
         input: Uint8Array,
         photoId: string,
@@ -154,7 +162,7 @@ export class ImageStorage {
         const assets: ProcessedAsset[] = [];
         const keys: string[] = [];
         const cleanup = () =>
-            withSpan(
+            Tracing.withSpan(
                 "image.storage.cleanup",
                 async () => {
                     // Wait for every deletion before ending the cleanup span, even on failure.
@@ -189,40 +197,39 @@ export class ImageStorage {
             }
             throw error;
         }
-        setSpanAttributes({ "image.assets.count": assets.length });
+        Tracing.setSpanAttributes({ "image.assets.count": assets.length });
         return { assets, cleanup };
     }
 
-    @traced("image.prepare")
+    @Tracing.traced("image.prepare")
     private async prepare(input: Uint8Array, checkActive: () => Promise<void>) {
         // Validate the original with the decoder rather than the client-supplied content type.
-        const metadata = await withSpan("image.metadata", () =>
-            decodeImage(() => sharp(input, inputOptions).metadata()),
+        const metadata = await Tracing.withSpan("image.metadata", () =>
+            this.decodeImage(() => sharp(input, this.inputOptions).metadata()),
         );
         const format =
             metadata.format === "heif" && metadata.compression === "av1"
                 ? "avif"
                 : metadata.format;
-        const supported =
-            supportedFormats[format as keyof typeof supportedFormats];
+        const supported = this.supportedFormats.has(format ?? "");
         if (!metadata.width || !metadata.height || !supported) {
             throw new InvalidImageError("Unsupported image type");
         }
-        setSpanAttributes({
+        Tracing.setSpanAttributes({
             "image.format": format,
             "image.width": metadata.width,
             "image.height": metadata.height,
         });
         const images: PreparedImage[] = [];
         const minSide = Math.min(metadata.width, metadata.height);
-        for (const variant of variants) {
+        for (const variant of this.config.variants) {
             if (minSide < variant.minSide) continue;
             await checkActive();
-            const { data, info } = await withSpan(
+            const { data, info } = await Tracing.withSpan(
                 "image.convert",
                 () =>
-                    decodeImage(() =>
-                        sharp(input, inputOptions)
+                    this.decodeImage(() =>
+                        sharp(input, this.inputOptions)
                             .rotate()
                             .resize({
                                 width: variant.minSide,
@@ -230,7 +237,7 @@ export class ImageStorage {
                                 fit: "outside",
                                 withoutEnlargement: true,
                             })
-                            .webp({ quality: 82 })
+                            .webp({ quality: this.config.quality })
                             .toBuffer({ resolveWithObject: true }),
                     ),
                 {

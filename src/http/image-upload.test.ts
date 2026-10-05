@@ -1,3 +1,4 @@
+import { ImageConfiguration } from "../services/image-config";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 import { eq, sql } from "drizzle-orm";
@@ -5,24 +6,23 @@ import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import sharp from "sharp";
-import * as schema from "../db/schema";
+import { DatabaseSchema as schema } from "../db/schema";
 import { ImageUploadApi } from "../api/image-uploads";
 import { PhotoApi } from "../api/photos";
-import { uuid } from "../api/validation";
+import { ApiValidation } from "../api/validation";
 import {
     ImageStorage,
     InvalidAssetLocationError,
-    maxImageBytes,
 } from "../services/image-storage";
 import type { ProcessedAsset } from "../services/image-storage";
 import { S3Storage } from "../services/s3-storage";
 import type { S3Client } from "../services/s3-storage";
-import { checkImageUploads } from "../services/image-upload-worker";
-import { collectImageGarbage } from "../services/image-garbage-collector";
-import { createApp } from "./app";
+import { ImageUploadWorker } from "../services/image-upload-worker";
+import { ImageGarbageCollector } from "../services/image-garbage-collector";
+import { HttpApplication } from "./app";
 
 const client = new PGlite();
-const db = drizzle(client, { schema });
+const db = drizzle(client, { schema: schema.definition });
 const objects = new Map<string, Uint8Array>();
 const signer = new Bun.S3Client({
     bucket: "photos",
@@ -58,9 +58,17 @@ const s3: S3Client = {
 const errors: Error[] = [];
 const storage = new ImageStorage(new S3Storage(s3));
 const reportError = (error: Error) => errors.push(error);
-const app = createApp({ db, getImageStorage: () => storage, reportError });
+const app = new HttpApplication({
+    db,
+    getImageStorage: () => storage,
+    reportError,
+});
 const check = () =>
-    checkImageUploads({ db, getStorage: () => storage, reportError });
+    new ImageUploadWorker({
+        db,
+        getStorage: () => storage,
+        reportError,
+    }).check();
 beforeAll(
     () =>
         migrate(db, {
@@ -117,28 +125,41 @@ const due = (uploadId: string) =>
     db
         .update(schema.imageUploads)
         .set({ nextCheck: new Date(0) })
-        .where(eq(schema.imageUploads.id, uuid.parse(uploadId)))
+        .where(eq(schema.imageUploads.id, ApiValidation.uuid.parse(uploadId)))
         .execute();
 const process = (id: string, uploadId: string) =>
-    ImageUploadApi.complete(db, storage, uuid.parse(id), uuid.parse(uploadId));
+    ImageUploadApi.complete(
+        db,
+        storage,
+        ApiValidation.uuid.parse(id),
+        ApiValidation.uuid.parse(uploadId),
+    );
 const png = await sharp({
     create: { width: 1000, height: 500, channels: 3, background: "red" },
 })
     .png()
     .toBuffer();
 const collect = () =>
-    collectImageGarbage({ db, getStorage: () => storage, reportError });
+    new ImageGarbageCollector({
+        db,
+        getStorage: () => storage,
+        reportError,
+    }).collect();
 const garbageFor = (id: string) =>
     db
         .select()
         .from(schema.imageAssetGarbage)
-        .where(eq(schema.imageAssetGarbage.photoId, uuid.parse(id)))
+        .where(
+            eq(schema.imageAssetGarbage.photoId, ApiValidation.uuid.parse(id)),
+        )
         .execute();
 const garbageDue = (id: string) =>
     db
         .update(schema.imageAssetGarbage)
         .set({ nextCheck: new Date(0) })
-        .where(eq(schema.imageAssetGarbage.photoId, uuid.parse(id)))
+        .where(
+            eq(schema.imageAssetGarbage.photoId, ApiValidation.uuid.parse(id)),
+        )
         .execute();
 const assetInput = ({ width, height, assetLocation }: ProcessedAsset) => ({
     width,
@@ -165,7 +186,12 @@ test("issues a presigned PUT and automatically processes the original on a sched
     const [receipt] = await db
         .select()
         .from(schema.imageUploads)
-        .where(eq(schema.imageUploads.id, uuid.parse(upload.uploadId)))
+        .where(
+            eq(
+                schema.imageUploads.id,
+                ApiValidation.uuid.parse(upload.uploadId),
+            ),
+        )
         .execute();
     expect(receipt!.nextCheck.getTime() - receipt!.created.getTime()).toBe(
         15 * 60 * 1000,
@@ -281,7 +307,7 @@ test("completed jobs cannot replace a newer upload", async () => {
 test("replacement queues obsolete assets and GC respects the grace period", async () => {
     const { id } = await photo();
     const first = await uploadedPhoto(id);
-    await PhotoApi.update(db, uuid.parse(id), {
+    await PhotoApi.update(db, ApiValidation.uuid.parse(id), {
         assets: first.assets.map(assetInput),
     });
     expect(await garbageFor(id)).toEqual([]);
@@ -299,11 +325,11 @@ test("replacement queues obsolete assets and GC respects the grace period", asyn
     );
     await garbageDue(id);
     // Recreate storage as after a restart; the database retains the GC schedule.
-    await collectImageGarbage({
+    await new ImageGarbageCollector({
         db,
         getStorage: () => new ImageStorage(new S3Storage(s3)),
         reportError,
-    });
+    }).collect();
     expect(objects.has(`images/${id}/${first.assets[0]!.assetLocation}`)).toBe(
         false,
     );
@@ -332,9 +358,9 @@ test("photo deletion preserves queued object keys for GC", async () => {
 test("GC keeps assets that were reattached and their next removal restarts the grace period", async () => {
     const { id } = await photo();
     const saved = await uploadedPhoto(id);
-    await PhotoApi.update(db, uuid.parse(id), { assets: [] });
+    await PhotoApi.update(db, ApiValidation.uuid.parse(id), { assets: [] });
     await garbageDue(id);
-    await PhotoApi.update(db, uuid.parse(id), {
+    await PhotoApi.update(db, ApiValidation.uuid.parse(id), {
         assets: [...saved.assets, ...saved.assets].map(assetInput),
     });
     await collect();
@@ -342,14 +368,14 @@ test("GC keeps assets that were reattached and their next removal restarts the g
         true,
     );
     expect(await garbageFor(id)).toEqual([]);
-    await PhotoApi.update(db, uuid.parse(id), { assets: [] });
+    await PhotoApi.update(db, ApiValidation.uuid.parse(id), { assets: [] });
     expect(await garbageFor(id)).toHaveLength(1);
     await garbageDue(id);
     // Remove again before GC runs: even an existing queue entry gets a new grace period.
-    await PhotoApi.update(db, uuid.parse(id), {
+    await PhotoApi.update(db, ApiValidation.uuid.parse(id), {
         assets: saved.assets.map(assetInput),
     });
-    await PhotoApi.update(db, uuid.parse(id), { assets: [] });
+    await PhotoApi.update(db, ApiValidation.uuid.parse(id), { assets: [] });
     expect((await garbageFor(id))[0]!.nextCheck.getTime()).toBeGreaterThan(
         Date.now() + 59 * 60 * 1000,
     );
@@ -386,9 +412,9 @@ test("failed replacement rolls back the GC queue along with assets", async () =>
         });
         expect(response.status).toBe(400);
         expect(await garbageFor(id)).toEqual([]);
-        expect((await PhotoApi.read(db, uuid.parse(id))).assets).toEqual(
-            saved.assets,
-        );
+        expect(
+            (await PhotoApi.read(db, ApiValidation.uuid.parse(id))).assets,
+        ).toEqual(saved.assets);
     } finally {
         await client.exec(
             "DROP TRIGGER reject_gc_replacement ON image_assets; DROP FUNCTION reject_gc_replacement();",
@@ -399,12 +425,14 @@ test("failed replacement rolls back the GC queue along with assets", async () =>
 test("GC retains failed deletions for retry", async () => {
     const { id } = await photo();
     const saved = await uploadedPhoto(id);
-    await PhotoApi.update(db, uuid.parse(id), { assets: [] });
+    await PhotoApi.update(db, ApiValidation.uuid.parse(id), { assets: [] });
     // PostgreSQL stores microseconds; retry scheduling must not depend on Date equality.
     await db
         .update(schema.imageAssetGarbage)
         .set({ nextCheck: sql`'2026-01-01 00:00:00.123456+00'::timestamptz` })
-        .where(eq(schema.imageAssetGarbage.photoId, uuid.parse(id)))
+        .where(
+            eq(schema.imageAssetGarbage.photoId, ApiValidation.uuid.parse(id)),
+        )
         .execute();
     const key = `images/${id}/${saved.assets[0]!.assetLocation}`;
     const deletionError = new Error("Temporary S3 failure");
@@ -415,11 +443,11 @@ test("GC retains failed deletions for retry", async () => {
         await originalDelete(objectKey);
     };
     try {
-        await collectImageGarbage({
+        await new ImageGarbageCollector({
             db,
             getStorage: () => storage,
             reportError: (error) => gcErrors.push(error),
-        });
+        }).collect();
         expect(gcErrors).toEqual([deletionError]);
         expect(objects.has(key)).toBe(true);
         expect((await garbageFor(id))[0]!.nextCheck.getTime()).toBeGreaterThan(
@@ -439,7 +467,7 @@ test("GC retains failed deletions for retry", async () => {
 test("a failed GC transaction keeps the entry for an idempotent retry", async () => {
     const { id } = await photo();
     const saved = await uploadedPhoto(id);
-    await PhotoApi.update(db, uuid.parse(id), { assets: [] });
+    await PhotoApi.update(db, ApiValidation.uuid.parse(id), { assets: [] });
     await garbageDue(id);
     const key = `images/${id}/${saved.assets[0]!.assetLocation}`;
     const gcErrors: Error[] = [];
@@ -453,11 +481,11 @@ test("a failed GC transaction keeps the entry for an idempotent retry", async ()
       FOR EACH ROW EXECUTE FUNCTION reject_gc_acknowledgement();
   `);
     try {
-        await collectImageGarbage({
+        await new ImageGarbageCollector({
             db,
             getStorage: () => storage,
             reportError: (error) => gcErrors.push(error),
-        });
+        }).collect();
         expect(gcErrors).toHaveLength(1);
         expect(objects.has(key)).toBe(false);
         expect(await garbageFor(id)).toHaveLength(1);
@@ -473,18 +501,18 @@ test("a failed GC transaction keeps the entry for an idempotent retry", async ()
 
 test("GC reports unsupported asset locations and retains their records", async () => {
     const { id } = await photo();
-    await PhotoApi.update(db, uuid.parse(id), {
+    await PhotoApi.update(db, ApiValidation.uuid.parse(id), {
         assets: [{ width: 640, height: 320, assetLocation: "../outside.webp" }],
     });
-    await PhotoApi.update(db, uuid.parse(id), { assets: [] });
+    await PhotoApi.update(db, ApiValidation.uuid.parse(id), { assets: [] });
     await garbageDue(id);
     const gcErrors: Error[] = [];
     const before = [...objects.keys()];
-    await collectImageGarbage({
+    await new ImageGarbageCollector({
         db,
         getStorage: () => storage,
         reportError: (error) => gcErrors.push(error),
-    });
+    }).collect();
     expect(gcErrors).toHaveLength(1);
     expect(gcErrors[0]).toBeInstanceOf(InvalidAssetLocationError);
     expect([...objects.keys()]).toEqual(before);
@@ -503,7 +531,7 @@ test("invalid and oversized originals fail without changing photo assets", async
         new Uint8Array(),
         new TextEncoder().encode("broken"),
         truncated,
-        new Uint8Array(maxImageBytes + 1),
+        new Uint8Array(new ImageConfiguration().maxBytes + 1),
     ]) {
         const upload = await initiate(id);
         objects.set(upload.key, bytes);
@@ -585,7 +613,12 @@ test("database failure removes variants, retains the original, and schedules ano
         const [receipt] = await db
             .select()
             .from(schema.imageUploads)
-            .where(eq(schema.imageUploads.id, uuid.parse(upload.uploadId)))
+            .where(
+                eq(
+                    schema.imageUploads.id,
+                    ApiValidation.uuid.parse(upload.uploadId),
+                ),
+            )
             .execute();
         expect(receipt!.nextCheck.getTime()).toBeGreaterThan(Date.now());
     } finally {
@@ -609,7 +642,7 @@ test("a database failure during image preparation keeps its error type and is re
     );
     let receiptReads = 0;
     const retryDb = drizzle(client, {
-        schema,
+        schema: schema.definition,
         logger: {
             logQuery(query) {
                 if (
@@ -626,11 +659,11 @@ test("a database failure during image preparation keeps its error type and is re
     });
     const retryErrors: Error[] = [];
     const retryCheck = () =>
-        checkImageUploads({
+        new ImageUploadWorker({
             db: retryDb,
             getStorage: () => storage,
             reportError: (error) => retryErrors.push(error),
-        });
+        }).check();
     await due(upload.uploadId);
     await retryCheck();
     expect(receiptReads).toBe(4);
@@ -644,7 +677,12 @@ test("a database failure during image preparation keeps its error type and is re
     const [receipt] = await db
         .select()
         .from(schema.imageUploads)
-        .where(eq(schema.imageUploads.id, uuid.parse(upload.uploadId)))
+        .where(
+            eq(
+                schema.imageUploads.id,
+                ApiValidation.uuid.parse(upload.uploadId),
+            ),
+        )
         .execute();
     expect(receipt!.nextCheck.getTime()).toBeGreaterThan(Date.now());
 
@@ -665,14 +703,14 @@ test("a new worker resumes persisted jobs and expires abandoned uploads", async 
             created: new Date(Date.now() - 2 * 60 * 60 * 1000),
             nextCheck: new Date(0),
         })
-        .where(eq(schema.imageUploads.photoId, uuid.parse(id)))
+        .where(eq(schema.imageUploads.photoId, ApiValidation.uuid.parse(id)))
         .execute();
     // Recreate the worker's storage dependency, as happens after a process restart.
-    await checkImageUploads({
+    await new ImageUploadWorker({
         db,
         getStorage: () => new ImageStorage(new S3Storage(s3)),
         reportError,
-    });
+    }).check();
     expect((await status(arrived)).status).toBe("completed");
     expect(await status(abandoned)).toMatchObject({
         status: "failed",
@@ -812,7 +850,12 @@ test("explicit cancellation is idempotent and invalid or cross-upload tokens can
     const [receipt] = await db
         .select()
         .from(schema.imageUploads)
-        .where(eq(schema.imageUploads.id, uuid.parse(upload.uploadId)))
+        .where(
+            eq(
+                schema.imageUploads.id,
+                ApiValidation.uuid.parse(upload.uploadId),
+            ),
+        )
         .execute();
     expect(receipt!.tokenHash).not.toBe(upload.token);
     for (const token of ["0".repeat(64), another.token]) {

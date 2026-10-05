@@ -3,17 +3,17 @@ import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
-import * as schema from "../db/schema";
+import { DatabaseSchema as schema } from "../db/schema";
 import { S3Storage } from "../services/s3-storage";
-import { readConfig } from "./config";
-import { startApplication } from "./runtime";
+import { ApplicationConfig } from "./config";
+import { ApplicationRuntime } from "./runtime";
 
 const databaseUrl = "postgres://localhost/cms_test";
 
 test("runtime serves requests on an allocated port, shares lazy storage, and closes once", async () => {
     const client = new PGlite();
-    const db = drizzle(client, { schema });
-    let runtime: Awaited<ReturnType<typeof startApplication>> | undefined;
+    const db = drizzle(client, { schema: schema.definition });
+    let runtime: ApplicationRuntime | undefined;
     let storageInitializations = 0;
     let closes = 0;
     const errors: Error[] = [];
@@ -23,8 +23,8 @@ test("runtime serves requests on an allocated port, shares lazy storage, and clo
                 new URL("../../migrations/", import.meta.url),
             ),
         });
-        runtime = await startApplication(
-            readConfig({ DATABASE_URL: databaseUrl, PORT: "0" }),
+        runtime = await new ApplicationRuntime(
+            ApplicationConfig.fromEnv({ DATABASE_URL: databaseUrl, PORT: "0" }),
             {
                 connect: async (url) => {
                     expect(url).toBe(databaseUrl);
@@ -49,7 +49,7 @@ test("runtime serves requests on an allocated port, shares lazy storage, and clo
                 },
                 reportError: (error) => errors.push(error),
             },
-        );
+        ).start();
         expect(Number(runtime.url.port)).toBeGreaterThan(0);
         expect(storageInitializations).toBe(0);
         const created = await fetch(new URL("/images", runtime.url), {
@@ -96,12 +96,12 @@ test("runtime closes its database when the HTTP listener cannot start", async ()
         fetch: () => new Response("occupied"),
     });
     const client = new PGlite();
-    const db = drizzle(client, { schema });
+    const db = drizzle(client, { schema: schema.definition });
     let closes = 0;
     try {
         await expect(
-            startApplication(
-                { databaseUrl, port: occupied.port! },
+            new ApplicationRuntime(
+                new ApplicationConfig({ databaseUrl, port: occupied.port! }),
                 {
                     connect: async () => ({
                         db,
@@ -114,11 +114,51 @@ test("runtime closes its database when the HTTP listener cannot start", async ()
                         throw new Error("Startup must not initialize storage");
                     },
                 },
-            ),
+            ).start(),
         ).rejects.toMatchObject({ code: "EADDRINUSE" });
         expect(closes).toBe(1);
     } finally {
         await occupied.stop(true);
         if (!closes) await client.close();
+    }
+}, 30_000);
+
+test("stopping during startup waits for the connection and closes resources once", async () => {
+    const client = new PGlite();
+    const db = drizzle(client, { schema: schema.definition });
+    const connecting = Promise.withResolvers<void>();
+    let closes = 0;
+    const runtime = new ApplicationRuntime(
+        new ApplicationConfig({ databaseUrl, port: 0 }),
+        {
+            connect: async () => {
+                await connecting.promise;
+                return {
+                    db,
+                    close: async () => {
+                        closes++;
+                        await client.close();
+                    },
+                };
+            },
+        },
+    );
+    try {
+        const starting = runtime.start();
+        expect(runtime.start()).toBe(starting);
+        const stopping = runtime.stop();
+        expect(runtime.stop()).toBe(stopping);
+        expect(closes).toBe(0);
+        connecting.resolve();
+        await starting;
+        await stopping;
+        expect(closes).toBe(1);
+        await expect(fetch(runtime.url)).rejects.toThrow();
+        await expect(runtime.start()).rejects.toThrow(
+            "Application has stopped",
+        );
+    } finally {
+        connecting.resolve();
+        await runtime.stop();
     }
 }, 30_000);

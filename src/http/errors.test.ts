@@ -3,12 +3,14 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { ConflictError } from "../lib/errors";
-import { errorHandler } from "./errors";
+import { HttpErrorHandler } from "./errors";
 
 function failingApp(error: Error) {
     const reported: Error[] = [];
     const app = new Hono();
-    app.onError(errorHandler((failure) => reported.push(failure)));
+    app.onError(
+        new HttpErrorHandler((failure) => reported.push(failure)).handle,
+    );
     app.get("/", () => {
         throw error;
     });

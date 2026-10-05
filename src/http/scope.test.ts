@@ -2,11 +2,11 @@ import { expect, test } from "bun:test";
 import { Hono } from "hono";
 import { drizzle } from "drizzle-orm/bun-sql";
 import { Scope } from "../api/scope";
-import * as schema from "../db/schema";
-import { scopeWrapper } from "./scope";
+import { DatabaseSchema as schema } from "../db/schema";
+import { ScopeMiddleware } from "./scope";
 
-const db = drizzle.mock({ schema });
-const withScope = scopeWrapper(db);
+const db = drizzle.mock({ schema: schema.definition });
+const withScope = new ScopeMiddleware(db).wrap;
 
 test("read scopes receive a database object with no write methods", async () => {
     const app = new Hono();

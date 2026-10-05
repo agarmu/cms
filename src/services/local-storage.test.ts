@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
 import type { BlobStorage } from "./blob-storage";
-import { ImageStorage, MissingOriginalError } from "./image-storage";
+import {
+    ImageStorage,
+    ImageTooLargeError,
+    MissingOriginalError,
+} from "./image-storage";
+import { ImageConfiguration } from "./image-config";
 import { LocalStorage } from "./local-storage";
 
 let directory: string;
@@ -92,4 +97,53 @@ test("local blob keys cannot escape the storage directory", async () => {
             "within the storage directory",
         );
     }
+});
+
+test("image storage instances use independent limits and output variants", async () => {
+    const photoId = crypto.randomUUID();
+    const uploadId = crypto.randomUUID();
+    const original = await sharp({
+        create: { width: 640, height: 320, channels: 3, background: "blue" },
+    })
+        .png()
+        .toBuffer();
+    await storage.write(
+        `originals/${photoId}/${uploadId}`,
+        original,
+        "image/png",
+    );
+    const limited = new ImageStorage(
+        storage,
+        new ImageConfiguration({ maxBytes: original.length - 1 }),
+    );
+    await expect(
+        limited.processUpload(photoId, uploadId),
+    ).rejects.toBeInstanceOf(ImageTooLargeError);
+
+    const custom = new ImageStorage(
+        storage,
+        new ImageConfiguration({
+            variants: [{ name: "preview", minSide: 80 }],
+        }),
+    );
+    const processed = await custom.processUpload(photoId, uploadId);
+    expect(processed.assets).toHaveLength(1);
+    expect(processed.assets[0]).toMatchObject({ width: 160, height: 80 });
+    expect(processed.assets[0]!.assetLocation).toEndWith("-preview.webp");
+    const download = await custom.read(
+        photoId,
+        processed.assets[0]!.assetLocation,
+    );
+    if (!download || !("file" in download))
+        throw new Error("Expected a local image");
+    expect(
+        await sharp(await download.file.arrayBuffer()).metadata(),
+    ).toMatchObject({ width: 160, height: 80 });
+
+    const defaults = await new ImageStorage(storage).processUpload(
+        photoId,
+        uploadId,
+    );
+    expect(defaults.assets[0]).toMatchObject({ width: 640, height: 320 });
+    expect(defaults.assets[0]!.assetLocation).toEndWith("-thumbnail.webp");
 });

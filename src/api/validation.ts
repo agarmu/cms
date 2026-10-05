@@ -1,32 +1,46 @@
 import type { UUID } from "node:crypto";
 import { z } from "zod";
-export const uuid = z.uuid().transform((value) => value as UUID);
-const positiveInteger = z.int().positive().max(2_147_483_647);
-export const assetId = positiveInteger;
-export const equipment = z.strictObject({ name: z.string().trim().min(1) });
-export const image = z.strictObject({
-    taken: z.date(),
-    posted: z.date(),
-    alt: z.string(),
-    description: z.string(),
-    enabled: z.boolean(),
-    cameraId: uuid.nullable().optional(),
-    lensId: uuid.nullable().optional(),
-});
-export const imageAsset = z.strictObject({
-    photoId: uuid,
-    width: positiveInteger,
-    height: positiveInteger,
-    assetLocation: z.string().min(1),
-});
 
-export const pagination = z.strictObject({
-    limit: z.int().min(1).max(100),
-    offset: z.int().min(0).max(2_147_483_647),
-});
-function hasChanges(value: object) {
-    return Object.values(value).some((field) => field !== undefined);
+export class ApiValidation {
+    static readonly uuid = z.uuid().transform((value) => value as UUID);
+    private static readonly positiveInteger = z
+        .int()
+        .positive()
+        .max(2_147_483_647);
+    static readonly assetId = ApiValidation.positiveInteger;
+    static readonly equipment = z.strictObject({
+        name: z.string().trim().min(1),
+    });
+    static readonly image = z.strictObject({
+        taken: z.date(),
+        posted: z.date(),
+        alt: z.string(),
+        description: z.string(),
+        enabled: z.boolean(),
+        cameraId: ApiValidation.uuid.nullable().optional(),
+        lensId: ApiValidation.uuid.nullable().optional(),
+    });
+    static readonly imageAsset = z.strictObject({
+        photoId: ApiValidation.uuid,
+        width: ApiValidation.positiveInteger,
+        height: ApiValidation.positiveInteger,
+        assetLocation: z.string().min(1),
+    });
+
+    static readonly pagination = z.strictObject({
+        limit: z.int().min(1).max(100),
+        offset: z.int().min(0).max(2_147_483_647),
+    });
+    private static hasChanges(value: object) {
+        return Object.values(value).some((field) => field !== undefined);
+    }
+    static readonly equipmentChanges = ApiValidation.equipment
+        .partial()
+        .refine(ApiValidation.hasChanges);
+    static readonly imageChanges = ApiValidation.image
+        .partial()
+        .refine(ApiValidation.hasChanges);
+    static readonly imageAssetChanges = ApiValidation.imageAsset
+        .partial()
+        .refine(ApiValidation.hasChanges);
 }
-export const equipmentChanges = equipment.partial().refine(hasChanges);
-export const imageChanges = image.partial().refine(hasChanges);
-export const imageAssetChanges = imageAsset.partial().refine(hasChanges);

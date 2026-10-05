@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { getScope } from "./call";
+import { ApiScope } from "./call";
 import { CameraApi } from "./resources/cameras";
 import { LensApi } from "./resources/lenses";
 import { ImageApi } from "./resources/images";
@@ -14,21 +14,23 @@ test.each([
 ] as const)(
     "resource decorators declare the correct scopes (%#)",
     (api, read, write) => {
-        expect(getScope(api.list, "read")).toBe(read);
-        expect(getScope(api.read, "read")).toBe(read);
-        expect(getScope(api.create, "write")).toBe(write);
-        expect(getScope(api.update, "write")).toBe(write);
-        expect(getScope(api.remove, "write")).toBe(write);
+        expect(ApiScope.getScope(api.list, "read")).toBe(read);
+        expect(ApiScope.getScope(api.read, "read")).toBe(read);
+        expect(ApiScope.getScope(api.create, "write")).toBe(write);
+        expect(ApiScope.getScope(api.update, "write")).toBe(write);
+        expect(ApiScope.getScope(api.remove, "write")).toBe(write);
     },
 );
 
 test("rejects routes with missing or mismatched scope decorators", () => {
     function undecorated() {}
-    expect(() => getScope(undecorated, "read")).toThrow("missing @scoped");
-    expect(() => getScope(CameraApi.create, "read")).toThrow(
+    expect(() => ApiScope.getScope(undecorated, "read")).toThrow(
+        "missing @scoped",
+    );
+    expect(() => ApiScope.getScope(CameraApi.create, "read")).toThrow(
         "requires a read scope",
     );
-    expect(() => getScope(CameraApi.list, "write")).toThrow(
+    expect(() => ApiScope.getScope(CameraApi.list, "write")).toThrow(
         "requires a write scope",
     );
 });

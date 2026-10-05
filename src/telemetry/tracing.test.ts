@@ -1,3 +1,5 @@
+import { StorageConfiguration } from "../services/storage-config";
+import { WorkerConfiguration } from "../services/worker-config";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -18,34 +20,35 @@ import { z } from "zod";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
-import * as schema from "../db/schema";
-import { createApplication } from "../application";
-import { readConfig } from "../application/config";
-import { startApplication } from "../application/runtime";
-import { createBlobStorage } from "../application/storage";
+import { DatabaseSchema as schema } from "../db/schema";
+import { Application } from "../application";
+import { ApplicationConfig } from "../application/config";
+import { ApplicationRuntime } from "../application/runtime";
+import { StorageFactory } from "../application/storage";
 import { PhotoApi } from "../api/photos";
 import { ImageUploadApi } from "../api/image-uploads";
 import { ImageStorage } from "../services/image-storage";
 import { LocalStorage } from "../services/local-storage";
 import { S3Storage } from "../services/s3-storage";
 import type { S3Client } from "../services/s3-storage";
-import { startBackgroundWorker } from "../services/background-worker";
-import { checkImageUploads } from "../services/image-upload-worker";
-import { collectImageGarbage } from "../services/image-garbage-collector";
-import { startTelemetry } from "./setup";
-import { tracedStream, withSpan } from "./tracing";
+import { BackgroundWorker } from "../services/background-worker";
+import { ImageUploadWorker } from "../services/image-upload-worker";
+import { ImageGarbageCollector } from "../services/image-garbage-collector";
+import { Telemetry } from "./setup";
+import { Tracing } from "./tracing";
 
 const exporter = new InMemorySpanExporter();
+const telemetry = new Telemetry();
 const client = new PGlite();
-const db = drizzle(client, { schema });
-const { http: app } = createApplication({
+const db = drizzle(client, { schema: schema.definition });
+const { http: app } = new Application({
     db,
     getBlobStorage: () => {
         throw new Error("Metadata requests must not initialize blob storage");
     },
     reportError: () => {},
 });
-let provider: NonNullable<ReturnType<typeof startTelemetry>>;
+let provider: NonNullable<ReturnType<Telemetry["start"]>>;
 const metadata = {
     taken: "2026-10-02T12:00:00.000Z",
     posted: "2026-10-02T13:00:00.000Z",
@@ -55,7 +58,7 @@ const metadata = {
 };
 
 beforeAll(async () => {
-    provider = startTelemetry(exporter)!;
+    provider = telemetry.start(exporter)!;
     await migrate(db, {
         migrationsFolder: fileURLToPath(
             new URL("../../migrations/", import.meta.url),
@@ -64,7 +67,7 @@ beforeAll(async () => {
 }, 30_000);
 afterAll(async () => {
     await client.close();
-    await provider.shutdown();
+    await telemetry.stop();
     trace.disable();
     context.disable();
     propagation.disable();
@@ -150,11 +153,11 @@ test("handled API errors still mark and finish the HTTP and child spans", async 
 
 test("parallel asynchronous operations keep separate active child spans", async () => {
     let traceId = "";
-    await withSpan("parallel.parent", async () => {
+    await Tracing.withSpan("parallel.parent", async () => {
         traceId = trace.getActiveSpan()!.spanContext().traceId;
         await Promise.all(
             ["first", "second"].map((name) =>
-                withSpan(name, async () => {
+                Tracing.withSpan(name, async () => {
                     const spanId = trace.getActiveSpan()!.spanContext().spanId;
                     await Bun.sleep(5);
                     expect(trace.getActiveSpan()!.spanContext().spanId).toBe(
@@ -228,7 +231,7 @@ test("upload processing and GC retain nested storage spans and handled retry fai
         .toBuffer();
     let traceId = "";
     let token = "";
-    await withSpan("test.image.pipeline", async () => {
+    await Tracing.withSpan("test.image.pipeline", async () => {
         traceId = trace.getActiveSpan()!.spanContext().traceId;
         const photo = await PhotoApi.create(db, {
             ...metadata,
@@ -247,7 +250,7 @@ test("upload processing and GC retain nested storage spans and handled retry fai
             .update(schema.imageUploads)
             .set({ nextCheck: new Date(0) })
             .where(eq(schema.imageUploads.photoId, photo.id));
-        await checkImageUploads(options);
+        await new ImageUploadWorker(options).check();
         const saved = await PhotoApi.read(db, photo.id);
         expect(saved.assets).toHaveLength(1);
         await storage.read(photo.id, saved.assets[0]!.assetLocation);
@@ -258,10 +261,10 @@ test("upload processing and GC retain nested storage spans and handled retry fai
                 .set({ nextCheck: new Date(0) })
                 .where(eq(schema.imageAssetGarbage.photoId, photo.id));
         await due();
-        await collectImageGarbage(options);
+        await new ImageGarbageCollector(options).collect();
         failDeletion = false;
         await due();
-        await collectImageGarbage(options);
+        await new ImageGarbageCollector(options).collect();
     });
     expect(errors).toEqual([failure]);
     const spans = await spansFor(traceId);
@@ -322,9 +325,11 @@ test("local image transfers, conversion, and cleanup are traced", async () => {
     const directory = await mkdtemp(join(tmpdir(), "cms-traces-"));
     let traceId = "";
     try {
-        await withSpan("test.local.pipeline", async () => {
+        await Tracing.withSpan("test.local.pipeline", async () => {
             traceId = trace.getActiveSpan()!.spanContext().traceId;
-            const blobs = createBlobStorage({ IMAGE_STORAGE_DIR: directory });
+            const blobs = new StorageFactory(
+                new StorageConfiguration({ backend: "local", directory }),
+            ).create();
             expect(blobs).toBeInstanceOf(LocalStorage);
             const storage = new ImageStorage(blobs);
             const photoId = crypto.randomUUID();
@@ -383,9 +388,9 @@ test("stream spans finish on read failure and cancellation of a pending read", a
     const failure = new Error("Stream read failed");
     let traceId = "";
     let cancelled = false;
-    await withSpan("test.streams", async () => {
+    await Tracing.withSpan("test.streams", async () => {
         traceId = trace.getActiveSpan()!.spanContext().traceId;
-        const broken = tracedStream(
+        const broken = Tracing.tracedStream(
             "test.stream.failed",
             () =>
                 new ReadableStream({
@@ -395,7 +400,7 @@ test("stream spans finish on read failure and cancellation of a pending read", a
                 }),
         );
         await expect(new Response(broken).arrayBuffer()).rejects.toBe(failure);
-        const waiting = tracedStream(
+        const waiting = Tracing.tracedStream(
             "test.stream.cancelled",
             () =>
                 new ReadableStream({
@@ -431,27 +436,29 @@ test("worker cycles use independent root traces and record handled task failures
     const cycleIds: string[] = [];
     const failure = new Error("Task failed");
     let startupId = "";
-    const stop = await withSpan("test.worker.startup", async () => {
+    const worker = await Tracing.withSpan("test.worker.startup", async () => {
         startupId = trace.getActiveSpan()!.spanContext().traceId;
-        return startBackgroundWorker({
-            intervalMs: 1,
-            tasks: [
-                () =>
-                    withSpan("test.worker.task", async () => {
-                        cycleIds.push(
-                            trace.getActiveSpan()!.spanContext().traceId,
-                        );
-                        if (cycleIds.length === 2) secondCycle.resolve();
-                        throw failure;
-                    }),
-            ],
-            reportError: (error) => errors.push(error),
-        });
+        return new BackgroundWorker(
+            {
+                tasks: [
+                    () =>
+                        Tracing.withSpan("test.worker.task", async () => {
+                            cycleIds.push(
+                                trace.getActiveSpan()!.spanContext().traceId,
+                            );
+                            if (cycleIds.length === 2) secondCycle.resolve();
+                            throw failure;
+                        }),
+                ],
+                reportError: (error) => errors.push(error),
+            },
+            new WorkerConfiguration({ intervalMs: 1 }),
+        ).start();
     });
     try {
         await secondCycle.promise;
     } finally {
-        await stop();
+        await worker.stop();
     }
     expect(errors).toEqual([failure, failure]);
     expect(new Set([startupId, ...cycleIds]).size).toBe(3);
@@ -467,19 +474,21 @@ test("worker cycles use independent root traces and record handled task failures
 
 test("application configuration, assembly, startup, and shutdown emit spans", async () => {
     let traceId = "";
-    await withSpan("test.lifecycle", async () => {
+    await Tracing.withSpan("test.lifecycle", async () => {
         traceId = trace.getActiveSpan()!.spanContext().traceId;
-        expect(() => createBlobStorage({})).toThrow("S3_BUCKET and AWS_REGION");
-        const config = readConfig({
+        expect(() => new StorageFactory().create()).toThrow(
+            "S3_BUCKET and AWS_REGION",
+        );
+        const config = ApplicationConfig.fromEnv({
             DATABASE_URL: "postgres://localhost/test",
             PORT: "0",
         });
-        const application = await startApplication(config, {
+        const application = await new ApplicationRuntime(config, {
             connect: async () => ({ db, close: async () => {} }),
             getBlobStorage: () => {
                 throw new Error("Storage should remain lazy");
             },
-        });
+        }).start();
         await application.stop();
     });
     const spans = await spansFor(traceId);
