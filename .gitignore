@@ -7,3 +7,5 @@
 *.sqlite-shm
 *.sqlite-wal
 .env
+/secrets.toml
+/config.toml

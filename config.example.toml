@@ -1,0 +1,74 @@
+# Example config
+
+port = 3000
+
+[database]
+# Public connection details; keep the password in secrets.toml.
+url = "postgres://example-user@localhost:5432/photos_cms"
+connectTimeout = 10_000 # Milliseconds.
+
+[database.pool]
+maxConnections = 10
+idleTimeout = 30_000 # Milliseconds.
+
+[database.tls]
+mode = "disable" # Local development; use "verify-full" for hosted Postgres.
+
+[storage]
+backend = "s3"
+# Required for S3; includes the bucket host (virtualHostedStyle)
+endpoint = "https://example-photo-bucket.s3.us-east-1.amazonaws.com"
+# For local storage, replace the settings above with:
+# backend = "local"
+# directory = "./data/blobs"
+# Local storage supports reads and writes, but does not issue direct-upload URLs.
+
+[images]
+maxBytes = 26_214_400 # 25 MiB.
+maxPixels = 60_000_000
+quality = 82 # WebP quality, from 1 to 100.
+
+# Variants are generated only when the original's shorter side is large enough.
+[[images.variants]]
+name = "large"
+minSide = 1920
+
+[[images.variants]]
+name = "medium"
+minSide = 960
+
+[[images.variants]]
+name = "thumbnail"
+minSide = 320
+
+[workers]
+# All worker durations are in milliseconds.
+interval = 5_000
+batchSize = 10
+
+[workers.backoff]
+maxRetries = 5 # Retries after the initial attempt.
+multiplier = 2 # Multiply the delay by this factor after each failed retry.
+
+[workers.upload]
+waitTime = 3_600_000 # One hour before an abandoned upload fails.
+retryTime = 10_000 # Initial retry delay; exponential backoff starts here.
+
+[http]
+maxBodyBytes = 65_536 # 64 KiB for API requests; image uploads go directly to storage.
+
+[telemetry]
+enabled = true
+serviceName = "photos-cms"
+
+[telemetry.traces]
+enabled = true
+endpoint = "https://collector.example.com/v1/traces"
+
+[telemetry.metrics]
+enabled = true
+endpoint = "https://collector.example.com/v1/metrics"
+
+[telemetry.logs]
+enabled = true
+endpoint = "https://collector.example.com/v1/logs"
