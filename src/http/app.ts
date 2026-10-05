@@ -9,20 +9,17 @@ import { equipmentRoutes } from "./equipment";
 import { errorHandler } from "./errors";
 import { scopeWrapper } from "./scope";
 import { imageUploadRoutes } from "./image-upload";
-import { ImageStorage } from "../services/image-storage";
+import type { ImageStorage } from "../services/image-storage";
 
 export function createApp(options: {
     db: Database;
     reportError: (error: Error) => void;
-    imageStorage?: ImageStorage;
-    getImageStorage?: () => ImageStorage;
+    getImageStorage: () => ImageStorage;
 }) {
     const app = new Hono();
     const withScope = scopeWrapper(options.db);
     app.use("*", httpInstrumentationMiddleware());
-    let storage = options.imageStorage;
-    const getStorage =
-        options.getImageStorage ?? (() => (storage ??= ImageStorage.fromEnv()));
+    const getStorage = options.getImageStorage;
 
     app.use("*", bodyLimit({ maxSize: 64 * 1024 }));
     app.route("/images", imageUploadRoutes(withScope, getStorage));

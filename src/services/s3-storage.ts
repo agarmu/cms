@@ -12,23 +12,6 @@ export type S3Client = Pick<Bun.S3Client, "presign" | "write" | "delete"> & {
 export class S3Storage implements BlobStorage {
     constructor(private readonly client: S3Client) {}
 
-    static fromEnv() {
-        const bucket = process.env["S3_BUCKET"];
-        const region = process.env["AWS_REGION"];
-        if (!bucket || !region)
-            throw new Error(
-                "S3_BUCKET and AWS_REGION are required for S3 storage",
-            );
-        const endpoint = process.env["S3_ENDPOINT"];
-        return new S3Storage(
-            new Bun.S3Client({
-                bucket,
-                region,
-                ...(endpoint ? { endpoint } : {}),
-            }),
-        );
-    }
-
     async createUpload(
         key: string,
         contentType: string,

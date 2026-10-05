@@ -2,8 +2,6 @@ import { randomUUID } from "node:crypto";
 import sharp from "sharp";
 import { ConflictError, NotFoundError } from "../lib/errors";
 import type { BlobStorage } from "./blob-storage";
-import { LocalStorage } from "./local-storage";
-import { S3Storage } from "./s3-storage";
 
 const variants = [
     { name: "large", minSide: 1920 },
@@ -56,15 +54,6 @@ export function imageAssetUrl(photoId: string, filename: string) {
 
 export class ImageStorage {
     constructor(private readonly storage: BlobStorage) {}
-
-    static fromEnv() {
-        const localDirectory = process.env["IMAGE_STORAGE_DIR"];
-        return new ImageStorage(
-            localDirectory
-                ? new LocalStorage(localDirectory)
-                : S3Storage.fromEnv(),
-        );
-    }
 
     async createUpload(photoId: string, uploadId: string, contentType: string) {
         if (!this.storage.createUpload)

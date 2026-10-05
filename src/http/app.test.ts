@@ -5,14 +5,17 @@ import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { z } from "zod";
 import * as schema from "../db/schema";
-import { createApp } from "./app";
+import { createApplication } from "../application";
 import { uuid, assetId } from "../api/validation";
 
 const client = new PGlite();
 const db = drizzle(client, { schema });
 const reportedErrors: Error[] = [];
-const app = createApp({
+const { http: app } = createApplication({
     db,
+    getBlobStorage: () => {
+        throw new Error("Metadata requests must not initialize blob storage");
+    },
     reportError: (error) => reportedErrors.push(error),
 });
 beforeAll(

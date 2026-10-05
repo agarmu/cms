@@ -58,7 +58,7 @@ const s3: S3Client = {
 const errors: Error[] = [];
 const storage = new ImageStorage(new S3Storage(s3));
 const reportError = (error: Error) => errors.push(error);
-const app = createApp({ db, imageStorage: storage, reportError });
+const app = createApp({ db, getImageStorage: () => storage, reportError });
 const check = () =>
     checkImageUploads({ db, getStorage: () => storage, reportError });
 beforeAll(

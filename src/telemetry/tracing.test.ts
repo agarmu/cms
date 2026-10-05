@@ -14,14 +14,20 @@ import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import * as schema from "../db/schema";
-import { createApp } from "../http/app";
+import { createApplication } from "../application";
 import { startTelemetry } from "./setup";
 import { withSpan } from "./tracing";
 
 const exporter = new InMemorySpanExporter();
 const client = new PGlite();
 const db = drizzle(client, { schema });
-const app = createApp({ db, reportError: () => {} });
+const { http: app } = createApplication({
+    db,
+    getBlobStorage: () => {
+        throw new Error("Metadata requests must not initialize blob storage");
+    },
+    reportError: () => {},
+});
 let provider: NonNullable<ReturnType<typeof startTelemetry>>;
 const metadata = {
     taken: "2026-10-02T12:00:00.000Z",
