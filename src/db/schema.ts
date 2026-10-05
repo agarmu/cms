@@ -79,6 +79,7 @@ export class DatabaseSchema {
                 mode: "date",
             }),
             failed: pg.text("failed"),
+            retryCount: pg.integer("retry_count").notNull().default(0),
             nextCheck: pg
                 .timestamp("next_check", { withTimezone: true, mode: "date" })
                 .notNull()
@@ -101,6 +102,8 @@ export class DatabaseSchema {
         {
             photoId: pg.uuid("photo_id").$type<UUID>().notNull(),
             assetLocation: pg.text("asset_location").notNull(),
+            retryCount: pg.integer("retry_count").notNull().default(0),
+            failed: pg.text("failed"),
             nextCheck: pg
                 .timestamp("next_check", { withTimezone: true, mode: "date" })
                 .notNull()

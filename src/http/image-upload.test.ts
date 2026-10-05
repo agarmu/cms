@@ -1,4 +1,5 @@
 import { ImageConfiguration } from "../services/image-config";
+import { WorkerConfiguration } from "../services/worker-config";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 import { eq, sql } from "drizzle-orm";
@@ -372,10 +373,21 @@ test("GC keeps assets that were reattached and their next removal restarts the g
     expect(await garbageFor(id)).toHaveLength(1);
     await garbageDue(id);
     // Remove again before GC runs: even an existing queue entry gets a new grace period.
+    await db
+        .update(schema.imageAssetGarbage)
+        .set({ retryCount: 5, failed: "Exhausted" })
+        .where(
+            eq(schema.imageAssetGarbage.photoId, ApiValidation.uuid.parse(id)),
+        )
+        .execute();
     await PhotoApi.update(db, ApiValidation.uuid.parse(id), {
         assets: saved.assets.map(assetInput),
     });
     await PhotoApi.update(db, ApiValidation.uuid.parse(id), { assets: [] });
+    expect((await garbageFor(id))[0]).toMatchObject({
+        retryCount: 0,
+        failed: null,
+    });
     expect((await garbageFor(id))[0]!.nextCheck.getTime()).toBeGreaterThan(
         Date.now() + 59 * 60 * 1000,
     );
@@ -918,4 +930,153 @@ test("cancelling an active worker discards generated files and preserves the cur
         JSON.parse(JSON.stringify(saved)),
     );
     expect((await status(upload)).status).toBe("cancelled");
+});
+
+test("upload retries persist exponential delays and stop at the configured limit", async () => {
+    const { id } = await photo();
+    const upload = await initiate(id);
+    const config = new WorkerConfiguration({
+        maxRetries: 2,
+        uploadRetryMs: 10_000,
+    });
+    const failures: Error[] = [];
+    let attempts = 0;
+    const failingStorage = new ImageStorage(
+        new S3Storage({
+            ...s3,
+            file: () => {
+                attempts++;
+                throw new Error("Temporary storage failure");
+            },
+        }),
+    );
+    for (const [attempt, delay] of [10_000, 20_000, undefined].entries()) {
+        await due(upload.uploadId);
+        const before = Date.now();
+        // New instances must resume the persisted retry count.
+        await new ImageUploadWorker(
+            {
+                db,
+                getStorage: () => failingStorage,
+                reportError: (error) => failures.push(error),
+            },
+            config,
+        ).check();
+        const [row] = await db
+            .select()
+            .from(schema.imageUploads)
+            .where(
+                eq(
+                    schema.imageUploads.id,
+                    ApiValidation.uuid.parse(upload.uploadId),
+                ),
+            );
+        expect(row!.retryCount).toBe(Math.min(attempt + 1, 2));
+        if (delay !== undefined) {
+            expect(row!.failed).toBeNull();
+            expect(row!.nextCheck.getTime()).toBeGreaterThanOrEqual(
+                before + delay,
+            );
+            expect(row!.nextCheck.getTime()).toBeLessThanOrEqual(
+                Date.now() + delay,
+            );
+        } else expect(row!.failed).toContain("retry limit");
+    }
+    await due(upload.uploadId);
+    await new ImageUploadWorker(
+        {
+            db,
+            getStorage: () => failingStorage,
+            reportError: (error) => failures.push(error),
+        },
+        config,
+    ).check();
+    expect(attempts).toBe(3);
+    expect(failures).toHaveLength(3);
+    expect((await status(upload)).status).toBe("failed");
+});
+
+test("waiting for an original does not consume the processing retry budget", async () => {
+    const { id } = await photo();
+    const upload = await initiate(id);
+    for (let attempt = 0; attempt < 3; attempt++) {
+        await due(upload.uploadId);
+        await new ImageUploadWorker(
+            { db, getStorage: () => storage, reportError },
+            new WorkerConfiguration({ maxRetries: 0 }),
+        ).check();
+    }
+    const [row] = await db
+        .select()
+        .from(schema.imageUploads)
+        .where(
+            eq(
+                schema.imageUploads.id,
+                ApiValidation.uuid.parse(upload.uploadId),
+            ),
+        );
+    expect(row).toMatchObject({ retryCount: 0, failed: null });
+    objects.set(upload.key, png);
+    await due(upload.uploadId);
+    await check();
+    expect((await status(upload)).status).toBe("completed");
+});
+
+test("GC persists increasing delays and excludes exhausted jobs", async () => {
+    const { id } = await photo();
+    const location = "original.webp";
+    await db.insert(schema.imageAssetGarbage).values({
+        photoId: ApiValidation.uuid.parse(id),
+        assetLocation: location,
+        nextCheck: new Date(0),
+    });
+    const config = new WorkerConfiguration({
+        maxRetries: 2,
+        uploadRetryMs: 10_000,
+    });
+    const failures: Error[] = [];
+    let attempts = 0;
+    const failingStorage = new ImageStorage(
+        new S3Storage({
+            ...s3,
+            delete: async () => {
+                attempts++;
+                throw new Error("Storage unavailable");
+            },
+        }),
+    );
+    for (const [attempt, delay] of [10_000, 20_000, undefined].entries()) {
+        await garbageDue(id);
+        const before = Date.now();
+        await new ImageGarbageCollector(
+            {
+                db,
+                getStorage: () => failingStorage,
+                reportError: (error) => failures.push(error),
+            },
+            config,
+        ).collect();
+        const [row] = await garbageFor(id);
+        expect(row!.retryCount).toBe(Math.min(attempt + 1, 2));
+        if (delay !== undefined) {
+            expect(row!.failed).toBeNull();
+            expect(row!.nextCheck.getTime()).toBeGreaterThanOrEqual(
+                before + delay,
+            );
+            expect(row!.nextCheck.getTime()).toBeLessThanOrEqual(
+                Date.now() + delay,
+            );
+        } else expect(row!.failed).toContain("retry limit");
+    }
+    await garbageDue(id);
+    await new ImageGarbageCollector(
+        {
+            db,
+            getStorage: () => failingStorage,
+            reportError: (error) => failures.push(error),
+        },
+        config,
+    ).collect();
+    expect(attempts).toBe(3);
+    expect(failures).toHaveLength(3);
 });

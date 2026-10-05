@@ -68,6 +68,7 @@ export class ImageUploadWorker {
                             }
                             let failed: string | undefined;
                             let delayMs = this.config.uploadRetryMs;
+                            let retryCount = upload.retryCount;
                             if (
                                 error instanceof InvalidImageError ||
                                 error instanceof ImageTooLargeError
@@ -89,7 +90,15 @@ export class ImageUploadWorker {
                                         ? error
                                         : new Error(String(error)),
                                 );
-                                delayMs = this.config.failureRetryMs;
+                                const retryDelay =
+                                    this.config.retryDelay(retryCount);
+                                if (retryDelay === undefined)
+                                    failed =
+                                        "Upload processing exhausted its retry limit";
+                                else {
+                                    delayMs = retryDelay;
+                                    retryCount++;
+                                }
                             }
                             if (failed || !(error instanceof NotFoundError))
                                 Tracing.recordSpanError(error);
@@ -102,6 +111,7 @@ export class ImageUploadWorker {
                                 .update(DatabaseSchema.imageUploads)
                                 .set({
                                     ...(failed ? { failed } : {}),
+                                    retryCount,
                                     nextCheck: new Date(Date.now() + delayMs),
                                 })
                                 .where(
@@ -109,6 +119,11 @@ export class ImageUploadWorker {
                                         eq(
                                             DatabaseSchema.imageUploads.id,
                                             upload.id,
+                                        ),
+                                        eq(
+                                            DatabaseSchema.imageUploads
+                                                .retryCount,
+                                            upload.retryCount,
                                         ),
                                         this.pending,
                                     ),

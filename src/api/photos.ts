@@ -85,7 +85,11 @@ export class PhotoApi {
                                 DatabaseSchema.imageAssetGarbage.assetLocation,
                             ],
                             // Reattachment and removal restart the grace period for signed URLs.
-                            set: { nextCheck: sql`now() + interval '1 hour'` },
+                            set: {
+                                nextCheck: sql`now() + interval '1 hour'`,
+                                retryCount: 0,
+                                failed: null,
+                            },
                         })
                         .execute();
                 }

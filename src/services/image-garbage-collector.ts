@@ -1,4 +1,4 @@
-import { and, asc, eq, lte } from "drizzle-orm";
+import { and, asc, eq, isNull, lte } from "drizzle-orm";
 import type { Database } from "../api/database";
 import { DatabaseSchema } from "../db/schema";
 import type { ImageStorage } from "./image-storage";
@@ -21,7 +21,13 @@ export class ImageGarbageCollector {
                 .select()
                 .from(DatabaseSchema.imageAssetGarbage)
                 .where(
-                    lte(DatabaseSchema.imageAssetGarbage.nextCheck, new Date()),
+                    and(
+                        isNull(DatabaseSchema.imageAssetGarbage.failed),
+                        lte(
+                            DatabaseSchema.imageAssetGarbage.nextCheck,
+                            new Date(),
+                        ),
+                    ),
                 )
                 .orderBy(asc(DatabaseSchema.imageAssetGarbage.nextCheck))
                 .limit(this.config.batchSize)
@@ -70,6 +76,11 @@ export class ImageGarbageCollector {
                                             .where(
                                                 and(
                                                     key,
+                                                    isNull(
+                                                        DatabaseSchema
+                                                            .imageAssetGarbage
+                                                            .failed,
+                                                    ),
                                                     lte(
                                                         DatabaseSchema
                                                             .imageAssetGarbage
@@ -121,24 +132,39 @@ export class ImageGarbageCollector {
                                             } catch (error) {
                                                 // Schedule retries while holding the queue lock. Comparing a database
                                                 // timestamp with a JavaScript Date would lose microsecond precision.
+                                                const delay =
+                                                    this.config.retryDelay(
+                                                        queued.retryCount,
+                                                    );
                                                 await tx
                                                     .update(
                                                         DatabaseSchema.imageAssetGarbage,
                                                     )
-                                                    .set({
-                                                        nextCheck: new Date(
-                                                            Date.now() +
-                                                                this.config
-                                                                    .failureRetryMs,
-                                                        ),
-                                                    })
+                                                    .set(
+                                                        delay === undefined
+                                                            ? {
+                                                                  failed: "Asset deletion exhausted its retry limit",
+                                                              }
+                                                            : {
+                                                                  retryCount:
+                                                                      queued.retryCount +
+                                                                      1,
+                                                                  nextCheck:
+                                                                      new Date(
+                                                                          Date.now() +
+                                                                              delay,
+                                                                      ),
+                                                              },
+                                                    )
                                                     .where(key)
                                                     .execute();
                                                 Tracing.setSpanAttributes({
-                                                    "job.outcome": "retry",
+                                                    "job.outcome":
+                                                        delay === undefined
+                                                            ? "failed"
+                                                            : "retry",
                                                     "job.retry_delay_ms":
-                                                        this.config
-                                                            .failureRetryMs,
+                                                        delay ?? 0,
                                                 });
                                                 return error instanceof Error
                                                     ? error

@@ -15,6 +15,13 @@
       "when": 1791313791845,
       "tag": "0001_image_uploads",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791605255243,
+      "tag": "0002_worker_backoff",
+      "breakpoints": true
     }
   ]
 }
