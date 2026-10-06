@@ -1,4 +1,4 @@
-export type ErrorCode = "conflict" | "not_found";
+export type ErrorCode = "conflict" | "not_found" | "forbidden";
 
 /** Expected application failures whose messages are safe to show to callers. */
 export class AppError extends Error {
@@ -21,5 +21,11 @@ export class ConflictError extends AppError {
 export class NotFoundError extends AppError {
     constructor(message: string, options?: ErrorOptions) {
         super("not_found", message, options);
+    }
+}
+
+export class ForbiddenError extends AppError {
+    constructor(message: string) {
+        super("forbidden", message);
     }
 }

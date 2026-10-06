@@ -148,7 +148,7 @@ export class PhotoApi {
         return row;
     }
 
-    @ApiScope.scoped(Scope.PhotosWrite)
+    @ApiScope.scoped(Scope.PhotosCreate)
     @Tracing.traced("photo.create")
     static async create(
         db: Database,
@@ -176,7 +176,7 @@ export class PhotoApi {
         );
     }
 
-    @ApiScope.scoped(Scope.PhotosWrite)
+    @ApiScope.scoped(Scope.PhotosMetadataUpdate)
     @Tracing.traced("photo.update")
     static async update(
         db: Database,
@@ -214,7 +214,7 @@ export class PhotoApi {
         );
     }
 
-    @ApiScope.scoped(Scope.PhotosWrite)
+    @ApiScope.scoped(Scope.PhotosDelete)
     @Tracing.traced("photo.remove")
     static async remove(db: Database, id: UUID) {
         id = validation.uuid.parse(id);

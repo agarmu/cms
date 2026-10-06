@@ -99,7 +99,7 @@ test("runtime uses the configured RFC 9068 provider for real HTTP requests", asy
             });
         expect((await create(reader)).status).toBe(403);
         expect(
-            (await create(await accessToken("test-user", "photos:write")))
+            (await create(await accessToken("test-user", "photos:create")))
                 .status,
         ).toBe(201);
     } finally {

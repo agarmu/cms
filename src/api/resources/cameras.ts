@@ -35,7 +35,7 @@ export class CameraApi {
             .execute();
     }
 
-    @ApiScope.scoped(Scope.CamerasWrite)
+    @ApiScope.scoped(Scope.CamerasCreate)
     @Tracing.traced("cameras.create")
     static async create(db: Database, value: Omit<NewCamera, "id">) {
         value = validation.equipment.parse(value);
@@ -46,7 +46,7 @@ export class CameraApi {
             .execute();
     }
 
-    @ApiScope.scoped(Scope.CamerasWrite)
+    @ApiScope.scoped(Scope.CamerasUpdate)
     @Tracing.traced("cameras.update")
     static async update(db: Database, id: UUID, value: Changes<NewCamera>) {
         value = validation.equipmentChanges.parse(value);
@@ -59,7 +59,7 @@ export class CameraApi {
             .execute();
     }
 
-    @ApiScope.scoped(Scope.CamerasWrite)
+    @ApiScope.scoped(Scope.CamerasDelete)
     @Tracing.traced("cameras.remove")
     static async remove(db: Database, id: UUID) {
         id = validation.uuid.parse(id);

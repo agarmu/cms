@@ -35,7 +35,7 @@ export class LensApi {
             .execute();
     }
 
-    @ApiScope.scoped(Scope.LensesWrite)
+    @ApiScope.scoped(Scope.LensesCreate)
     @Tracing.traced("lenses.create")
     static async create(db: Database, value: Omit<NewLens, "id">) {
         value = validation.equipment.parse(value);
@@ -46,7 +46,7 @@ export class LensApi {
             .execute();
     }
 
-    @ApiScope.scoped(Scope.LensesWrite)
+    @ApiScope.scoped(Scope.LensesUpdate)
     @Tracing.traced("lenses.update")
     static async update(db: Database, id: UUID, value: Changes<NewLens>) {
         value = validation.equipmentChanges.parse(value);
@@ -59,7 +59,7 @@ export class LensApi {
             .execute();
     }
 
-    @ApiScope.scoped(Scope.LensesWrite)
+    @ApiScope.scoped(Scope.LensesDelete)
     @Tracing.traced("lenses.remove")
     static async remove(db: Database, id: UUID) {
         id = validation.uuid.parse(id);

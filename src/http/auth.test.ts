@@ -26,7 +26,7 @@ const authentication: AuthenticationProvider = {
         if (token === "writer")
             return {
                 ...testAuthIdentity,
-                scopes: new Set([Scope.PhotosWrite]),
+                scopes: new Set([Scope.PhotosCreate]),
             };
         if (token === "stranger")
             return { ...testAuthIdentity, subject: "stranger" };
@@ -167,7 +167,7 @@ test("checks exact scopes and passes AuthIdentity to permitted handlers", async 
     scoped.get("/", access.require(Scope.PhotosRead), async (context) => {
         return context.json({ subject: context.get("authIdentity").subject });
     });
-    scoped.post("/", access.require(Scope.PhotosWrite), async (context) => {
+    scoped.post("/", access.require(Scope.PhotosCreate), async (context) => {
         writes++;
         return context.json({ saved: true });
     });

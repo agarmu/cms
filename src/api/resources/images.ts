@@ -38,7 +38,7 @@ export class ImageApi {
             .execute();
     }
 
-    @ApiScope.scoped(Scope.PhotosWrite)
+    @ApiScope.scoped(Scope.PhotosCreate)
     @Tracing.traced("images.create")
     static async create(db: Database, value: Omit<NewImage, "id">) {
         value = validation.image.parse(value);
@@ -63,7 +63,7 @@ export class ImageApi {
             .execute();
     }
 
-    @ApiScope.scoped(Scope.PhotosWrite)
+    @ApiScope.scoped(Scope.PhotosMetadataUpdate)
     @Tracing.traced("images.update")
     static async update(db: Database, id: UUID, value: Changes<NewImage>) {
         value = validation.imageChanges.parse(value);
@@ -90,7 +90,7 @@ export class ImageApi {
             .execute();
     }
 
-    @ApiScope.scoped(Scope.PhotosWrite)
+    @ApiScope.scoped(Scope.PhotosDelete)
     @Tracing.traced("images.remove")
     static async remove(db: Database, id: UUID) {
         id = validation.uuid.parse(id);

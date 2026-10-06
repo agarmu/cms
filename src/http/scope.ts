@@ -2,12 +2,12 @@ import type { MiddlewareHandler } from "hono";
 import { ApiScope } from "../api/call";
 import type { Database, DatabaseFor, ReadDatabase } from "../api/database";
 import { Scopes } from "../api/scope";
-import type { Scope } from "../api/scope";
+import type { Scope, WriteScope } from "../api/scope";
 import { AuthenticationError } from "../auth/provider";
 import type { AuthEnvironment } from "./auth";
 
-type ScopeEnvironment<S extends Scope> = AuthEnvironment & {
-    Variables: { db: DatabaseFor<S> };
+type DatabaseEnvironment<D extends ReadDatabase> = AuthEnvironment & {
+    Variables: { db: D };
 };
 
 export class ScopeMiddleware {
@@ -23,27 +23,41 @@ export class ScopeMiddleware {
     read(method: object) {
         return this.require(ApiScope.getScope(method, "read"));
     }
-    write(method: object) {
-        return this.require(ApiScope.getScope(method, "write"));
+    write(method: object, ...alternatives: WriteScope[]) {
+        return this.check(
+            [ApiScope.getScope(method, "write"), ...alternatives],
+            this.db,
+        );
     }
 
-    require<S extends Scope>(scope: S): MiddlewareHandler<ScopeEnvironment<S>> {
+    require<S extends Scope>(
+        scope: S,
+    ): MiddlewareHandler<DatabaseEnvironment<DatabaseFor<S>>> {
+        return this.check(
+            [scope],
+            (Scopes.isReadScope(scope)
+                ? this.readDb
+                : this.db) as DatabaseFor<S>,
+        );
+    }
+
+    private check<D extends ReadDatabase>(
+        scopes: readonly Scope[],
+        db: D,
+    ): MiddlewareHandler<DatabaseEnvironment<D>> {
         return async (context, next) => {
             const identity = context.get("authIdentity");
             if (!identity) throw new AuthenticationError();
-            if (!identity.scopes.has(scope)) {
+            if (!scopes.some((scope) => identity.scopes.has(scope))) {
                 context.header(
                     "WWW-Authenticate",
-                    `Bearer error="insufficient_scope", scope="${scope}"`,
+                    scopes.length === 1
+                        ? `Bearer error="insufficient_scope", scope="${scopes[0]}"`
+                        : 'Bearer error="insufficient_scope"',
                 );
                 return context.json({ error: "Insufficient scope" }, 403);
             }
-            context.set(
-                "db",
-                (Scopes.isReadScope(scope)
-                    ? this.readDb
-                    : this.db) as DatabaseFor<S>,
-            );
+            context.set("db", db);
             await next();
             return;
         };

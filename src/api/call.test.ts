@@ -7,18 +7,42 @@ import { ImageAssetApi } from "./resources/image-assets";
 import { Scope } from "./scope";
 
 test.each([
-    [CameraApi, Scope.CamerasRead, Scope.CamerasWrite],
-    [LensApi, Scope.LensesRead, Scope.LensesWrite],
-    [ImageApi, Scope.PhotosRead, Scope.PhotosWrite],
-    [ImageAssetApi, Scope.ImageAssetsRead, Scope.ImageAssetsWrite],
+    [
+        CameraApi,
+        Scope.CamerasRead,
+        Scope.CamerasCreate,
+        Scope.CamerasUpdate,
+        Scope.CamerasDelete,
+    ],
+    [
+        LensApi,
+        Scope.LensesRead,
+        Scope.LensesCreate,
+        Scope.LensesUpdate,
+        Scope.LensesDelete,
+    ],
+    [
+        ImageApi,
+        Scope.PhotosRead,
+        Scope.PhotosCreate,
+        Scope.PhotosMetadataUpdate,
+        Scope.PhotosDelete,
+    ],
+    [
+        ImageAssetApi,
+        Scope.ImageAssetsRead,
+        Scope.ImageAssetsWrite,
+        Scope.ImageAssetsWrite,
+        Scope.ImageAssetsWrite,
+    ],
 ] as const)(
     "resource decorators declare the correct scopes (%#)",
-    (api, read, write) => {
+    (api, read, create, update, remove) => {
         expect(ApiScope.getScope(api.list, "read")).toBe(read);
         expect(ApiScope.getScope(api.read, "read")).toBe(read);
-        expect(ApiScope.getScope(api.create, "write")).toBe(write);
-        expect(ApiScope.getScope(api.update, "write")).toBe(write);
-        expect(ApiScope.getScope(api.remove, "write")).toBe(write);
+        expect(ApiScope.getScope(api.create, "write")).toBe(create);
+        expect(ApiScope.getScope(api.update, "write")).toBe(update);
+        expect(ApiScope.getScope(api.remove, "write")).toBe(remove);
     },
 );
 

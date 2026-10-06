@@ -62,7 +62,7 @@ function token(
 test("verifies access tokens through remote JWKS and caches the keys", async () => {
     const accessToken = await token({
         scope: "openid photos:read photos:read made-up:write",
-        permissions: ["photos:write"],
+        permissions: ["photos:create"],
     });
     const identity = await provider.authenticate(accessToken);
     expect(identity).toEqual({
@@ -93,7 +93,7 @@ test.each([
     { jti: undefined },
     { jti: "" },
     { scope: ["photos:read"] },
-    { scope: "photos:read\tphotos:write" },
+    { scope: "photos:read\tphotos:create" },
 ])("rejects invalid token claims (%#)", async (claims) => {
     await expect(
         provider.authenticate(await token(claims)),

@@ -18,6 +18,7 @@ export class HttpErrorHandler {
     private static readonly applicationStatus = {
         conflict: 409,
         not_found: 404,
+        forbidden: 403,
     } as const satisfies Record<ErrorCode, number>;
 
     constructor(private readonly reportError: (error: Error) => void) {}

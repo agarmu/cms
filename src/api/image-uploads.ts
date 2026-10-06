@@ -68,7 +68,7 @@ export class ImageUploadApi {
             throw new ConflictError("Upload has failed; start a new upload");
     }
 
-    @ApiScope.scoped(Scope.PhotosWrite)
+    @ApiScope.scoped(Scope.PhotosAssetsWrite)
     @Tracing.traced("image.upload.create")
     static async create(
         db: Database,
@@ -114,7 +114,7 @@ export class ImageUploadApi {
         };
     }
 
-    @ApiScope.scoped(Scope.PhotosWrite)
+    @ApiScope.scoped(Scope.PhotosAssetsWrite)
     @Tracing.traced("image.upload.cancel")
     static async cancel(
         db: Database,
@@ -145,7 +145,7 @@ export class ImageUploadApi {
         return ImageUploadApi.read(db, photoId, uploadId);
     }
 
-    @ApiScope.scoped(Scope.PhotosWrite)
+    @ApiScope.scoped(Scope.PhotosAssetsWrite)
     @Tracing.traced("image.upload.finish")
     static async finish(
         db: Database,
@@ -159,7 +159,7 @@ export class ImageUploadApi {
         return ImageUploadApi.read(db, photoId, uploadId);
     }
 
-    @ApiScope.scoped(Scope.PhotosWrite)
+    @ApiScope.scoped(Scope.PhotosAssetsWrite)
     @Tracing.traced("image.upload.complete")
     static async complete(
         db: Database,

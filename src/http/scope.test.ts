@@ -44,7 +44,7 @@ test("write scopes receive the writable database", async () => {
             testAuthDependencies.allowedSubjects,
         ).handle,
     );
-    app.post("/", access.require(Scope.PhotosWrite), (context) => {
+    app.post("/", access.require(Scope.PhotosCreate), (context) => {
         const database = context.var.db;
         expect(database).toBe(db);
         database.delete(schema.images).toSQL();
