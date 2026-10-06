@@ -20,7 +20,7 @@ test("stopping waits for active tasks and prevents another cycle", async () => {
             ],
             reportError: (error) => errors.push(error),
         },
-        new WorkerConfiguration({ intervalMs: 1 }),
+        new WorkerConfiguration({ interval: 1 }),
     ).start();
     try {
         await started.promise;
@@ -55,7 +55,7 @@ test("a failing task does not prevent other tasks or the next cycle", async () =
             ],
             reportError: (error) => errors.push(error),
         },
-        new WorkerConfiguration({ intervalMs: 1 }),
+        new WorkerConfiguration({ interval: 1 }),
     ).start();
     try {
         await secondCycle.promise;

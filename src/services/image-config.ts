@@ -8,7 +8,7 @@ export type ImageSettings = {
 };
 
 export class ImageConfiguration {
-    private static readonly schema = z.object({
+    static readonly schema = z.strictObject({
         maxBytes: z
             .int()
             .positive()
@@ -17,7 +17,7 @@ export class ImageConfiguration {
         quality: z.int().min(1).max(100).default(82),
         variants: z
             .array(
-                z.object({
+                z.strictObject({
                     name: z.string().regex(/^[a-zA-Z0-9_-]+$/),
                     minSide: z.int().positive(),
                 }),

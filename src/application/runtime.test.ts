@@ -24,10 +24,21 @@ test("runtime serves requests on an allocated port, shares lazy storage, and clo
             ),
         });
         runtime = await new ApplicationRuntime(
-            ApplicationConfig.fromEnv({ DATABASE_URL: databaseUrl, PORT: "0" }),
+            new ApplicationConfig({
+                database: { url: databaseUrl },
+                port: 0,
+                storage: { backend: "local", directory: "./data/blobs" },
+            }),
             {
                 connect: async (url) => {
-                    expect(url).toBe(databaseUrl);
+                    expect(url).toMatchObject({
+                        url: databaseUrl,
+                        password: "",
+                        max: 10,
+                        connectionTimeout: 10,
+                        idleTimeout: 30,
+                        tls: "disable",
+                    });
                     return {
                         db,
                         close: async () => {
@@ -101,7 +112,11 @@ test("runtime closes its database when the HTTP listener cannot start", async ()
     try {
         await expect(
             new ApplicationRuntime(
-                new ApplicationConfig({ databaseUrl, port: occupied.port! }),
+                new ApplicationConfig({
+                    database: { url: databaseUrl },
+                    storage: { backend: "local", directory: "./data/blobs" },
+                    port: occupied.port!,
+                }),
                 {
                     connect: async () => ({
                         db,
@@ -129,7 +144,11 @@ test("stopping during startup waits for the connection and closes resources once
     const connecting = Promise.withResolvers<void>();
     let closes = 0;
     const runtime = new ApplicationRuntime(
-        new ApplicationConfig({ databaseUrl, port: 0 }),
+        new ApplicationConfig({
+            database: { url: databaseUrl },
+            storage: { backend: "local", directory: "./data/blobs" },
+            port: 0,
+        }),
         {
             connect: async () => {
                 await connecting.promise;

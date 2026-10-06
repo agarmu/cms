@@ -24,12 +24,12 @@ export class BackgroundWorker {
                     this.started = true;
                     this.timer = setTimeout(
                         () => this.run(),
-                        this.config.intervalMs,
+                        this.config.interval,
                     );
                 }
                 return this;
             },
-            { "worker.interval_ms": this.config.intervalMs },
+            { "worker.interval_ms": this.config.interval },
         );
     }
 
@@ -56,10 +56,7 @@ export class BackgroundWorker {
             { "worker.tasks.count": this.options.tasks.length },
         ).finally(() => {
             if (!this.stopped)
-                this.timer = setTimeout(
-                    () => this.run(),
-                    this.config.intervalMs,
-                );
+                this.timer = setTimeout(() => this.run(), this.config.interval);
         });
     }
 

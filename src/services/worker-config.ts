@@ -1,54 +1,47 @@
 import { z } from "zod";
 
-export type WorkerSettings = {
-    intervalMs?: number;
-    batchSize?: number;
-    uploadWaitMs?: number;
-    uploadRetryMs?: number;
-    failureRetryMs?: number;
-    maxRetries?: number;
-    multiplier?: number;
-};
+export type WorkerSettings = z.input<typeof WorkerConfiguration.schema>;
 
 export class WorkerConfiguration {
-    private static readonly schema = z.object({
-        intervalMs: z.int().positive().default(5000),
+    static readonly schema = z.strictObject({
+        interval: z.int().positive().max(2_147_483_647).default(5000),
         batchSize: z.int().positive().default(10),
-        uploadWaitMs: z
-            .int()
-            .positive()
-            .default(60 * 60 * 1000),
-        uploadRetryMs: z.int().positive().default(10_000),
-        failureRetryMs: z.int().positive().default(30_000),
-        maxRetries: z.int().nonnegative().default(5),
-        multiplier: z.number().finite().gt(1).default(2),
+        backoff: z
+            .strictObject({
+                maxRetries: z.int().nonnegative().default(5),
+                multiplier: z.number().finite().gt(1).default(2),
+            })
+            .prefault({}),
+        upload: z
+            .strictObject({
+                waitTime: z.int().positive().default(3_600_000),
+                retryTime: z
+                    .int()
+                    .positive()
+                    .max(2_147_483_647)
+                    .default(10_000),
+            })
+            .prefault({}),
     });
 
-    readonly intervalMs: number;
+    readonly interval: number;
     readonly batchSize: number;
-    readonly uploadWaitMs: number;
-    readonly uploadRetryMs: number;
-    readonly failureRetryMs: number;
-    readonly maxRetries: number;
-    readonly multiplier: number;
+    readonly backoff: z.output<typeof WorkerConfiguration.schema>["backoff"];
+    readonly upload: z.output<typeof WorkerConfiguration.schema>["upload"];
 
     constructor(values: WorkerSettings = {}) {
         const settings = WorkerConfiguration.schema.parse(values);
-        this.intervalMs = settings.intervalMs;
+        this.interval = settings.interval;
         this.batchSize = settings.batchSize;
-        this.uploadWaitMs = settings.uploadWaitMs;
-        this.uploadRetryMs = settings.uploadRetryMs;
-        this.failureRetryMs = settings.failureRetryMs;
-        this.maxRetries = settings.maxRetries;
-        this.multiplier = settings.multiplier;
+        this.backoff = settings.backoff;
+        this.upload = settings.upload;
     }
 
     retryDelay(retryCount: number): number | undefined {
-        if (retryCount >= this.maxRetries) return undefined;
-        // Keep exponential delays within the range supported by JavaScript timers.
+        if (retryCount >= this.backoff.maxRetries) return undefined;
         return Math.min(
             2_147_483_647,
-            this.uploadRetryMs * this.multiplier ** retryCount,
+            this.upload.retryTime * this.backoff.multiplier ** retryCount,
         );
     }
 }

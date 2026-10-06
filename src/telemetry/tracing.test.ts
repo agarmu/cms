@@ -452,7 +452,7 @@ test("worker cycles use independent root traces and record handled task failures
                 ],
                 reportError: (error) => errors.push(error),
             },
-            new WorkerConfiguration({ intervalMs: 1 }),
+            new WorkerConfiguration({ interval: 1 }),
         ).start();
     });
     try {
@@ -476,12 +476,16 @@ test("application configuration, assembly, startup, and shutdown emit spans", as
     let traceId = "";
     await Tracing.withSpan("test.lifecycle", async () => {
         traceId = trace.getActiveSpan()!.spanContext().traceId;
-        expect(() => new StorageFactory().create()).toThrow(
-            "S3_BUCKET and AWS_REGION",
-        );
-        const config = ApplicationConfig.fromEnv({
-            DATABASE_URL: "postgres://localhost/test",
-            PORT: "0",
+        new StorageFactory(
+            new StorageConfiguration({
+                backend: "local",
+                directory: "./data/blobs",
+            }),
+        ).create();
+        const config = new ApplicationConfig({
+            database: { url: "postgres://localhost/test" },
+            port: 0,
+            storage: { backend: "local", directory: "./data/blobs" },
         });
         const application = await new ApplicationRuntime(config, {
             connect: async () => ({ db, close: async () => {} }),
@@ -507,9 +511,7 @@ test("application configuration, assembly, startup, and shutdown emit spans", as
     ]) {
         expect(spans.some((span) => span.name === name)).toBe(true);
     }
-    expect(
-        spans.find((span) => span.name === "storage.initialize")!.status.code,
-    ).toBe(SpanStatusCode.ERROR);
+    expect(spans.some((span) => span.name === "storage.initialize")).toBe(true);
     const shutdown = spans.find((span) => span.name === "runtime.shutdown")!;
     const applicationStop = spans.find(
         (span) => span.name === "application.stop",

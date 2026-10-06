@@ -1,34 +1,38 @@
-# Example config
-
+# Example config file
+# All times in ms
 port = 3000
 
 [database]
-# Public connection details; keep the password in secrets.toml.
+# Public connection details
+# keep the password in secrets.toml.
 url = "postgres://example-user@localhost:5432/photos_cms"
-connectTimeout = 10_000 # Milliseconds.
+# all times in ms
+connectTimeout = 10_000
 
 [database.pool]
 maxConnections = 10
 idleTimeout = 30_000 # Milliseconds.
 
 [database.tls]
-mode = "disable" # Local development; use "verify-full" for hosted Postgres.
+mode = "disable"
 
 [storage]
 backend = "s3"
-# Required for S3; includes the bucket host (virtualHostedStyle)
+# virtualHostedStyle endpoint (required for s3)
 endpoint = "https://example-photo-bucket.s3.us-east-1.amazonaws.com"
+# set region explicitly for providers that require a different signing region.
+# region = "auto"
 # For local storage, replace the settings above with:
 # backend = "local"
 # directory = "./data/blobs"
 # Local storage supports reads and writes, but does not issue direct-upload URLs.
 
 [images]
-maxBytes = 26_214_400 # 25 MiB.
+maxBytes = 26_214_400
 maxPixels = 60_000_000
-quality = 82 # WebP quality, from 1 to 100.
+quality = 82 # webp quality
 
-# Variants are generated only when the original's shorter side is large enough.
+# variants are generated only when the original's shorter side is large enough.
 [[images.variants]]
 name = "large"
 minSide = 1920
@@ -42,20 +46,20 @@ name = "thumbnail"
 minSide = 320
 
 [workers]
-# All worker durations are in milliseconds.
 interval = 5_000
 batchSize = 10
 
 [workers.backoff]
-maxRetries = 5 # Retries after the initial attempt.
-multiplier = 2 # Multiply the delay by this factor after each failed retry.
+# exp backoff in case of errors
+maxRetries = 5 # how long to keep going
+multiplier = 2 # factor to multiply delay by (after each failure)
 
 [workers.upload]
-waitTime = 3_600_000 # One hour before an abandoned upload fails.
-retryTime = 10_000 # Initial retry delay; exponential backoff starts here.
+waitTime = 3_600_000
+retryTime = 10_000 # Initial delay for both workers; exponential backoff starts here.
 
 [http]
-maxBodyBytes = 65_536 # 64 KiB for API requests; image uploads go directly to storage.
+maxBodyBytes = 65_536
 
 [telemetry]
 enabled = true

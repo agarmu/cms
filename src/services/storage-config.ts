@@ -1,35 +1,78 @@
-export type StorageSettings = {
-    backend?: "s3" | "local";
-    directory?: string;
-    bucket?: string;
-    region?: string;
-    endpoint?: string;
-};
+import { z } from "zod";
+
+const endpoint = z.url({ protocol: /^https?$/ }).refine((value) => {
+    const url = new URL(value);
+    return (
+        !url.username &&
+        !url.password &&
+        !url.search &&
+        !url.hash &&
+        url.pathname === "/"
+    );
+}, "Use a bucket endpoint without credentials, query parameters, or a path");
+
+export type StorageSettings = z.input<typeof StorageConfiguration.schema>;
 
 export class StorageConfiguration {
+    static readonly schema = z.discriminatedUnion("backend", [
+        z.strictObject({
+            backend: z.literal("local"),
+            directory: z.string().min(1),
+        }),
+        z.strictObject({
+            backend: z.literal("s3"),
+            endpoint,
+            region: z.string().min(1).optional(),
+        }),
+    ]);
+    static readonly secretsSchema = z.strictObject({
+        accessKeyId: z.string().min(1).optional(),
+        secretAccessKey: z.string().min(1).optional(),
+        sessionToken: z.string().min(1).optional(),
+    });
+
     readonly backend: "s3" | "local";
     readonly directory: string | undefined;
-    readonly bucket: string | undefined;
-    readonly region: string | undefined;
-    readonly endpoint: string | undefined;
+    private readonly options: Bun.S3Options | undefined;
 
-    constructor(values: StorageSettings = {}) {
-        this.backend = values.backend ?? "s3";
-        this.directory = values.directory;
-        this.bucket = values.bucket;
-        this.region = values.region;
-        this.endpoint = values.endpoint;
+    constructor(
+        values: StorageSettings,
+        secrets: z.input<typeof StorageConfiguration.secretsSchema> = {},
+    ) {
+        const settings = StorageConfiguration.schema.parse(values);
+        const credentials = StorageConfiguration.secretsSchema.parse(secrets);
+        this.backend = settings.backend;
+        this.directory =
+            settings.backend === "local" ? settings.directory : undefined;
+        if (settings.backend === "s3") {
+            if (!credentials.accessKeyId || !credentials.secretAccessKey)
+                throw new Error(
+                    "S3 requires accessKeyId and secretAccessKey in secrets.toml",
+                );
+            const hostname = new URL(settings.endpoint).hostname;
+            const region =
+                settings.region ??
+                hostname.match(
+                    /\.s3[.-](?:dualstack\.)?([a-z]{2}(?:-[a-z]+)+-\d)\.amazonaws\.com(?:\.cn)?$/,
+                )?.[1] ??
+                "us-east-1";
+            this.options = {
+                endpoint: settings.endpoint,
+                region,
+                virtualHostedStyle: true,
+                bucket: "",
+                accessKeyId: credentials.accessKeyId,
+                secretAccessKey: credentials.secretAccessKey,
+                ...(credentials.sessionToken
+                    ? { sessionToken: credentials.sessionToken }
+                    : {}),
+            };
+        }
     }
 
-    static fromEnv(env: Record<string, string | undefined> = process.env) {
-        return new StorageConfiguration({
-            backend: env["IMAGE_STORAGE_DIR"] ? "local" : "s3",
-            ...(env["IMAGE_STORAGE_DIR"]
-                ? { directory: env["IMAGE_STORAGE_DIR"] }
-                : {}),
-            ...(env["S3_BUCKET"] ? { bucket: env["S3_BUCKET"] } : {}),
-            ...(env["AWS_REGION"] ? { region: env["AWS_REGION"] } : {}),
-            ...(env["S3_ENDPOINT"] ? { endpoint: env["S3_ENDPOINT"] } : {}),
-        });
+    clientOptions(): Bun.S3Options {
+        if (!this.options)
+            throw new Error("S3 options are unavailable for local storage");
+        return { ...this.options };
     }
 }

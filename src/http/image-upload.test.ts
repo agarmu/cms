@@ -936,8 +936,8 @@ test("upload retries persist exponential delays and stop at the configured limit
     const { id } = await photo();
     const upload = await initiate(id);
     const config = new WorkerConfiguration({
-        maxRetries: 2,
-        uploadRetryMs: 10_000,
+        backoff: { maxRetries: 2 },
+        upload: { retryTime: 10_000 },
     });
     const failures: Error[] = [];
     let attempts = 0;
@@ -1003,7 +1003,7 @@ test("waiting for an original does not consume the processing retry budget", asy
         await due(upload.uploadId);
         await new ImageUploadWorker(
             { db, getStorage: () => storage, reportError },
-            new WorkerConfiguration({ maxRetries: 0 }),
+            new WorkerConfiguration({ backoff: { maxRetries: 0 } }),
         ).check();
     }
     const [row] = await db
@@ -1031,8 +1031,8 @@ test("GC persists increasing delays and excludes exhausted jobs", async () => {
         nextCheck: new Date(0),
     });
     const config = new WorkerConfiguration({
-        maxRetries: 2,
-        uploadRetryMs: 10_000,
+        backoff: { maxRetries: 2 },
+        upload: { retryTime: 10_000 },
     });
     const failures: Error[] = [];
     let attempts = 0;

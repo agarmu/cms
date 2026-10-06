@@ -67,7 +67,7 @@ export class ImageUploadWorker {
                                 return;
                             }
                             let failed: string | undefined;
-                            let delayMs = this.config.uploadRetryMs;
+                            let delayMs = this.config.upload.retryTime;
                             let retryCount = upload.retryCount;
                             if (
                                 error instanceof InvalidImageError ||
@@ -77,12 +77,13 @@ export class ImageUploadWorker {
                             } else if (error instanceof NotFoundError) {
                                 if (
                                     Date.now() - upload.created.getTime() >=
-                                    this.config.uploadWaitMs
+                                    this.config.upload.waitTime
                                 ) {
                                     failed =
-                                        this.config.uploadWaitMs === 3_600_000
+                                        this.config.upload.waitTime ===
+                                        3_600_000
                                             ? "Original image was not uploaded within one hour"
-                                            : `Original image was not uploaded within ${this.config.uploadWaitMs / 1000} seconds`;
+                                            : `Original image was not uploaded within ${this.config.upload.waitTime / 1000} seconds`;
                                 }
                             } else {
                                 this.options.reportError(

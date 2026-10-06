@@ -1,29 +1,35 @@
 import { Telemetry } from "../telemetry/setup";
-import { TelemetryConfiguration } from "../telemetry/config";
+import { ApplicationConfig } from "./config";
 
 export class ApplicationProcess {
     constructor(
-        private readonly env: Record<string, string | undefined> = process.env,
+        private readonly configPath = "config.toml",
+        private readonly secretsPath = "secrets.toml",
     ) {}
 
     async run() {
-        const telemetry = new Telemetry(
-            TelemetryConfiguration.fromEnv(this.env),
+        const config = await ApplicationConfig.fromFiles(
+            this.configPath,
+            this.secretsPath,
         );
-        telemetry.start();
+        const telemetry = new Telemetry(config.telemetry);
         try {
+            telemetry.start();
             // Keep driver imports behind telemetry registration.
-            const [{ ApplicationConfig }, { ApplicationRuntime }] =
-                await Promise.all([import("./config"), import("./runtime")]);
-            const runtime = await new ApplicationRuntime(
-                ApplicationConfig.fromEnv(this.env),
-            ).start();
+            const { ApplicationRuntime } = await import("./runtime");
+            const runtime = await new ApplicationRuntime(config, {
+                reportError: (error) => {
+                    console.error(error);
+                    telemetry.log(error.message, "ERROR");
+                },
+            }).start();
             const shutdown = Promise.withResolvers<void>();
             const stop = () => shutdown.resolve();
             process.once("SIGINT", stop);
             process.once("SIGTERM", stop);
             try {
                 console.info("Listening on " + runtime.url);
+                telemetry.log("Listening on " + runtime.url);
                 await shutdown.promise;
             } finally {
                 process.off("SIGINT", stop);

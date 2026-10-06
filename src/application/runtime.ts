@@ -7,7 +7,7 @@ import { Application } from "./index";
 import { StorageFactory } from "./storage";
 
 export type RuntimeDependencies = {
-    connect?: (url: string) => Promise<DatabaseSession>;
+    connect?: (options: Bun.SQL.Options) => Promise<DatabaseSession>;
     getBlobStorage?: () => BlobStorage;
     reportError?: (error: Error) => void;
 };
@@ -41,7 +41,7 @@ export class ApplicationRuntime {
             await Tracing.withSpan("runtime.startup", async () => {
                 this.connection = await (
                     this.options.connect ?? DatabaseConnection.open
-                )(this.config.databaseUrl);
+                )(this.config.database.clientOptions());
                 const factory = new StorageFactory(this.config.storage);
                 this.application = new Application({
                     db: this.connection.db,

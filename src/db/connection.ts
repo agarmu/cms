@@ -19,7 +19,7 @@ export class DatabaseConnection implements DatabaseSession {
     ) {}
 
     static async open(
-        url: string,
+        options: Bun.SQL.Options,
         migrationsFolder = fileURLToPath(
             new URL("../../migrations/", import.meta.url),
         ),
@@ -28,7 +28,7 @@ export class DatabaseConnection implements DatabaseSession {
         const bun = require("bun") as typeof import("bun");
         const client = await Tracing.withSpan(
             "db.client.initialize",
-            async () => new bun.SQL(url),
+            async () => new bun.SQL(options),
         );
         try {
             const db = await Tracing.withSpan("db.initialize", async () =>

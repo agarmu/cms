@@ -53,7 +53,8 @@ const metadata = {
 
 test("application instances enforce their configured HTTP body limits independently", async () => {
     const config = new ApplicationConfig({
-        databaseUrl: "postgres://localhost/test",
+        database: { url: "postgres://localhost/test" },
+        storage: { backend: "local", directory: "./data/blobs" },
         http: { maxBodyBytes: 32 },
     });
     const custom = new Application({

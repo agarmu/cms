@@ -5,7 +5,7 @@ import { StorageConfiguration } from "../services/storage-config";
 import { Tracing } from "../telemetry/tracing";
 
 export class StorageFactory {
-    constructor(private readonly config = new StorageConfiguration()) {}
+    constructor(private readonly config: StorageConfiguration) {}
 
     create(): BlobStorage {
         return Tracing.withSyncSpan("storage.initialize", () => {
@@ -19,18 +19,7 @@ export class StorageFactory {
                     );
                 return new LocalStorage(this.config.directory);
             }
-            const { bucket, region, endpoint } = this.config;
-            if (!bucket || !region)
-                throw new Error(
-                    "S3_BUCKET and AWS_REGION are required for S3 storage",
-                );
-            return new S3Storage(
-                new Bun.S3Client({
-                    bucket,
-                    region,
-                    ...(endpoint ? { endpoint } : {}),
-                }),
-            );
+            return new S3Storage(new Bun.S3Client(this.config.clientOptions()));
         });
     }
 }
