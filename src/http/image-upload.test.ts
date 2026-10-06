@@ -794,7 +794,7 @@ test.each([
             [320, 320],
         ],
     ],
-    [200, 100, []],
+    [200, 100, [[200, 100]]],
 ] satisfies [number, number, number[][]][])(
     "generates only qualifying variants for %s x %s originals",
     async (width, height, expected) => {
@@ -816,11 +816,13 @@ test.each([
             result.assets.map((asset) => asset.assetLocation.split("-").at(-1)),
         ).toEqual(
             expected.map(([w, h]) =>
-                Math.min(w!, h!) === 1920
-                    ? "large.webp"
-                    : Math.min(w!, h!) === 960
-                      ? "medium.webp"
-                      : "thumbnail.webp",
+                Math.min(w!, h!) < 320
+                    ? "original.webp"
+                    : Math.min(w!, h!) === 1920
+                      ? "large.webp"
+                      : Math.min(w!, h!) === 960
+                        ? "medium.webp"
+                        : "thumbnail.webp",
             ),
         );
         for (const asset of result.assets) {

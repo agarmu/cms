@@ -248,6 +248,20 @@ export class ImageStorage {
                 dimensions: { width: info.width, height: info.height },
             });
         }
+        if (!images.length) {
+            const { data, info } = await this.decodeImage(() =>
+                sharp(input, this.inputOptions)
+                    .rotate()
+                    .webp({ quality: this.config.quality })
+                    .toBuffer({ resolveWithObject: true }),
+            );
+            images.push({
+                filename: "original.webp",
+                data,
+                mimeType: "image/webp",
+                dimensions: { width: info.width, height: info.height },
+            });
+        }
         return images;
     }
 }
