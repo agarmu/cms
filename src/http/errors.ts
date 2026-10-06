@@ -1,3 +1,8 @@
+import { InvalidUploadTokenError } from "../api/image-uploads";
+import {
+    InvalidImageError,
+    ImageTooLargeError,
+} from "../services/image-storage";
 import type { ErrorHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
@@ -31,6 +36,12 @@ export class HttpErrorHandler {
             this.reportError(error);
             return context.json({ error: error.message }, 503);
         }
+        if (error instanceof InvalidUploadTokenError)
+            return context.json({ error: error.message }, 403);
+        if (error instanceof InvalidImageError)
+            return context.json({ error: error.message }, 400);
+        if (error instanceof ImageTooLargeError)
+            return context.json({ error: error.message }, 413);
         if (error instanceof HTTPException) {
             if (error.res) return error.getResponse();
             return context.json({ error: error.message }, error.status);

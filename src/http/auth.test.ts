@@ -22,11 +22,11 @@ const outageCause = new Error("connection refused");
 const authentication: AuthenticationProvider = {
     async authenticate(token) {
         if (token === "reader")
-            return { ...testAuthIdentity, scopes: new Set([Scope.ImagesRead]) };
+            return { ...testAuthIdentity, scopes: new Set([Scope.PhotosRead]) };
         if (token === "writer")
             return {
                 ...testAuthIdentity,
-                scopes: new Set([Scope.ImagesWrite]),
+                scopes: new Set([Scope.PhotosWrite]),
             };
         if (token === "stranger")
             return { ...testAuthIdentity, subject: "stranger" };
@@ -57,23 +57,23 @@ const metadata = {
     enabled: true,
 };
 const routes: [string, string, unknown?][] = [
-    ["GET", "/images"],
-    ["GET", `/images/${photoId}/metadata`],
-    ["GET", `/images/${photoId}`],
-    ["GET", `/images/${photoId}/original.webp`],
-    ["POST", "/images", metadata],
-    ["PATCH", `/images/${photoId}`, { alt: "changed" }],
-    ["DELETE", `/images/${photoId}`],
-    ["POST", `/images/${photoId}/upload`, { contentType: "image/png" }],
-    ["GET", `/images/${photoId}/uploads/${uploadId}`],
+    ["GET", "/photos"],
+    ["GET", `/photos/${photoId}`],
+    ["GET", `/photos/${photoId}/image`],
+    ["GET", `/photos/${photoId}/assets/original.webp`],
+    ["POST", "/photos", metadata],
+    ["PATCH", `/photos/${photoId}`, { alt: "changed" }],
+    ["DELETE", `/photos/${photoId}`],
+    ["POST", `/photos/${photoId}/uploads`, { contentType: "image/png" }],
+    ["GET", `/photos/${photoId}/uploads/${uploadId}`],
     [
         "POST",
-        `/images/${photoId}/uploads/${uploadId}/interrupt`,
-        { token: "a".repeat(64), ready: true },
+        `/photos/${photoId}/uploads/${uploadId}/complete`,
+        { token: "a".repeat(64) },
     ],
     [
-        "DELETE",
-        `/images/${photoId}/uploads/${uploadId}`,
+        "POST",
+        `/photos/${photoId}/uploads/${uploadId}/cancel`,
         { token: "a".repeat(64) },
     ],
     ...["cameras", "lenses"].flatMap((resource): [string, string][] => [
@@ -132,7 +132,7 @@ test.each([
 ] as const)(
     "handles %s without calling the database",
     async (authorization, status, body) => {
-        const response = await app.request("/images", {
+        const response = await app.request("/photos", {
             headers: { authorization },
         });
         expect(response.status).toBe(status);
@@ -142,7 +142,7 @@ test.each([
 );
 
 test("authenticates before parsing a request body", async () => {
-    const response = await app.request("/images", {
+    const response = await app.request("/photos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: "{",
@@ -164,10 +164,10 @@ test("checks exact scopes and passes AuthIdentity to permitted handlers", async 
         new AuthenticationMiddleware(authentication, [testAuthIdentity.subject])
             .handle,
     );
-    scoped.get("/", access.require(Scope.ImagesRead), async (context) => {
+    scoped.get("/", access.require(Scope.PhotosRead), async (context) => {
         return context.json({ subject: context.get("authIdentity").subject });
     });
-    scoped.post("/", access.require(Scope.ImagesWrite), async (context) => {
+    scoped.post("/", access.require(Scope.PhotosWrite), async (context) => {
         writes++;
         return context.json({ saved: true });
     });
@@ -212,7 +212,7 @@ test("scope checks fail closed if authentication middleware is missing", async (
     );
     scoped.get(
         "/",
-        new ScopeMiddleware(db).require(Scope.ImagesRead),
+        new ScopeMiddleware(db).require(Scope.PhotosRead),
         async () => {
             throw new Error("Must not run");
         },
@@ -259,12 +259,12 @@ test.each(routes.filter(([method]) => method !== "GET"))(
 );
 
 test("reports provider outages with their cause and unexpected bugs as server errors", async () => {
-    const outage = await app.request("/images", {
+    const outage = await app.request("/photos", {
         headers: { Authorization: "Bearer outage" },
     });
     expect(outage.status).toBe(503);
     expect(reportedErrors.at(-1)?.cause).toBe(outageCause);
-    const bug = await app.request("/images", {
+    const bug = await app.request("/photos", {
         headers: { Authorization: "Bearer bug" },
     });
     expect(bug.status).toBe(500);
@@ -280,14 +280,14 @@ test.each([
     "Bearer abc def",
     "Bearer one, Bearer two",
 ])("rejects malformed Authorization headers (%#)", async (authorization) => {
-    const response = await app.request("/images", {
+    const response = await app.request("/photos", {
         headers: authorization ? { authorization } : {},
     });
     expect(response.status).toBe(401);
 });
 
 test("ignores credentials in URLs and cookies", async () => {
-    const response = await app.request("/images?access_token=reader", {
+    const response = await app.request("/photos?access_token=reader", {
         headers: { Cookie: "token=reader" },
     });
     expect(response.status).toBe(401);

@@ -40,13 +40,13 @@ export class HttpApplication extends Hono<AuthEnvironment> {
             );
             this.use("*", bodyLimit({ maxSize: config.maxBodyBytes }));
             this.route(
-                "/images",
+                "/photos",
                 new ImageUploadRoutes(access, options.getImageStorage),
             );
             this.route("/cameras", new EquipmentRoutes(CameraApi, access));
             this.route("/lenses", new EquipmentRoutes(LensApi, access));
             this.route(
-                "/images",
+                "/photos",
                 new PhotoRoutes(access, options.getImageStorage),
             );
             this.notFound((context) =>

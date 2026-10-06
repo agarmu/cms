@@ -8,10 +8,7 @@ import type { UUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { DatabaseSchema } from "../db/schema";
 import { ConflictError, NotFoundError } from "../lib/errors";
-import {
-    MissingOriginalError,
-    UploadCancelledError,
-} from "../services/image-storage";
+import { UploadCancelledError } from "../services/image-storage";
 import type { ImageStorage } from "../services/image-storage";
 import { Tracing } from "../telemetry/tracing";
 import type { Database, ReadDatabase } from "./database";
@@ -71,7 +68,7 @@ export class ImageUploadApi {
             throw new ConflictError("Upload has failed; start a new upload");
     }
 
-    @ApiScope.scoped(Scope.ImagesWrite)
+    @ApiScope.scoped(Scope.PhotosWrite)
     @Tracing.traced("image.upload.create")
     static async create(
         db: Database,
@@ -95,22 +92,15 @@ export class ImageUploadApi {
                 tokenHash: ImageUploadApi.tokenHash(token).toString("hex"),
             })
             .execute();
-        const statusUrl = `/images/${photoId}/uploads/${uploadId}`;
-        return {
-            ...upload,
-            token,
-            statusUrl,
-            interruptUrl: `${statusUrl}/interrupt`,
-            cancelUrl: statusUrl,
-        };
+        return { ...upload, token };
     }
 
-    @ApiScope.scoped(Scope.ImagesRead)
+    @ApiScope.scoped(Scope.PhotosRead)
     @Tracing.traced("image.upload.read")
     static async read(db: ReadDatabase, photoId: UUID, uploadId: UUID) {
         const upload = await ImageUploadApi.receipt(db, photoId, uploadId);
         return {
-            uploadId: upload.id,
+            id: upload.id,
             status: upload.completed
                 ? "completed"
                 : upload.cancelled
@@ -124,7 +114,7 @@ export class ImageUploadApi {
         };
     }
 
-    @ApiScope.scoped(Scope.ImagesWrite)
+    @ApiScope.scoped(Scope.PhotosWrite)
     @Tracing.traced("image.upload.cancel")
     static async cancel(
         db: Database,
@@ -155,39 +145,21 @@ export class ImageUploadApi {
         return ImageUploadApi.read(db, photoId, uploadId);
     }
 
-    @ApiScope.scoped(Scope.ImagesWrite)
-    @Tracing.traced("image.upload.interrupt")
-    static async interrupt(
+    @ApiScope.scoped(Scope.PhotosWrite)
+    @Tracing.traced("image.upload.finish")
+    static async finish(
         db: Database,
         storage: ImageStorage,
         photoId: UUID,
         uploadId: UUID,
         token: string,
-        ready: boolean,
     ) {
         await ImageUploadApi.authorize(db, photoId, uploadId, token);
-        if (!ready) return ImageUploadApi.cancel(db, photoId, uploadId, token);
-        try {
-            const photo = await ImageUploadApi.complete(
-                db,
-                storage,
-                photoId,
-                uploadId,
-            );
-            return {
-                ...(await ImageUploadApi.read(db, photoId, uploadId)),
-                photo,
-            };
-        } catch (error) {
-            if (error instanceof MissingOriginalError)
-                return ImageUploadApi.cancel(db, photoId, uploadId, token);
-            if (error instanceof UploadCancelledError)
-                return ImageUploadApi.read(db, photoId, uploadId);
-            throw error;
-        }
+        await ImageUploadApi.complete(db, storage, photoId, uploadId);
+        return ImageUploadApi.read(db, photoId, uploadId);
     }
 
-    @ApiScope.scoped(Scope.ImagesWrite)
+    @ApiScope.scoped(Scope.PhotosWrite)
     @Tracing.traced("image.upload.complete")
     static async complete(
         db: Database,

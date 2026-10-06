@@ -55,10 +55,6 @@ export class ImageStorage {
         }
     }
 
-    static assetUrl(photoId: string, filename: string) {
-        return `/images/${encodeURIComponent(photoId)}/${encodeURIComponent(filename)}`;
-    }
-
     @Tracing.traced("image.storage.upload.create")
     async createUpload(photoId: string, uploadId: string, contentType: string) {
         if (!this.storage.createUpload)

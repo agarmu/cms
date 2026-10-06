@@ -11,7 +11,7 @@ import { ApiScope } from "../call";
 import { Scope } from "../scope";
 
 export class ImageApi {
-    @ApiScope.scoped(Scope.ImagesRead)
+    @ApiScope.scoped(Scope.PhotosRead)
     @Tracing.traced("images.list")
     static async list(db: ReadDatabase, page: Page) {
         const { limit, offset } = validation.pagination.parse(page);
@@ -27,7 +27,7 @@ export class ImageApi {
             .execute();
     }
 
-    @ApiScope.scoped(Scope.ImagesRead)
+    @ApiScope.scoped(Scope.PhotosRead)
     @Tracing.traced("images.read")
     static async read(db: ReadDatabase, id: UUID) {
         id = validation.uuid.parse(id);
@@ -38,7 +38,7 @@ export class ImageApi {
             .execute();
     }
 
-    @ApiScope.scoped(Scope.ImagesWrite)
+    @ApiScope.scoped(Scope.PhotosWrite)
     @Tracing.traced("images.create")
     static async create(db: Database, value: Omit<NewImage, "id">) {
         value = validation.image.parse(value);
@@ -63,7 +63,7 @@ export class ImageApi {
             .execute();
     }
 
-    @ApiScope.scoped(Scope.ImagesWrite)
+    @ApiScope.scoped(Scope.PhotosWrite)
     @Tracing.traced("images.update")
     static async update(db: Database, id: UUID, value: Changes<NewImage>) {
         value = validation.imageChanges.parse(value);
@@ -90,7 +90,7 @@ export class ImageApi {
             .execute();
     }
 
-    @ApiScope.scoped(Scope.ImagesWrite)
+    @ApiScope.scoped(Scope.PhotosWrite)
     @Tracing.traced("images.remove")
     static async remove(db: Database, id: UUID) {
         id = validation.uuid.parse(id);

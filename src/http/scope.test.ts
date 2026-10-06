@@ -20,7 +20,7 @@ test("read scopes receive a database object with no write methods", async () => 
             testAuthDependencies.allowedSubjects,
         ).handle,
     );
-    app.get("/", access.require(Scope.ImagesRead), (context) => {
+    app.get("/", access.require(Scope.PhotosRead), (context) => {
         const database = context.var.db;
         expect(database).not.toBe(db);
         expect(Object.isFrozen(database)).toBe(true);
@@ -44,7 +44,7 @@ test("write scopes receive the writable database", async () => {
             testAuthDependencies.allowedSubjects,
         ).handle,
     );
-    app.post("/", access.require(Scope.ImagesWrite), (context) => {
+    app.post("/", access.require(Scope.PhotosWrite), (context) => {
         const database = context.var.db;
         expect(database).toBe(db);
         database.delete(schema.images).toSQL();

@@ -1,16 +1,11 @@
-import { HTTPException } from "hono/http-exception";
 import { Hono } from "hono";
 import { validator } from "hono/validator";
+import type { AuthEnvironment } from "./auth";
 import { z } from "zod";
-import { InvalidUploadTokenError, ImageUploadApi } from "../api/image-uploads";
+import { ImageUploadApi } from "../api/image-uploads";
 import { ApiValidation } from "../api/validation";
-import {
-    InvalidImageError,
-    ImageTooLargeError,
-} from "../services/image-storage";
 import type { ImageStorage } from "../services/image-storage";
 import type { ScopeMiddleware } from "./scope";
-import type { AuthEnvironment } from "./auth";
 
 export class UploadValidation {
     static readonly uploadRequest = z.strictObject({
@@ -22,11 +17,8 @@ export class UploadValidation {
             "image/tiff",
         ]),
     });
-    static readonly cancelRequest = z.strictObject({
+    static readonly controlRequest = z.strictObject({
         token: z.string().regex(/^[a-f0-9]{64}$/),
-    });
-    static readonly interruptRequest = UploadValidation.cancelRequest.extend({
-        ready: z.boolean(),
     });
 }
 
@@ -34,7 +26,7 @@ export class ImageUploadRoutes extends Hono<AuthEnvironment> {
     constructor(access: ScopeMiddleware, getStorage: () => ImageStorage) {
         super();
         this.post(
-            "/:id/upload",
+            "/:id/uploads",
             access.write(ImageUploadApi.create),
             validator("json", (value) =>
                 UploadValidation.uploadRequest.parse(value),
@@ -48,7 +40,21 @@ export class ImageUploadRoutes extends Hono<AuthEnvironment> {
                     id,
                     context.req.valid("json").contentType,
                 );
-                return context.json(upload, 201);
+                const { uploadId, token, url, method, headers, expiresIn } =
+                    upload;
+                context.header(
+                    "Location",
+                    `/photos/${id.toLowerCase()}/uploads/${uploadId}`,
+                );
+                return context.json(
+                    {
+                        id: uploadId,
+                        status: "pending",
+                        token,
+                        upload: { url, method, headers, expiresIn },
+                    },
+                    201,
+                );
             },
         );
         this.get(
@@ -66,10 +72,10 @@ export class ImageUploadRoutes extends Hono<AuthEnvironment> {
             },
         );
         this.post(
-            "/:id/uploads/:uploadId/interrupt",
-            access.write(ImageUploadApi.interrupt),
+            "/:id/uploads/:uploadId/complete",
+            access.write(ImageUploadApi.finish),
             validator("json", (value) =>
-                UploadValidation.interruptRequest.parse(value),
+                UploadValidation.controlRequest.parse(value),
             ),
             async (context) => {
                 const db = context.var.db;
@@ -77,28 +83,23 @@ export class ImageUploadRoutes extends Hono<AuthEnvironment> {
                 const uploadId = ApiValidation.uuid.parse(
                     context.req.param("uploadId"),
                 );
-                const { token, ready } = context.req.valid("json");
-                try {
-                    return context.json(
-                        await ImageUploadApi.interrupt(
-                            db,
-                            getStorage(),
-                            id,
-                            uploadId,
-                            token,
-                            ready,
-                        ),
-                    );
-                } catch (error) {
-                    throw ImageUploadRoutes.controlError(error);
-                }
+                const { token } = context.req.valid("json");
+                return context.json(
+                    await ImageUploadApi.finish(
+                        db,
+                        getStorage(),
+                        id,
+                        uploadId,
+                        token,
+                    ),
+                );
             },
         );
-        this.delete(
-            "/:id/uploads/:uploadId",
+        this.post(
+            "/:id/uploads/:uploadId/cancel",
             access.write(ImageUploadApi.cancel),
             validator("json", (value) =>
-                UploadValidation.cancelRequest.parse(value),
+                UploadValidation.controlRequest.parse(value),
             ),
             async (context) => {
                 const db = context.var.db;
@@ -106,29 +107,15 @@ export class ImageUploadRoutes extends Hono<AuthEnvironment> {
                 const uploadId = ApiValidation.uuid.parse(
                     context.req.param("uploadId"),
                 );
-                try {
-                    return context.json(
-                        await ImageUploadApi.cancel(
-                            db,
-                            id,
-                            uploadId,
-                            context.req.valid("json").token,
-                        ),
-                    );
-                } catch (error) {
-                    throw ImageUploadRoutes.controlError(error);
-                }
+                return context.json(
+                    await ImageUploadApi.cancel(
+                        db,
+                        id,
+                        uploadId,
+                        context.req.valid("json").token,
+                    ),
+                );
             },
         );
-    }
-
-    private static controlError(error: unknown) {
-        if (error instanceof InvalidUploadTokenError)
-            return new HTTPException(403, { message: error.message });
-        if (error instanceof InvalidImageError)
-            return new HTTPException(400, { message: error.message });
-        if (error instanceof ImageTooLargeError)
-            return new HTTPException(413, { message: error.message });
-        return error;
     }
 }

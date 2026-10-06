@@ -61,19 +61,23 @@ test("runtime uses the configured RFC 9068 provider for real HTTP requests", asy
             ),
         });
         await runtime.start();
-        const url = new URL("/images", runtime.url);
+        const url = new URL("/photos", runtime.url);
         expect((await fetch(url)).status).toBe(401);
-        const reader = await accessToken("test-user", "images:read");
+        const reader = await accessToken("test-user", "photos:read");
         const response = await fetch(url, {
             headers: { Authorization: `Bearer ${reader}` },
         });
         expect(response.status).toBe(200);
-        expect(await response.json()).toEqual([]);
+        expect(await response.json()).toEqual({
+            items: [],
+            limit: 50,
+            offset: 0,
+        });
         expect(
             (
                 await fetch(url, {
                     headers: {
-                        Authorization: `Bearer ${await accessToken("other-user", "images:read")}`,
+                        Authorization: `Bearer ${await accessToken("other-user", "photos:read")}`,
                     },
                 })
             ).status,
@@ -95,7 +99,7 @@ test("runtime uses the configured RFC 9068 provider for real HTTP requests", asy
             });
         expect((await create(reader)).status).toBe(403);
         expect(
-            (await create(await accessToken("test-user", "images:write")))
+            (await create(await accessToken("test-user", "photos:write")))
                 .status,
         ).toBe(201);
     } finally {
@@ -163,7 +167,7 @@ test("runtime serves requests on an allocated port, shares lazy storage, and clo
         ).start();
         expect(Number(runtime.url.port)).toBeGreaterThan(0);
         expect(storageInitializations).toBe(0);
-        const created = await fetch(new URL("/images", runtime.url), {
+        const created = await fetch(new URL("/photos", runtime.url), {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -182,7 +186,7 @@ test("runtime serves requests on an allocated port, shares lazy storage, and clo
         expect(storageInitializations).toBe(0);
         for (let attempt = 0; attempt < 2; attempt++) {
             const uploaded = await fetch(
-                new URL(`/images/${photo.id}/upload`, runtime.url),
+                new URL(`/photos/${photo.id}/uploads`, runtime.url),
                 {
                     method: "POST",
                     headers: {
@@ -193,7 +197,9 @@ test("runtime serves requests on an allocated port, shares lazy storage, and clo
                 },
             );
             expect(uploaded.status).toBe(201);
-            expect(await uploaded.json()).toMatchObject({ method: "PUT" });
+            expect(await uploaded.json()).toMatchObject({
+                upload: { method: "PUT" },
+            });
         }
         expect(storageInitializations).toBe(1);
         const stopping = runtime.stop();

@@ -52,7 +52,7 @@ function token(
         exp: now + 300,
         client_id: "test-client",
         jti: crypto.randomUUID(),
-        scope: "images:read",
+        scope: "photos:read",
         ...claims,
     })
         .setProtectedHeader(header)
@@ -61,14 +61,14 @@ function token(
 
 test("verifies access tokens through remote JWKS and caches the keys", async () => {
     const accessToken = await token({
-        scope: "openid images:read images:read made-up:write",
-        permissions: ["images:write"],
+        scope: "openid photos:read photos:read made-up:write",
+        permissions: ["photos:write"],
     });
     const identity = await provider.authenticate(accessToken);
     expect(identity).toEqual({
         subject: "test-user",
         issuer: testAuthSettings.issuer,
-        scopes: new Set([Scope.ImagesRead]),
+        scopes: new Set([Scope.PhotosRead]),
     });
     const fetched = requests;
     expect(fetched).toBeGreaterThan(0);
@@ -92,8 +92,8 @@ test.each([
     { client_id: "" },
     { jti: undefined },
     { jti: "" },
-    { scope: ["images:read"] },
-    { scope: "images:read\timages:write" },
+    { scope: ["photos:read"] },
+    { scope: "photos:read\tphotos:write" },
 ])("rejects invalid token claims (%#)", async (claims) => {
     await expect(
         provider.authenticate(await token(claims)),

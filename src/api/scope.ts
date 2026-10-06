@@ -3,8 +3,8 @@ export enum Scope {
     CamerasWrite = "cameras:write",
     LensesRead = "lenses:read",
     LensesWrite = "lenses:write",
-    ImagesRead = "images:read",
-    ImagesWrite = "images:write",
+    PhotosRead = "photos:read",
+    PhotosWrite = "photos:write",
     ImageAssetsRead = "image-assets:read",
     ImageAssetsWrite = "image-assets:write",
 }
@@ -12,7 +12,7 @@ export enum Scope {
 export type ReadScope =
     | Scope.CamerasRead
     | Scope.LensesRead
-    | Scope.ImagesRead
+    | Scope.PhotosRead
     | Scope.ImageAssetsRead;
 export type WriteScope = Exclude<Scope, ReadScope>;
 
@@ -21,7 +21,7 @@ export class Scopes {
     private static readonly readable = new Set<Scope>([
         Scope.CamerasRead,
         Scope.LensesRead,
-        Scope.ImagesRead,
+        Scope.PhotosRead,
         Scope.ImageAssetsRead,
     ]);
 

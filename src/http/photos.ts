@@ -1,39 +1,35 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { validator } from "hono/validator";
+import type { AuthEnvironment } from "./auth";
 import { PhotoApi } from "../api/photos";
 import type { ScopeMiddleware } from "./scope";
-import type { AuthEnvironment } from "./auth";
 import { HttpValidation as validation } from "./validation";
-import { ImageStorage } from "../services/image-storage";
+import type { ImageStorage } from "../services/image-storage";
 import { Tracing } from "../telemetry/tracing";
+import { assetUrl, photoResponse } from "./response";
 
 export class PhotoRoutes extends Hono<AuthEnvironment> {
     constructor(access: ScopeMiddleware, getStorage: () => ImageStorage) {
         super();
         this.get("/", access.read(PhotoApi.list), async (context) => {
             const db = context.var.db;
-            return context.json(
-                await PhotoApi.list(
-                    db,
-                    validation.pagination.parse(context.req.query()),
-                ),
-            );
+            const page = validation.pagination.parse(context.req.query());
+            const items = await PhotoApi.list(db, page);
+            return context.json({ items: items.map(photoResponse), ...page });
         });
-        this.get(
-            "/:id/metadata",
-            access.read(PhotoApi.read),
-            async (context) => {
-                const db = context.var.db;
-                return context.json(
+        this.get("/:id", access.read(PhotoApi.read), async (context) => {
+            const db = context.var.db;
+            return context.json(
+                photoResponse(
                     await PhotoApi.read(
                         db,
                         validation.uuid.parse(context.req.param("id")),
                     ),
-                );
-            },
-        );
-        this.get("/:id", access.read(PhotoApi.read), async (context) => {
+                ),
+            );
+        });
+        this.get("/:id/image", access.read(PhotoApi.read), async (context) => {
             const db = context.var.db;
             const id = validation.uuid.parse(context.req.param("id"));
             const photo = await PhotoApi.read(db, id);
@@ -46,12 +42,12 @@ export class PhotoRoutes extends Hono<AuthEnvironment> {
                     message: "Photo has no image assets",
                 });
             return context.redirect(
-                ImageStorage.assetUrl(photo.id, asset.assetLocation),
+                assetUrl(photo.id, asset.assetLocation),
                 302,
             );
         });
         this.get(
-            "/:id/:filename",
+            "/:id/assets/:filename",
             access.read(PhotoApi.read),
             async (context) => {
                 const db = context.var.db;
@@ -90,10 +86,12 @@ export class PhotoRoutes extends Hono<AuthEnvironment> {
             validator("json", (value) => validation.photo.parse(value)),
             async (context) => {
                 const db = context.var.db;
-                return context.json(
-                    await PhotoApi.create(db, context.req.valid("json")),
-                    201,
+                const photo = await PhotoApi.create(
+                    db,
+                    context.req.valid("json"),
                 );
+                context.header("Location", `/photos/${photo.id}`);
+                return context.json(photoResponse(photo), 201);
             },
         );
         this.patch(
@@ -104,7 +102,13 @@ export class PhotoRoutes extends Hono<AuthEnvironment> {
                 const db = context.var.db;
                 const id = validation.uuid.parse(context.req.param("id"));
                 return context.json(
-                    await PhotoApi.update(db, id, context.req.valid("json")),
+                    photoResponse(
+                        await PhotoApi.update(
+                            db,
+                            id,
+                            context.req.valid("json"),
+                        ),
+                    ),
                 );
             },
         );

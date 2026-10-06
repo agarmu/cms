@@ -121,7 +121,7 @@ export class PhotoApi {
         );
     }
 
-    @ApiScope.scoped(Scope.ImagesRead)
+    @ApiScope.scoped(Scope.PhotosRead)
     @Tracing.traced("photo.list")
     static async list(db: ReadDatabase, page: Page) {
         const { limit, offset } = validation.pagination.parse(page);
@@ -136,7 +136,7 @@ export class PhotoApi {
         });
     }
 
-    @ApiScope.scoped(Scope.ImagesRead)
+    @ApiScope.scoped(Scope.PhotosRead)
     @Tracing.traced("photo.read")
     static async read(db: ReadDatabase, id: UUID) {
         id = validation.uuid.parse(id);
@@ -148,7 +148,7 @@ export class PhotoApi {
         return row;
     }
 
-    @ApiScope.scoped(Scope.ImagesWrite)
+    @ApiScope.scoped(Scope.PhotosWrite)
     @Tracing.traced("photo.create")
     static async create(
         db: Database,
@@ -176,7 +176,7 @@ export class PhotoApi {
         );
     }
 
-    @ApiScope.scoped(Scope.ImagesWrite)
+    @ApiScope.scoped(Scope.PhotosWrite)
     @Tracing.traced("photo.update")
     static async update(
         db: Database,
@@ -214,7 +214,7 @@ export class PhotoApi {
         );
     }
 
-    @ApiScope.scoped(Scope.ImagesWrite)
+    @ApiScope.scoped(Scope.PhotosWrite)
     @Tracing.traced("photo.remove")
     static async remove(db: Database, id: UUID) {
         id = validation.uuid.parse(id);

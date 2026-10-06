@@ -9,7 +9,7 @@ import { Scope } from "./scope";
 test.each([
     [CameraApi, Scope.CamerasRead, Scope.CamerasWrite],
     [LensApi, Scope.LensesRead, Scope.LensesWrite],
-    [ImageApi, Scope.ImagesRead, Scope.ImagesWrite],
+    [ImageApi, Scope.PhotosRead, Scope.PhotosWrite],
     [ImageAssetApi, Scope.ImageAssetsRead, Scope.ImageAssetsWrite],
 ] as const)(
     "resource decorators declare the correct scopes (%#)",

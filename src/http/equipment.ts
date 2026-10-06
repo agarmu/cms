@@ -3,8 +3,8 @@ import { CameraApi } from "../api/resources/cameras";
 import { LensApi } from "../api/resources/lenses";
 import { NotFoundError } from "../lib/errors";
 import type { ScopeMiddleware } from "./scope";
-import type { AuthEnvironment } from "./auth";
 import { HttpValidation } from "./validation";
+import type { AuthEnvironment } from "./auth";
 
 // Equipment can be browsed and explicitly removed, but only created through photos.
 export class EquipmentRoutes extends Hono<AuthEnvironment> {
@@ -15,12 +15,8 @@ export class EquipmentRoutes extends Hono<AuthEnvironment> {
         super();
         this.get("/", access.read(calls.list), async (context) => {
             const db = context.var.db;
-            return context.json(
-                await calls.list(
-                    db,
-                    HttpValidation.pagination.parse(context.req.query()),
-                ),
-            );
+            const page = HttpValidation.pagination.parse(context.req.query());
+            return context.json({ items: await calls.list(db, page), ...page });
         });
         this.get("/:id", access.read(calls.read), async (context) => {
             const db = context.var.db;
