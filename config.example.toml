@@ -2,6 +2,13 @@
 # All times in ms
 port = 3000
 
+[auth]
+kind = "rfc-9068"
+issuer = "https://your-tenant.us.auth0.com/"
+audience = "https://photos.example.com/"
+jwksUrl = "https://your-tenant.us.auth0.com/.well-known/jwks.json"
+allowedSubjects = ["auth0|replace-with-your-user-id"]
+
 [database]
 # Public connection details
 # keep the password in secrets.toml.

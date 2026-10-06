@@ -1,3 +1,5 @@
+import { requestAsUser } from "../auth/test-fixtures";
+import { testAuthSettings, testAuthDependencies } from "../auth/test-fixtures";
 import { StorageConfiguration } from "../services/storage-config";
 import { WorkerConfiguration } from "../services/worker-config";
 import { afterAll, beforeAll, expect, test } from "bun:test";
@@ -42,6 +44,7 @@ const telemetry = new Telemetry();
 const client = new PGlite();
 const db = drizzle(client, { schema: schema.definition });
 const { http: app } = new Application({
+    ...testAuthDependencies,
     db,
     getBlobStorage: () => {
         throw new Error("Metadata requests must not initialize blob storage");
@@ -84,7 +87,7 @@ const incomingTrace = "11111111111111111111111111111111";
 const incomingSpan = "2222222222222222";
 
 test("Bun propagates incoming W3C context through HTTP, transactions, and API spans", async () => {
-    const response = await app.request("/images", {
+    const response = await requestAsUser(app, "/images", {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -125,7 +128,7 @@ test("Bun propagates incoming W3C context through HTTP, transactions, and API sp
 
 test("handled API errors still mark and finish the HTTP and child spans", async () => {
     const traceId = "33333333333333333333333333333333";
-    const response = await app.request("/images", {
+    const response = await requestAsUser(app, "/images", {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -179,7 +182,7 @@ test("parallel asynchronous operations keep separate active child spans", async 
 
 test("unsampled incoming traces do not export child spans", async () => {
     const traceId = "44444444444444444444444444444444";
-    const response = await app.request("/images", {
+    const response = await requestAsUser(app, "/images", {
         headers: { traceparent: `00-${traceId}-${incomingSpan}-00` },
     });
     expect(response.status).toBe(200);
@@ -483,6 +486,7 @@ test("application configuration, assembly, startup, and shutdown emit spans", as
             }),
         ).create();
         const config = new ApplicationConfig({
+            auth: testAuthSettings,
             database: { url: "postgres://localhost/test" },
             port: 0,
             storage: { backend: "local", directory: "./data/blobs" },

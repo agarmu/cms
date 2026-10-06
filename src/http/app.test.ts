@@ -1,3 +1,8 @@
+import {
+    testAuthSettings,
+    testAuthDependencies,
+    requestAsUser,
+} from "../auth/test-fixtures";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
@@ -13,6 +18,7 @@ const client = new PGlite();
 const db = drizzle(client, { schema: schema.definition });
 const reportedErrors: Error[] = [];
 const { http: app } = new Application({
+    ...testAuthDependencies,
     db,
     getBlobStorage: () => {
         throw new Error("Metadata requests must not initialize blob storage");
@@ -40,7 +46,7 @@ function request(path: string, method = "GET", body?: unknown) {
         headers.set("Content-Type", "application/json");
         init.body = JSON.stringify(body);
     }
-    return app.request(path, init);
+    return requestAsUser(app, path, init);
 }
 
 const metadata = {
@@ -53,11 +59,13 @@ const metadata = {
 
 test("application instances enforce their configured HTTP body limits independently", async () => {
     const config = new ApplicationConfig({
+        auth: testAuthSettings,
         database: { url: "postgres://localhost/test" },
         storage: { backend: "local", directory: "./data/blobs" },
         http: { maxBodyBytes: 32 },
     });
     const custom = new Application({
+        ...testAuthDependencies,
         db,
         getBlobStorage: () => {
             throw new Error(
@@ -72,8 +80,10 @@ test("application instances enforce their configured HTTP body limits independen
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(metadata),
     };
-    expect((await custom.http.request("/images", init)).status).toBe(413);
-    expect((await app.request("/images", init)).status).toBe(201);
+    expect((await requestAsUser(custom.http, "/images", init)).status).toBe(
+        413,
+    );
+    expect((await requestAsUser(app, "/images", init)).status).toBe(201);
 });
 
 const asset = { width: 640, height: 320, assetLocation: "images/photo.webp" };
@@ -339,7 +349,7 @@ test.each(invalidRequests)(
 test("rejects malformed JSON, unsupported content types, and oversized bodies", async () => {
     expect(
         (
-            await app.request("/images", {
+            await requestAsUser(app, "/images", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: "{",
@@ -347,8 +357,12 @@ test("rejects malformed JSON, unsupported content types, and oversized bodies", 
         ).status,
     ).toBe(400);
     expect(
-        (await app.request("/images", { method: "POST", body: "alt=Photo" }))
-            .status,
+        (
+            await requestAsUser(app, "/images", {
+                method: "POST",
+                body: "alt=Photo",
+            })
+        ).status,
     ).toBe(400);
     expect(
         (
@@ -363,7 +377,7 @@ test("rejects malformed JSON, unsupported content types, and oversized bodies", 
 test.each(["application/json; charset=utf-8", "application/vnd.cms+json"])(
     "uses Hono JSON parsing for %s",
     async (contentType) => {
-        const response = await app.request("/images", {
+        const response = await requestAsUser(app, "/images", {
             method: "POST",
             headers: { "Content-Type": contentType },
             body: JSON.stringify(metadata),
@@ -378,7 +392,7 @@ test("missing JSON content type fails validation for both creation and modificat
         ["/images", "POST", metadata],
         [`/images/${photo.id}`, "PATCH", { enabled: false }],
     ] as const) {
-        const response = await app.request(path, {
+        const response = await requestAsUser(app, path, {
             method,
             body: JSON.stringify(body),
         });

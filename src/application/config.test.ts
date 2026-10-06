@@ -1,3 +1,4 @@
+import { testAuthSettings, testAuthToml } from "../auth/test-fixtures";
 import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -6,6 +7,7 @@ import { ApplicationConfig } from "./config";
 import { StorageFactory } from "./storage";
 
 const minimal =
+    testAuthToml +
     '[database]\nurl = "postgres://user@localhost/cms"\n[storage]\nbackend = "local"\ndirectory = "./data/blobs"\n';
 
 async function withFiles(
@@ -54,11 +56,25 @@ test("loads every example table and maps secrets and database units into client 
     }
     expect(config.images.variants).toHaveLength(3);
     expect(config.http.maxBodyBytes).toBe(65536);
+    expect(config.auth.kind).toBe("rfc-9068");
+});
+
+test("requires authentication configuration", async () => {
+    await withFiles(
+        minimal.replace(testAuthToml, ""),
+        "",
+        async (configPath, secretsPath) => {
+            await expect(
+                ApplicationConfig.fromFiles(configPath, secretsPath),
+            ).rejects.toThrow("Invalid configuration");
+        },
+    );
 });
 
 test("signs virtual-hosted storage URLs using file credentials and endpoint region", async () => {
     const config = new ApplicationConfig(
         {
+            auth: testAuthSettings,
             database: { url: "postgres://localhost/cms" },
             storage: {
                 backend: "s3",
@@ -190,7 +206,8 @@ test("S3 signing uses file keys and endpoint while allowing Bun's environment se
     const script = `
     import { ApplicationConfig } from "./src/application/config";
     import { StorageFactory } from "./src/application/storage";
-    const config = new ApplicationConfig({
+    import { testAuthSettings } from "./src/auth/test-fixtures";
+    const config = new ApplicationConfig({ auth: testAuthSettings,
       database: { url: "postgres://localhost/cms" },
       storage: { backend: "s3", endpoint: "https://photos.example.com", region: "auto" },
     }, { storage: { accessKeyId: "file-key", secretAccessKey: "file-secret" } });

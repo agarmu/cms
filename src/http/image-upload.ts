@@ -1,9 +1,7 @@
 import { HTTPException } from "hono/http-exception";
 import { Hono } from "hono";
 import { validator } from "hono/validator";
-import type { Context, Env } from "hono";
 import { z } from "zod";
-import { ApiScope } from "../api/call";
 import { InvalidUploadTokenError, ImageUploadApi } from "../api/image-uploads";
 import { ApiValidation } from "../api/validation";
 import {
@@ -11,7 +9,8 @@ import {
     ImageTooLargeError,
 } from "../services/image-storage";
 import type { ImageStorage } from "../services/image-storage";
-import type { ScopeWrapper } from "./scope";
+import type { ScopeMiddleware } from "./scope";
+import type { AuthEnvironment } from "./auth";
 
 export class UploadValidation {
     static readonly uploadRequest = z.strictObject({
@@ -30,128 +29,96 @@ export class UploadValidation {
         ready: z.boolean(),
     });
 }
-type ControlContext<Schema extends z.ZodType> = Context<
-    Env,
-    string,
-    { out: { json: z.output<Schema> } }
->;
-type UploadContext = Context<
-    Env,
-    string,
-    { out: { json: z.output<typeof UploadValidation.uploadRequest> } }
->;
 
-export class ImageUploadRoutes extends Hono {
-    constructor(withScope: ScopeWrapper, getStorage: () => ImageStorage) {
+export class ImageUploadRoutes extends Hono<AuthEnvironment> {
+    constructor(access: ScopeMiddleware, getStorage: () => ImageStorage) {
         super();
         this.post(
             "/:id/upload",
+            access.write(ImageUploadApi.create),
             validator("json", (value) =>
                 UploadValidation.uploadRequest.parse(value),
             ),
-            withScope(
-                ApiScope.getScope(ImageUploadApi.create, "write"),
-                async (db, context: UploadContext) => {
-                    const id = ApiValidation.uuid.parse(
-                        context.req.param("id"),
-                    );
-                    const upload = await ImageUploadApi.create(
-                        db,
-                        getStorage(),
-                        id,
-                        context.req.valid("json").contentType,
-                    );
-                    return context.json(upload, 201);
-                },
-            ),
+            async (context) => {
+                const db = context.var.db;
+                const id = ApiValidation.uuid.parse(context.req.param("id"));
+                const upload = await ImageUploadApi.create(
+                    db,
+                    getStorage(),
+                    id,
+                    context.req.valid("json").contentType,
+                );
+                return context.json(upload, 201);
+            },
         );
         this.get(
             "/:id/uploads/:uploadId",
-            withScope(
-                ApiScope.getScope(ImageUploadApi.read, "read"),
-                async (db, context) => {
-                    const id = ApiValidation.uuid.parse(
-                        context.req.param("id"),
-                    );
-                    const uploadId = ApiValidation.uuid.parse(
-                        context.req.param("uploadId"),
-                    );
-                    return context.json(
-                        await ImageUploadApi.read(db, id, uploadId),
-                    );
-                },
-            ),
+            access.read(ImageUploadApi.read),
+            async (context) => {
+                const db = context.var.db;
+                const id = ApiValidation.uuid.parse(context.req.param("id"));
+                const uploadId = ApiValidation.uuid.parse(
+                    context.req.param("uploadId"),
+                );
+                return context.json(
+                    await ImageUploadApi.read(db, id, uploadId),
+                );
+            },
         );
         this.post(
             "/:id/uploads/:uploadId/interrupt",
+            access.write(ImageUploadApi.interrupt),
             validator("json", (value) =>
                 UploadValidation.interruptRequest.parse(value),
             ),
-            withScope(
-                ApiScope.getScope(ImageUploadApi.interrupt, "write"),
-                async (
-                    db,
-                    context: ControlContext<
-                        typeof UploadValidation.interruptRequest
-                    >,
-                ) => {
-                    const id = ApiValidation.uuid.parse(
-                        context.req.param("id"),
+            async (context) => {
+                const db = context.var.db;
+                const id = ApiValidation.uuid.parse(context.req.param("id"));
+                const uploadId = ApiValidation.uuid.parse(
+                    context.req.param("uploadId"),
+                );
+                const { token, ready } = context.req.valid("json");
+                try {
+                    return context.json(
+                        await ImageUploadApi.interrupt(
+                            db,
+                            getStorage(),
+                            id,
+                            uploadId,
+                            token,
+                            ready,
+                        ),
                     );
-                    const uploadId = ApiValidation.uuid.parse(
-                        context.req.param("uploadId"),
-                    );
-                    const { token, ready } = context.req.valid("json");
-                    try {
-                        return context.json(
-                            await ImageUploadApi.interrupt(
-                                db,
-                                getStorage(),
-                                id,
-                                uploadId,
-                                token,
-                                ready,
-                            ),
-                        );
-                    } catch (error) {
-                        throw ImageUploadRoutes.controlError(error);
-                    }
-                },
-            ),
+                } catch (error) {
+                    throw ImageUploadRoutes.controlError(error);
+                }
+            },
         );
         this.delete(
             "/:id/uploads/:uploadId",
+            access.write(ImageUploadApi.cancel),
             validator("json", (value) =>
                 UploadValidation.cancelRequest.parse(value),
             ),
-            withScope(
-                ApiScope.getScope(ImageUploadApi.cancel, "write"),
-                async (
-                    db,
-                    context: ControlContext<
-                        typeof UploadValidation.cancelRequest
-                    >,
-                ) => {
-                    const id = ApiValidation.uuid.parse(
-                        context.req.param("id"),
+            async (context) => {
+                const db = context.var.db;
+                const id = ApiValidation.uuid.parse(context.req.param("id"));
+                const uploadId = ApiValidation.uuid.parse(
+                    context.req.param("uploadId"),
+                );
+                try {
+                    return context.json(
+                        await ImageUploadApi.cancel(
+                            db,
+                            id,
+                            uploadId,
+                            context.req.valid("json").token,
+                        ),
                     );
-                    const uploadId = ApiValidation.uuid.parse(
-                        context.req.param("uploadId"),
-                    );
-                    try {
-                        return context.json(
-                            await ImageUploadApi.cancel(
-                                db,
-                                id,
-                                uploadId,
-                                context.req.valid("json").token,
-                            ),
-                        );
-                    } catch (error) {
-                        throw ImageUploadRoutes.controlError(error);
-                    }
-                },
-            ),
+                } catch (error) {
+                    throw ImageUploadRoutes.controlError(error);
+                }
+            },
         );
     }
 

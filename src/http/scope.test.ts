@@ -4,38 +4,53 @@ import { drizzle } from "drizzle-orm/bun-sql";
 import { Scope } from "../api/scope";
 import { DatabaseSchema as schema } from "../db/schema";
 import { ScopeMiddleware } from "./scope";
+import { AuthenticationMiddleware } from "./auth";
+import type { AuthEnvironment } from "./auth";
+import { requestAsUser, testAuthDependencies } from "../auth/test-fixtures";
 
 const db = drizzle.mock({ schema: schema.definition });
-const withScope = new ScopeMiddleware(db).wrap;
+const access = new ScopeMiddleware(db);
 
 test("read scopes receive a database object with no write methods", async () => {
-    const app = new Hono();
-    app.get(
-        "/",
-        withScope(Scope.ImagesRead, (database, context) => {
-            expect(database).not.toBe(db);
-            expect(Object.isFrozen(database)).toBe(true);
-            expect("insert" in database).toBe(false);
-            expect("update" in database).toBe(false);
-            expect("delete" in database).toBe(false);
-            expect("execute" in database).toBe(false);
-            expect("transaction" in database).toBe(false);
-            database.select().from(schema.images).toSQL();
-            return Promise.resolve(context.json({ readable: true }));
-        }),
+    const app = new Hono<AuthEnvironment>();
+    app.use(
+        "*",
+        new AuthenticationMiddleware(
+            testAuthDependencies.authentication,
+            testAuthDependencies.allowedSubjects,
+        ).handle,
     );
-    expect((await app.request("/")).status).toBe(200);
+    app.get("/", access.require(Scope.ImagesRead), (context) => {
+        const database = context.var.db;
+        expect(database).not.toBe(db);
+        expect(Object.isFrozen(database)).toBe(true);
+        expect("insert" in database).toBe(false);
+        expect("update" in database).toBe(false);
+        expect("delete" in database).toBe(false);
+        expect("execute" in database).toBe(false);
+        expect("transaction" in database).toBe(false);
+        database.select().from(schema.images).toSQL();
+        return context.json({ readable: true });
+    });
+    expect((await requestAsUser(app, "/")).status).toBe(200);
 });
 
 test("write scopes receive the writable database", async () => {
-    const app = new Hono();
-    app.post(
-        "/",
-        withScope(Scope.ImagesWrite, (database, context) => {
-            expect(database).toBe(db);
-            database.delete(schema.images).toSQL();
-            return Promise.resolve(context.json({ writable: true }));
-        }),
+    const app = new Hono<AuthEnvironment>();
+    app.use(
+        "*",
+        new AuthenticationMiddleware(
+            testAuthDependencies.authentication,
+            testAuthDependencies.allowedSubjects,
+        ).handle,
     );
-    expect((await app.request("/", { method: "POST" })).status).toBe(200);
+    app.post("/", access.require(Scope.ImagesWrite), (context) => {
+        const database = context.var.db;
+        expect(database).toBe(db);
+        database.delete(schema.images).toSQL();
+        return context.json({ writable: true });
+    });
+    expect((await requestAsUser(app, "/", { method: "POST" })).status).toBe(
+        200,
+    );
 });

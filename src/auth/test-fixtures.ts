@@ -1,3 +1,4 @@
+import type { Hono } from "hono";
 import { Scope } from "../api/scope";
 import type { AuthenticationProvider, AuthIdentity } from "./provider";
 
@@ -28,3 +29,13 @@ audience = "${testAuthSettings.audience}"
 jwksUrl = "${testAuthSettings.jwksUrl}"
 allowedSubjects = ["test-user"]
 `;
+
+export function requestAsUser(
+    app: Pick<Hono, "request">,
+    path: string,
+    init: RequestInit = {},
+) {
+    const headers = new Headers(init.headers);
+    headers.set("Authorization", "Bearer test-token");
+    return app.request(path, { ...init, headers });
+}

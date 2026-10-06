@@ -4,6 +4,10 @@ import { z } from "zod";
 import { DatabaseErrors } from "../db/errors";
 import { AppError } from "../lib/errors";
 import type { ErrorCode } from "../lib/errors";
+import {
+    AuthenticationError,
+    AuthenticationUnavailableError,
+} from "../auth/provider";
 
 export class HttpErrorHandler {
     private static readonly applicationStatus = {
@@ -14,6 +18,19 @@ export class HttpErrorHandler {
     constructor(private readonly reportError: (error: Error) => void) {}
 
     readonly handle: ErrorHandler = (error, context) => {
+        if (error instanceof AuthenticationError) {
+            context.header(
+                "WWW-Authenticate",
+                context.req.header("Authorization")
+                    ? 'Bearer error="invalid_token"'
+                    : "Bearer",
+            );
+            return context.json({ error: error.message }, 401);
+        }
+        if (error instanceof AuthenticationUnavailableError) {
+            this.reportError(error);
+            return context.json({ error: error.message }, 503);
+        }
         if (error instanceof HTTPException) {
             if (error.res) return error.getResponse();
             return context.json({ error: error.message }, error.status);

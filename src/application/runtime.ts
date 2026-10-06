@@ -5,8 +5,11 @@ import { Tracing } from "../telemetry/tracing";
 import type { ApplicationConfig } from "./config";
 import { Application } from "./index";
 import { StorageFactory } from "./storage";
+import type { AuthenticationProvider } from "../auth/provider";
+import { Rfc9068AuthenticationProvider } from "../auth/rfc-9068";
 
 export type RuntimeDependencies = {
+    authentication?: AuthenticationProvider;
     connect?: (options: Bun.SQL.Options) => Promise<DatabaseSession>;
     getBlobStorage?: () => BlobStorage;
     reportError?: (error: Error) => void;
@@ -44,6 +47,10 @@ export class ApplicationRuntime {
                 )(this.config.database.clientOptions());
                 const factory = new StorageFactory(this.config.storage);
                 this.application = new Application({
+                    authentication:
+                        this.options.authentication ??
+                        new Rfc9068AuthenticationProvider(this.config.auth),
+                    allowedSubjects: this.config.auth.allowedSubjects,
                     db: this.connection.db,
                     getBlobStorage:
                         this.options.getBlobStorage ?? (() => factory.create()),

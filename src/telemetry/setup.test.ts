@@ -1,3 +1,4 @@
+import { testAuthToml } from "../auth/test-fixtures";
 import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -40,7 +41,8 @@ test.each([
             const signals = ["traces", "metrics", "logs"] as const;
             await Bun.write(
                 configPath,
-                '[database]\nurl = "postgres://localhost/cms"\n[storage]\nbackend = "local"\ndirectory = "./data/blobs"\n[telemetry]\nserviceName = "file-service"\nenabled = ' +
+                testAuthToml +
+                    '[database]\nurl = "postgres://localhost/cms"\n[storage]\nbackend = "local"\ndirectory = "./data/blobs"\n[telemetry]\nserviceName = "file-service"\nenabled = ' +
                     !enabled.disabled +
                     "\n" +
                     signals
@@ -74,6 +76,7 @@ test.each([
                 'import { ApplicationConfig } from "./src/application/config";',
                 'import { Telemetry } from "./src/telemetry/setup";',
                 'import { Tracing } from "./src/telemetry/tracing";',
+                'import { testAuthDependencies } from "./src/auth/test-fixtures";',
                 "const config = await ApplicationConfig.fromFiles(" +
                     JSON.stringify(configPath) +
                     ", " +
@@ -85,8 +88,8 @@ test.each([
                 "  telemetry.start();",
                 '  if (process.env.OTEL_SERVICE_NAME !== "wrong-service") throw new Error("Environment was not restored");',
                 '  const { HttpApplication } = await import("./src/http/app");',
-                '  const app = new HttpApplication({ db: { select() { throw new Error("unused"); }, query: {} }, reportError: () => {}, getImageStorage: () => { throw new Error("unused"); } });',
-                '  await app.request("/missing");',
+                '  const app = new HttpApplication({ ...testAuthDependencies, db: { select() { throw new Error("unused"); }, query: {} }, reportError: () => {}, getImageStorage: () => { throw new Error("unused"); } });',
+                '  await app.request("/missing", { headers: { Authorization: "Bearer test-token" } });',
                 '  await Tracing.withSpan("file-config-span", async () => {});',
                 '  telemetry.log("file-config-log");',
                 "  await telemetry.forceFlush();",

@@ -1,7 +1,14 @@
-import type { Context, Env, Handler, Input } from "hono";
+import type { MiddlewareHandler } from "hono";
+import { ApiScope } from "../api/call";
+import type { Database, DatabaseFor, ReadDatabase } from "../api/database";
 import { Scopes } from "../api/scope";
 import type { Scope } from "../api/scope";
-import type { Database, DatabaseFor, ReadDatabase } from "../api/database";
+import { AuthenticationError } from "../auth/provider";
+import type { AuthEnvironment } from "./auth";
+
+type ScopeEnvironment<S extends Scope> = AuthEnvironment & {
+    Variables: { db: DatabaseFor<S> };
+};
 
 export class ScopeMiddleware {
     private readonly readDb: ReadDatabase;
@@ -13,21 +20,32 @@ export class ScopeMiddleware {
         });
     }
 
-    readonly wrap = <const S extends Scope, I extends Input = Input>(
-        scope: S,
-        fn: (
-            db: DatabaseFor<NoInfer<S>>,
-            context: Context<Env, string, I>,
-        ) => Promise<Response>,
-    ): Handler<Env, string, I> => {
-        return (context) =>
-            fn(
+    read(method: object) {
+        return this.require(ApiScope.getScope(method, "read"));
+    }
+    write(method: object) {
+        return this.require(ApiScope.getScope(method, "write"));
+    }
+
+    require<S extends Scope>(scope: S): MiddlewareHandler<ScopeEnvironment<S>> {
+        return async (context, next) => {
+            const identity = context.get("authIdentity");
+            if (!identity) throw new AuthenticationError();
+            if (!identity.scopes.has(scope)) {
+                context.header(
+                    "WWW-Authenticate",
+                    `Bearer error="insufficient_scope", scope="${scope}"`,
+                );
+                return context.json({ error: "Insufficient scope" }, 403);
+            }
+            context.set(
+                "db",
                 (Scopes.isReadScope(scope)
                     ? this.readDb
                     : this.db) as DatabaseFor<S>,
-                context,
             );
-    };
+            await next();
+            return;
+        };
+    }
 }
-
-export type ScopeWrapper = ScopeMiddleware["wrap"];

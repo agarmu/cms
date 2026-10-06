@@ -9,8 +9,11 @@ import { ImageUploadWorker } from "../services/image-upload-worker";
 import { ImageConfiguration } from "../services/image-config";
 import { WorkerConfiguration } from "../services/worker-config";
 import { Tracing } from "../telemetry/tracing";
+import type { AuthenticationProvider } from "../auth/provider";
 
 export type ApplicationDependencies = {
+    authentication: AuthenticationProvider;
+    allowedSubjects: readonly string[];
     db: Database;
     getBlobStorage: () => BlobStorage;
     reportError: (error: Error) => void;
@@ -50,6 +53,8 @@ export class Application {
                             db: options.db,
                             getImageStorage: this.getImageStorage,
                             reportError: options.reportError,
+                            authentication: options.authentication,
+                            allowedSubjects: options.allowedSubjects,
                         },
                         options.httpConfig ?? new HttpConfiguration(),
                     ),

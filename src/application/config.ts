@@ -6,6 +6,7 @@ import { ImageConfiguration } from "../services/image-config";
 import { WorkerConfiguration } from "../services/worker-config";
 import { StorageConfiguration } from "../services/storage-config";
 import { TelemetryConfiguration } from "../telemetry/config";
+import { AuthenticationConfiguration } from "../auth/config";
 
 export type ApplicationSettings = z.input<typeof ApplicationConfig.schema>;
 export type ApplicationSecrets = z.input<
@@ -16,6 +17,7 @@ export class ApplicationConfig {
     static readonly schema = z.strictObject({
         port: z.int().min(0).max(65535).default(3000),
         database: DatabaseConfiguration.schema,
+        auth: AuthenticationConfiguration.schema,
         storage: StorageConfiguration.schema,
         images: ImageConfiguration.schema.prefault({}),
         workers: WorkerConfiguration.schema.prefault({}),
@@ -29,6 +31,7 @@ export class ApplicationConfig {
     });
 
     readonly database: DatabaseConfiguration;
+    readonly auth: AuthenticationConfiguration;
     readonly port: number;
     readonly storage: StorageConfiguration;
     readonly images: ImageConfiguration;
@@ -52,6 +55,7 @@ export class ApplicationConfig {
             settings.database,
             settings.secrets.database,
         );
+        this.auth = new AuthenticationConfiguration(settings.auth);
         this.port = settings.port;
         this.storage = new StorageConfiguration(
             settings.storage,

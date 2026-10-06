@@ -1,3 +1,4 @@
+import { testAuthSettings, testAuthentication } from "../auth/test-fixtures";
 import { expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
@@ -7,8 +8,105 @@ import { DatabaseSchema as schema } from "../db/schema";
 import { S3Storage } from "../services/s3-storage";
 import { ApplicationConfig } from "./config";
 import { ApplicationRuntime } from "./runtime";
+import { exportJWK, generateKeyPair, SignJWT } from "jose";
 
 const databaseUrl = "postgres://localhost/cms_test";
+
+test("runtime uses the configured RFC 9068 provider for real HTTP requests", async () => {
+    const key = await generateKeyPair("RS256");
+    const jwks = {
+        keys: [
+            {
+                ...(await exportJWK(key.publicKey)),
+                kid: "runtime",
+                alg: "RS256",
+                use: "sig",
+            },
+        ],
+    };
+    const issuer = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch: () => Response.json(jwks),
+    });
+    const client = new PGlite();
+    const db = drizzle(client, { schema: schema.definition });
+    const config = new ApplicationConfig({
+        auth: {
+            ...testAuthSettings,
+            issuer: issuer.url.href,
+            jwksUrl: issuer.url.href,
+        },
+        database: { url: databaseUrl },
+        port: 0,
+        storage: { backend: "local", directory: "./data/blobs" },
+    });
+    const runtime = new ApplicationRuntime(config, {
+        connect: async () => ({ db, close: () => client.close() }),
+    });
+    const accessToken = (sub: string, scope: string) =>
+        new SignJWT({ scope, client_id: "runtime-client" })
+            .setProtectedHeader({ alg: "RS256", kid: "runtime", typ: "at+jwt" })
+            .setIssuer(issuer.url.href)
+            .setAudience(testAuthSettings.audience)
+            .setSubject(sub)
+            .setIssuedAt()
+            .setExpirationTime("5m")
+            .setJti(crypto.randomUUID())
+            .sign(key.privateKey);
+    try {
+        await migrate(db, {
+            migrationsFolder: fileURLToPath(
+                new URL("../../migrations/", import.meta.url),
+            ),
+        });
+        await runtime.start();
+        const url = new URL("/images", runtime.url);
+        expect((await fetch(url)).status).toBe(401);
+        const reader = await accessToken("test-user", "images:read");
+        const response = await fetch(url, {
+            headers: { Authorization: `Bearer ${reader}` },
+        });
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual([]);
+        expect(
+            (
+                await fetch(url, {
+                    headers: {
+                        Authorization: `Bearer ${await accessToken("other-user", "images:read")}`,
+                    },
+                })
+            ).status,
+        ).toBe(403);
+        const create = (token: string) =>
+            fetch(url, {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    taken: "2026-10-02T12:00:00Z",
+                    posted: "2026-10-02T12:00:00Z",
+                    alt: "Photo",
+                    description: "",
+                    enabled: true,
+                }),
+            });
+        expect((await create(reader)).status).toBe(403);
+        expect(
+            (await create(await accessToken("test-user", "images:write")))
+                .status,
+        ).toBe(201);
+    } finally {
+        try {
+            await runtime.stop();
+        } finally {
+            await issuer.stop(true);
+            if (!client.closed) await client.close();
+        }
+    }
+}, 30_000);
 
 test("runtime serves requests on an allocated port, shares lazy storage, and closes once", async () => {
     const client = new PGlite();
@@ -25,11 +123,13 @@ test("runtime serves requests on an allocated port, shares lazy storage, and clo
         });
         runtime = await new ApplicationRuntime(
             new ApplicationConfig({
+                auth: testAuthSettings,
                 database: { url: databaseUrl },
                 port: 0,
                 storage: { backend: "local", directory: "./data/blobs" },
             }),
             {
+                authentication: testAuthentication,
                 connect: async (url) => {
                     expect(url).toMatchObject({
                         url: databaseUrl,
@@ -65,7 +165,10 @@ test("runtime serves requests on an allocated port, shares lazy storage, and clo
         expect(storageInitializations).toBe(0);
         const created = await fetch(new URL("/images", runtime.url), {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: "Bearer test-token",
+            },
             body: JSON.stringify({
                 taken: "2026-10-02T12:00:00Z",
                 posted: "2026-10-02T13:00:00Z",
@@ -82,7 +185,10 @@ test("runtime serves requests on an allocated port, shares lazy storage, and clo
                 new URL(`/images/${photo.id}/upload`, runtime.url),
                 {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: "Bearer test-token",
+                    },
                     body: JSON.stringify({ contentType: "image/png" }),
                 },
             );
@@ -113,11 +219,13 @@ test("runtime closes its database when the HTTP listener cannot start", async ()
         await expect(
             new ApplicationRuntime(
                 new ApplicationConfig({
+                    auth: testAuthSettings,
                     database: { url: databaseUrl },
                     storage: { backend: "local", directory: "./data/blobs" },
                     port: occupied.port!,
                 }),
                 {
+                    authentication: testAuthentication,
                     connect: async () => ({
                         db,
                         close: async () => {
@@ -145,11 +253,13 @@ test("stopping during startup waits for the connection and closes resources once
     let closes = 0;
     const runtime = new ApplicationRuntime(
         new ApplicationConfig({
+            auth: testAuthSettings,
             database: { url: databaseUrl },
             storage: { backend: "local", directory: "./data/blobs" },
             port: 0,
         }),
         {
+            authentication: testAuthentication,
             connect: async () => {
                 await connecting.promise;
                 return {

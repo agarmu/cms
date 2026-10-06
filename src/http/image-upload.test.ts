@@ -1,3 +1,4 @@
+import { testAuthDependencies, requestAsUser } from "../auth/test-fixtures";
 import { ImageConfiguration } from "../services/image-config";
 import { WorkerConfiguration } from "../services/worker-config";
 import { afterAll, beforeAll, expect, test } from "bun:test";
@@ -60,6 +61,7 @@ const errors: Error[] = [];
 const storage = new ImageStorage(new S3Storage(s3));
 const reportError = (error: Error) => errors.push(error);
 const app = new HttpApplication({
+    ...testAuthDependencies,
     db,
     getImageStorage: () => storage,
     reportError,
@@ -85,7 +87,7 @@ afterAll(async () => {
 });
 
 async function photo() {
-    const response = await app.request("/images", {
+    const response = await requestAsUser(app, "/images", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -99,7 +101,7 @@ async function photo() {
     return (await response.json()) as { id: string };
 }
 async function initiate(id: string) {
-    const response = await app.request(`/images/${id}/upload`, {
+    const response = await requestAsUser(app, `/images/${id}/upload`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: '{"contentType":"image/png"}',
@@ -118,7 +120,7 @@ async function initiate(id: string) {
     };
 }
 const status = async (upload: { statusUrl: string }) =>
-    (await (await app.request(upload.statusUrl)).json()) as {
+    (await (await requestAsUser(app, upload.statusUrl)).json()) as {
         status: string;
         error: string | null;
     };
@@ -213,7 +215,7 @@ test("issues a presigned PUT and automatically processes the original on a sched
     await check();
     expect((await status(upload)).status).toBe("completed");
     const result = (await (
-        await app.request(`/images/${id}/metadata`)
+        await requestAsUser(app, `/images/${id}/metadata`)
     ).json()) as {
         assets: { assetLocation: string; width: number; height: number }[];
     };
@@ -224,8 +226,11 @@ test("issues a presigned PUT and automatically processes the original on a sched
     expect(
         [...objects.keys()].filter((key) => key.startsWith(`images/${id}/`)),
     ).toHaveLength(1);
-    const redirect = await app.request(`/images/${id}`);
-    const download = await app.request(redirect.headers.get("Location")!);
+    const redirect = await requestAsUser(app, `/images/${id}`);
+    const download = await requestAsUser(
+        app,
+        redirect.headers.get("Location")!,
+    );
     expect(download.status).toBe(302);
     const largest = objects.get(
         `images/${id}/${result.assets[0]!.assetLocation}`,
@@ -257,11 +262,14 @@ test("uppercase photo IDs use canonical keys for scheduled uploads and asset rea
     await check();
     expect((await status(upload)).status).toBe("completed");
 
-    const redirect = await app.request(`/images/${id.toUpperCase()}`);
+    const redirect = await requestAsUser(app, `/images/${id.toUpperCase()}`);
     expect(redirect.status).toBe(302);
     const assetUrl = redirect.headers.get("Location")!;
     expect(assetUrl.startsWith(`/images/${id}/`)).toBe(true);
-    const download = await app.request(assetUrl.replace(id, id.toUpperCase()));
+    const download = await requestAsUser(
+        app,
+        assetUrl.replace(id, id.toUpperCase()),
+    );
     expect(download.status).toBe(302);
     const key = new URL(download.headers.get("Location")!).pathname
         .split("/")
@@ -344,8 +352,11 @@ test("photo deletion preserves queued object keys for GC", async () => {
     const { id } = await photo();
     const saved = await uploadedPhoto(id);
     expect(
-        (await app.request(`/images/${id.toUpperCase()}`, { method: "DELETE" }))
-            .status,
+        (
+            await requestAsUser(app, `/images/${id.toUpperCase()}`, {
+                method: "DELETE",
+            })
+        ).status,
     ).toBe(204);
     expect(await garbageFor(id)).toHaveLength(1);
     await garbageDue(id);
@@ -568,24 +579,30 @@ test("rejects multipart uploads, invalid content types, and status requests for 
     const second = await photo();
     const upload = await initiate(first.id);
     expect(
-        (await app.request(`/images/${second.id}/uploads/${upload.uploadId}`))
-            .status,
+        (
+            await requestAsUser(
+                app,
+                `/images/${second.id}/uploads/${upload.uploadId}`,
+            )
+        ).status,
     ).toBe(404);
     expect(
         (
-            await app.request(
+            await requestAsUser(
+                app,
                 `/images/${first.id}/uploads/${crypto.randomUUID()}`,
             )
         ).status,
     ).toBe(404);
     expect(
-        (await app.request(`/images/${first.id}/uploads/invalid`)).status,
+        (await requestAsUser(app, `/images/${first.id}/uploads/invalid`))
+            .status,
     ).toBe(400);
     const form = new FormData();
     form.set("file", new File([png], "photo.png"));
     expect(
         (
-            await app.request(`/images/${first.id}/upload`, {
+            await requestAsUser(app, `/images/${first.id}/upload`, {
                 method: "POST",
                 body: form,
             })
@@ -593,7 +610,7 @@ test("rejects multipart uploads, invalid content types, and status requests for 
     ).toBe(400);
     expect(
         (
-            await app.request(`/images/${first.id}/upload`, {
+            await requestAsUser(app, `/images/${first.id}/upload`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: '{"contentType":"text/plain"}',
@@ -798,7 +815,7 @@ test.each([
 );
 
 function control(url: string, method: string, body: object) {
-    return app.request(url, {
+    return requestAsUser(app, url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -926,9 +943,9 @@ test("cancelling an active worker discards generated files and preserves the cur
         s3.write = originalWrite;
     }
     expect([...objects.keys()]).toEqual(before);
-    expect(await (await app.request(`/images/${id}/metadata`)).json()).toEqual(
-        JSON.parse(JSON.stringify(saved)),
-    );
+    expect(
+        await (await requestAsUser(app, `/images/${id}/metadata`)).json(),
+    ).toEqual(JSON.parse(JSON.stringify(saved)));
     expect((await status(upload)).status).toBe("cancelled");
 });
 
