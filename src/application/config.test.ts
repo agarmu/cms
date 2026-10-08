@@ -201,3 +201,80 @@ test("requires file S3 credentials and rejects public settings in secrets", asyn
         },
     );
 });
+
+test.each([
+    "not-a-url",
+    "http://cms.example.com",
+    "https://user:secret@cms.example.com",
+    "https://cms.example.com/mcp",
+    "https://cms.example.com/?secret=value",
+    "https://cms.example.com/#fragment",
+])("rejects an invalid application base URL (%s)", (baseUrl) => {
+    expect(
+        ApplicationConfig.schema.shape.baseUrl.safeParse(baseUrl).success,
+    ).toBe(false);
+});
+
+test("example configuration leaves MCP disabled", async () => {
+    const config = await ApplicationConfig.fromFiles(
+        "config.example.toml",
+        "secrets.example.toml",
+    );
+    expect(config.baseUrl?.href).toBe("https://photos.example.com/");
+    expect(config.mcp).toBeUndefined();
+    expect(
+        new ApplicationConfig({
+            auth: testAuthSettings,
+            database: { url: "postgres://localhost/cms" },
+            storage: { backend: "local", directory: "./data" },
+        }).mcp,
+    ).toBeUndefined();
+});
+
+test("accepts the general base URL and rejects mcp.baseUrl", () => {
+    const settings = {
+        baseUrl: "https://cms.example.com",
+        auth: testAuthSettings,
+        database: { url: "postgres://localhost/cms" },
+        storage: { backend: "local" as const, directory: "./data" },
+    };
+    expect(
+        new ApplicationConfig({ ...settings, mcp: { enabled: true } }).mcp?.url
+            .href,
+    ).toBe("https://cms.example.com/mcp");
+    expect(
+        ApplicationConfig.schema.safeParse({
+            ...settings,
+            mcp: { baseUrl: settings.baseUrl },
+        }).success,
+    ).toBe(false);
+});
+
+test("MCP is opt-in and only enabled MCP requires a public URL and compatible audience", () => {
+    const settings = {
+        auth: { ...testAuthSettings, audience: "cms" },
+        database: { url: "postgres://localhost/cms" },
+        storage: { backend: "local" as const, directory: "./data" },
+    };
+    for (const mcp of [undefined, {}, { enabled: false }]) {
+        for (const address of [{}, { baseUrl: "https://cms.example.com" }]) {
+            const config = new ApplicationConfig({
+                ...settings,
+                ...address,
+                ...(mcp ? { mcp } : {}),
+            });
+            expect(config.mcp).toBeUndefined();
+        }
+    }
+    expect(
+        () => new ApplicationConfig({ ...settings, mcp: { enabled: true } }),
+    ).toThrow("Invalid configuration");
+    expect(
+        () =>
+            new ApplicationConfig({
+                ...settings,
+                baseUrl: "https://cms.example.com",
+                mcp: { enabled: true },
+            }),
+    ).toThrow("MCP requires");
+});

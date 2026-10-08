@@ -1,6 +1,10 @@
 # Example config file
 # All times in ms
 port = 3000
+baseUrl = "https://photos.example.com"
+
+[mcp]
+enabled = false
 
 [auth]
 kind = "rfc-9068"
