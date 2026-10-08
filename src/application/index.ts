@@ -10,6 +10,7 @@ import { ImageConfiguration } from "../services/image-config";
 import { WorkerConfiguration } from "../services/worker-config";
 import { Tracing } from "../telemetry/tracing";
 import type { AuthenticationProvider } from "../auth/provider";
+import type { McpConfiguration } from "../mcp/config";
 
 export type ApplicationDependencies = {
     authentication: AuthenticationProvider;
@@ -20,6 +21,7 @@ export type ApplicationDependencies = {
     imageConfig?: ImageConfiguration;
     workerConfig?: WorkerConfiguration;
     httpConfig?: HttpConfiguration;
+    mcpConfig?: McpConfiguration | undefined;
 };
 
 export class Application {
@@ -55,6 +57,7 @@ export class Application {
                             reportError: options.reportError,
                             authentication: options.authentication,
                             allowedSubjects: options.allowedSubjects,
+                            mcp: options.mcpConfig,
                         },
                         options.httpConfig ?? new HttpConfiguration(),
                     ),

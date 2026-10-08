@@ -15,6 +15,9 @@ import { Tracing } from "../telemetry/tracing";
 import type { AuthenticationProvider } from "../auth/provider";
 import { AuthenticationMiddleware } from "./auth";
 import type { AuthEnvironment } from "./auth";
+import { cors } from "hono/cors";
+import { McpRoutes } from "../mcp/routes";
+import type { McpConfiguration } from "../mcp/config";
 
 export class HttpApplication extends Hono<AuthEnvironment> {
     constructor(
@@ -24,6 +27,7 @@ export class HttpApplication extends Hono<AuthEnvironment> {
             getImageStorage: () => ImageStorage;
             authentication: AuthenticationProvider;
             allowedSubjects: readonly string[];
+            mcp?: McpConfiguration | undefined;
         },
         config = new HttpConfiguration(),
     ) {
@@ -31,6 +35,39 @@ export class HttpApplication extends Hono<AuthEnvironment> {
         Tracing.withSyncSpan("http.app.initialize", () => {
             const access = new ScopeMiddleware(options.db);
             this.use("*", httpInstrumentationMiddleware());
+            if (options.mcp) {
+                const mcp = options.mcp;
+                for (const path of [
+                    "/.well-known/oauth-protected-resource",
+                    "/.well-known/oauth-protected-resource/mcp",
+                ]) {
+                    this.get(path, (context) => {
+                        context.header("Access-Control-Allow-Origin", "*");
+                        return context.json(McpRoutes.metadata(mcp));
+                    });
+                }
+                this.use("/mcp", McpRoutes.protect(mcp));
+                this.use(
+                    "/mcp",
+                    cors({
+                        origin: (origin) =>
+                            mcp.allowedOrigins.has(origin) ? origin : undefined,
+                        allowMethods: ["POST", "GET", "DELETE", "OPTIONS"],
+                        allowHeaders: [
+                            "Authorization",
+                            "Content-Type",
+                            "MCP-Protocol-Version",
+                            "MCP-Session-Id",
+                            "Mcp-Method",
+                            "Mcp-Name",
+                        ],
+                        exposeHeaders: [
+                            "WWW-Authenticate",
+                            "MCP-Protocol-Version",
+                        ],
+                    }),
+                );
+            }
             this.use(
                 "*",
                 new AuthenticationMiddleware(
@@ -39,6 +76,9 @@ export class HttpApplication extends Hono<AuthEnvironment> {
                 ).handle,
             );
             this.use("*", bodyLimit({ maxSize: config.maxBodyBytes }));
+            if (options.mcp) {
+                this.route("/mcp", new McpRoutes(options, config.maxBodyBytes));
+            }
             this.route(
                 "/photos",
                 new ImageUploadRoutes(access, options.getImageStorage),

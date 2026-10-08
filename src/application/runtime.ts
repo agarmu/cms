@@ -60,6 +60,7 @@ export class ApplicationRuntime {
                     imageConfig: this.config.images,
                     workerConfig: this.config.workers,
                     httpConfig: this.config.http,
+                    mcpConfig: this.config.mcp,
                 });
                 this.server = await Tracing.withSpan(
                     "http.server.start",

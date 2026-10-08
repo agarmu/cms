@@ -3,14 +3,24 @@ import { ForbiddenError } from "../lib/errors";
 import { Scope } from "./scope";
 
 export class PhotoAccess {
+    static changeScopes(changes: object): Scope[] {
+        return [
+            ...new Set(
+                Object.keys(changes).map((field) =>
+                    field === "alt" || field === "description"
+                        ? Scope.PhotosTextUpdate
+                        : Scope.PhotosMetadataUpdate,
+                ),
+            ),
+        ];
+    }
+
     static requireChanges(identity: AuthIdentity, changes: object) {
-        for (const field of Object.keys(changes)) {
-            const scope =
-                field === "alt" || field === "description"
-                    ? Scope.PhotosTextUpdate
-                    : Scope.PhotosMetadataUpdate;
+        for (const scope of PhotoAccess.changeScopes(changes)) {
             if (!identity.scopes.has(scope))
-                throw new ForbiddenError(`Changing ${field} requires ${scope}`);
+                throw new ForbiddenError(
+                    `Changing photo fields requires ${scope}`,
+                );
         }
     }
 }
