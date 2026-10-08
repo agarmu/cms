@@ -56,6 +56,16 @@ const metadata = {
     enabled: true,
 };
 
+test("MCP and its discovery routes are absent when disabled", async () => {
+    for (const path of [
+        "/mcp",
+        "/.well-known/oauth-protected-resource",
+        "/.well-known/oauth-protected-resource/mcp",
+    ]) {
+        expect((await request(path)).status).toBe(404);
+    }
+});
+
 test("application instances enforce their configured HTTP body limits independently", async () => {
     const config = new ApplicationConfig({
         auth: testAuthSettings,

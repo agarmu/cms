@@ -1,0 +1,674 @@
+import { afterAll, beforeAll, expect, test } from "bun:test";
+import {
+    Client,
+    StreamableHTTPClientTransport,
+} from "@modelcontextprotocol/client";
+import type { CallToolResult } from "@modelcontextprotocol/client";
+import { PGlite } from "@electric-sql/pglite";
+import { drizzle } from "drizzle-orm/pglite";
+import { migrate } from "drizzle-orm/pglite/migrator";
+import { fileURLToPath } from "node:url";
+import { ImageUploadApi } from "../api/image-uploads";
+import sharp from "sharp";
+import { z } from "zod";
+import { DatabaseSchema as schema } from "../db/schema";
+import { Scope } from "../api/scope";
+import { ApiValidation } from "../api/validation";
+import { PhotoApi } from "../api/photos";
+import { readyUpload } from "../api/test-fixtures";
+import { AuthenticationError } from "../auth/provider";
+import type { AuthIdentity } from "../auth/provider";
+import { testAuthIdentity, testAuthSettings } from "../auth/test-fixtures";
+import type { BlobStorage } from "../services/blob-storage";
+import { ImageStorage } from "../services/image-storage";
+import { HttpApplication } from "../http/app";
+import { HttpConfiguration } from "../http/config";
+import { McpConfiguration } from "./config";
+
+const database = new PGlite();
+const db = drizzle(database, { schema: schema.definition });
+const config = new McpConfiguration(
+    new URL("https://cms.example.com"),
+    testAuthSettings,
+    { allowedOrigins: ["https://editor.example.com"] },
+);
+const objects = new Map<string, Blob>();
+let signedDownloads = false;
+let readError: Error | undefined;
+const blobs: BlobStorage = {
+    createUpload: async (key, type) => ({
+        url: `https://bucket.example.com/${key}`,
+        method: "PUT",
+        headers: { "Content-Type": type },
+    }),
+    get: async (key) => objects.get(key),
+    read: async (key, expiresIn) => {
+        if (readError) throw readError;
+        return signedDownloads
+            ? {
+                  url: `https://bucket.example.com/${key}?signed`,
+                  expiresAt: new Date(Date.now() + expiresIn * 1000),
+              }
+            : objects.has(key)
+              ? { file: objects.get(key)! }
+              : undefined;
+    },
+    write: async (key, bytes, type) => {
+        objects.set(key, new Blob([bytes], { type }));
+    },
+    delete: async (key) => {
+        objects.delete(key);
+    },
+};
+const identities: Record<string, AuthIdentity> = {
+    admin: testAuthIdentity,
+    reader: { ...testAuthIdentity, scopes: new Set([Scope.PhotosRead]) },
+    text: { ...testAuthIdentity, scopes: new Set([Scope.PhotosTextUpdate]) },
+    metadata: {
+        ...testAuthIdentity,
+        scopes: new Set([Scope.PhotosMetadataUpdate]),
+    },
+    creator: { ...testAuthIdentity, scopes: new Set([Scope.PhotosCreate]) },
+    assets: { ...testAuthIdentity, scopes: new Set([Scope.PhotosAssetsWrite]) },
+    other: { ...testAuthIdentity, subject: "other-user" },
+    otherIssuer: { ...testAuthIdentity, issuer: "https://another.example.com" },
+    outsider: { ...testAuthIdentity, subject: "outsider" },
+    none: { ...testAuthIdentity, scopes: new Set() },
+};
+const errors: Error[] = [];
+const app = new HttpApplication(
+    {
+        db,
+        mcp: config,
+        getImageStorage: () => new ImageStorage(blobs),
+        reportError: (error) => errors.push(error),
+        authentication: {
+            authenticate: async (token) => {
+                const identity = identities[token];
+                if (!identity) throw new AuthenticationError();
+                return identity;
+            },
+        },
+        allowedSubjects: [testAuthIdentity.subject, "other-user"],
+    },
+    new HttpConfiguration({ maxBodyBytes: 65_536 }),
+);
+const metadata = {
+    taken: "2026-10-02T12:00:00Z",
+    posted: "2026-10-02T12:00:00Z",
+    alt: "Photo",
+    description: "",
+    enabled: true,
+};
+const clients: Client[] = [];
+
+beforeAll(
+    () =>
+        migrate(db, {
+            migrationsFolder: fileURLToPath(
+                new URL("../../migrations/", import.meta.url),
+            ),
+        }),
+    30_000,
+);
+afterAll(async () => {
+    await Promise.all(clients.map((client) => client.close()));
+    await database.close();
+});
+
+async function connect(
+    token: string,
+    mode: "legacy" | "auto" = "legacy",
+    responses: { status: number; headers: Pick<Headers, "get"> }[] = [],
+) {
+    const client = new Client(
+        { name: "cms-integration", version: "1.0.0" },
+        { versionNegotiation: { mode } },
+    );
+    clients.push(client);
+    await client.connect(
+        new StreamableHTTPClientTransport(config.url, {
+            authProvider: { token: async () => token },
+            fetch: async (input, init) => {
+                const response = await app.request(input.toString(), init);
+                responses.push(response);
+                return response;
+            },
+        }),
+    );
+    return client;
+}
+function output(result: CallToolResult) {
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toBeDefined();
+    return z.record(z.string(), z.unknown()).parse(result.structuredContent);
+}
+async function photo() {
+    return PhotoApi.create(db, {
+        ...metadata,
+        taken: new Date(metadata.taken),
+        posted: new Date(metadata.posted),
+        assets: [{ assetLocation: "photo.webp", width: 640, height: 320 }],
+    });
+}
+function request(
+    token?: string,
+    headers: Record<string, string> = {},
+    body = '{"jsonrpc":"2.0","id":1,"method":"tools/list"}',
+) {
+    return app.request(config.url.href, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json, text/event-stream",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...headers,
+        },
+        body,
+    });
+}
+
+test.each(["legacy", "auto"] as const)(
+    "official MCP client discovers schemas and reads photos (%s)",
+    async (mode) => {
+        const saved = await photo();
+        const client = await connect("reader", mode);
+        expect(client.getNegotiatedProtocolVersion()).toBe(
+            mode === "auto" ? "2026-07-28" : "2025-11-25",
+        );
+        const { tools } = await client.listTools();
+        expect(tools).toHaveLength(14);
+        expect(
+            tools.find((tool) => tool.name === "list_photos")?.annotations
+                ?.readOnlyHint,
+        ).toBe(true);
+        expect(
+            tools.find((tool) => tool.name === "update_photo")?.annotations
+                ?.destructiveHint,
+        ).toBe(true);
+        expect(
+            tools.find((tool) => tool.name === "create_photo")?.inputSchema
+                .properties,
+        ).toHaveProperty("uploadId");
+        const result = output(
+            await client.callTool({
+                name: "get_photo",
+                arguments: { id: saved.id },
+            }),
+        );
+        expect(result).toMatchObject({
+            id: saved.id,
+            alt: "Photo",
+            assets: [{ filename: "photo.webp" }],
+        });
+        const page = output(
+            await client.callTool({
+                name: "list_photos",
+                arguments: { limit: 1 },
+            }),
+        );
+        expect(page).toMatchObject({ limit: 1, offset: 0 });
+        expect(page["items"]).toHaveLength(1);
+    },
+);
+
+test("authentication errors advertise public OAuth discovery without exposing tools", async () => {
+    for (const token of [undefined, "invalid"]) {
+        const response = await request(token);
+        expect(response.status).toBe(401);
+        expect(response.headers.get("WWW-Authenticate")).toContain(
+            `resource_metadata="${config.metadataUrl}"`,
+        );
+        if (token === undefined) {
+            expect(response.headers.get("WWW-Authenticate")).toBe(
+                `Bearer resource_metadata="${config.metadataUrl}"`,
+            );
+        }
+        expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    }
+    expect((await request("outsider")).status).toBe(403);
+    const response = await app.request(config.metadataUrl);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+        resource: testAuthSettings.audience,
+        authorization_servers: [testAuthSettings.issuer],
+        bearer_methods_supported: ["header"],
+    });
+});
+
+test("an allowed browser origin can send the modern SDK's actual headers", async () => {
+    const origin = "https://editor.example.com";
+    const client = new Client(
+        { name: "browser-integration", version: "1.0.0" },
+        { versionNegotiation: { mode: "auto" } },
+    );
+    clients.push(client);
+    const sent = new Set<string>();
+    await client.connect(
+        new StreamableHTTPClientTransport(config.url, {
+            authProvider: { token: async () => "reader" },
+            fetch: async (input, init) => {
+                const headers = new Headers(init?.headers);
+                const requested = [...headers.keys()];
+                const preflight = await app.request(input.toString(), {
+                    method: "OPTIONS",
+                    headers: {
+                        Origin: origin,
+                        "Access-Control-Request-Method": init?.method ?? "GET",
+                        "Access-Control-Request-Headers": requested.join(","),
+                    },
+                });
+                expect(preflight.status).toBe(204);
+                expect(
+                    preflight.headers.get("Access-Control-Allow-Origin"),
+                ).toBe(origin);
+                const allowed = preflight.headers
+                    .get("Access-Control-Allow-Headers")!
+                    .toLowerCase()
+                    .split(",");
+                for (const header of requested) {
+                    sent.add(header);
+                    if (header !== "accept") expect(allowed).toContain(header);
+                }
+                headers.set("Origin", origin);
+                const response = await app.request(input.toString(), {
+                    ...init,
+                    headers,
+                });
+                expect(
+                    response.headers.get("Access-Control-Allow-Origin"),
+                ).toBe(origin);
+                return response;
+            },
+        }),
+    );
+    await client.callTool({ name: "list_photos", arguments: {} });
+    expect(sent.has("mcp-method")).toBe(true);
+    expect(sent.has("mcp-name")).toBe(true);
+});
+
+test("MCP validates hosts, browser origins, preflight, and body limits", async () => {
+    expect((await request("admin", { Host: "evil.example" })).status).toBe(403);
+    expect(
+        (await request("admin", { Origin: "https://evil.example" })).status,
+    ).toBe(403);
+    expect((await request("admin", { Origin: "null" })).status).toBe(403);
+    const wrongHost = await app.request("https://evil.example/mcp", {
+        method: "POST",
+        headers: { Authorization: "Bearer admin" },
+    });
+    expect(wrongHost.status).toBe(403);
+    const preflight = await app.request(config.url.href, {
+        method: "OPTIONS",
+        headers: {
+            Origin: "https://editor.example.com",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers":
+                "authorization,content-type,mcp-protocol-version,mcp-method,mcp-name",
+        },
+    });
+    expect(preflight.status).toBe(204);
+    const allowed = preflight.headers
+        .get("Access-Control-Allow-Headers")!
+        .toLowerCase()
+        .split(",");
+    for (const header of [
+        "authorization",
+        "content-type",
+        "mcp-protocol-version",
+        "mcp-method",
+        "mcp-name",
+    ])
+        expect(allowed).toContain(header);
+    expect(preflight.headers.get("Access-Control-Allow-Origin")).toBe(
+        "https://editor.example.com",
+    );
+    expect(
+        (
+            await request(
+                "admin",
+                {},
+                JSON.stringify({ padding: "x".repeat(65_536) }),
+            )
+        ).status,
+    ).toBe(413);
+    expect((await request("admin", {}, "{")).status).toBe(400);
+});
+
+test.each(["legacy", "auto"] as const)(
+    "scope challenges request the precise permissions before writes (%s)",
+    async (mode) => {
+        const saved = await photo();
+        for (const [token, name, args, scopes] of [
+            [
+                "reader",
+                "start_photo_upload",
+                { contentType: "image/png" },
+                [Scope.PhotosCreate],
+            ],
+            ["reader", "get_camera", { id: saved.id }, [Scope.CamerasRead]],
+            ["reader", "get_lens", { id: saved.id }, [Scope.LensesRead]],
+            [
+                "reader",
+                "update_photo",
+                { id: saved.id, changes: { alt: "Denied" } },
+                [Scope.PhotosTextUpdate],
+            ],
+            [
+                "text",
+                "update_photo",
+                { id: saved.id, changes: { enabled: false } },
+                [Scope.PhotosMetadataUpdate],
+            ],
+            [
+                "text",
+                "update_photo",
+                { id: saved.id, changes: { alt: "Denied", enabled: false } },
+                [Scope.PhotosTextUpdate, Scope.PhotosMetadataUpdate],
+            ],
+            [
+                "metadata",
+                "update_photo",
+                { id: saved.id, changes: { alt: "Denied" } },
+                [Scope.PhotosTextUpdate],
+            ],
+        ] as const) {
+            const responses: {
+                status: number;
+                headers: Pick<Headers, "get">;
+            }[] = [];
+            const client = await connect(token, mode, responses);
+            await expect(
+                client.callTool({ name, arguments: args }),
+            ).rejects.toThrow();
+            const response = responses.at(-1)!;
+            expect(response.status).toBe(403);
+            const challenge = response.headers.get("WWW-Authenticate")!;
+            expect(challenge).toContain('error="insufficient_scope"');
+            expect(challenge).toContain(`scope="${scopes.join(" ")}"`);
+            expect(challenge).toContain(
+                `resource_metadata="${config.metadataUrl}"`,
+            );
+        }
+        expect(await PhotoApi.read(db, saved.id)).toMatchObject({
+            alt: "Photo",
+            enabled: true,
+        });
+        const text = await connect("text", mode);
+        output(
+            await text.callTool({
+                name: "update_photo",
+                arguments: {
+                    id: saved.id,
+                    changes: { alt: "Accessible text" },
+                },
+            }),
+        );
+        const metadata = await connect("metadata", mode);
+        output(
+            await metadata.callTool({
+                name: "update_photo",
+                arguments: { id: saved.id, changes: { enabled: false } },
+            }),
+        );
+        expect(await PhotoApi.read(db, saved.id)).toMatchObject({
+            alt: "Accessible text",
+            enabled: false,
+        });
+    },
+);
+
+test("create-only users can consume their upload and add equipment, but cannot reuse another identity's upload", async () => {
+    const client = await connect("creator");
+    const uploadId = await readyUpload(db);
+    const created = output(
+        await client.callTool({
+            name: "create_photo",
+            arguments: {
+                ...metadata,
+                uploadId,
+                camera: { create: { name: "New camera" } },
+            },
+        }),
+    );
+    expect(created).toEqual({ id: expect.any(String) });
+    const saved = await PhotoApi.read(
+        db,
+        ApiValidation.uuid.parse(created["id"]),
+    );
+    expect(saved.camera?.name).toBe("New camera");
+    await expect(
+        client.callTool({ name: "get_photo", arguments: { id: saved.id } }),
+    ).rejects.toThrow();
+    for (const token of ["other", "otherIssuer"]) {
+        const other = await connect(token);
+        expect(
+            (
+                await other.callTool({
+                    name: "create_photo",
+                    arguments: { ...metadata, uploadId },
+                })
+            ).isError,
+        ).toBe(true);
+    }
+});
+
+test("upload tools preserve ownership through processing, preview, and creation", async () => {
+    const creator = await connect("creator");
+    const other = await connect("other");
+    const receipt = output(
+        await creator.callTool({
+            name: "start_photo_upload",
+            arguments: { contentType: "image/png" },
+        }),
+    );
+    const uploadId = receipt["id"] as string;
+    const upload = receipt["upload"] as {
+        url: string;
+        method: string;
+        headers: Record<string, string>;
+    };
+    expect(upload).toMatchObject({
+        method: "PUT",
+        headers: { "Content-Type": "image/png" },
+    });
+    const bytes = await sharp({
+        create: { width: 32, height: 16, channels: 3, background: "red" },
+    })
+        .png()
+        .toBuffer();
+    objects.set(
+        new URL(upload.url).pathname.slice(1),
+        new Blob([bytes], { type: "image/png" }),
+    );
+    for (const name of [
+        "get_photo_upload",
+        "complete_photo_upload",
+        "cancel_photo_upload",
+    ]) {
+        expect(
+            (await other.callTool({ name, arguments: { uploadId } })).isError,
+        ).toBe(true);
+    }
+    const ready = output(
+        await creator.callTool({
+            name: "complete_photo_upload",
+            arguments: { uploadId },
+        }),
+    );
+    expect(ready["status"]).toBe("ready");
+    const filename = (ready["assets"] as { filename: string }[])[0]!.filename;
+    const preview = await creator.callTool({
+        name: "get_upload_preview",
+        arguments: { uploadId, filename },
+    });
+    expect(preview.isError).not.toBe(true);
+    expect(preview.content[0]).toMatchObject({
+        type: "image",
+        mimeType: "image/webp",
+        data: expect.any(String),
+    });
+    output(
+        await creator.callTool({
+            name: "create_photo",
+            arguments: { ...metadata, uploadId },
+        }),
+    );
+    expect(
+        (
+            await creator.callTool({
+                name: "get_upload_preview",
+                arguments: { uploadId, filename },
+            })
+        ).isError,
+    ).toBe(true);
+});
+
+test("image tools issue 15-minute downloads only for assets belonging to the photo", async () => {
+    const saved = await photo();
+    const reader = await connect("reader");
+    signedDownloads = true;
+    try {
+        const started = Date.now();
+        const result = output(
+            await reader.callTool({
+                name: "get_photo_image",
+                arguments: { id: saved.id },
+            }),
+        );
+        expect(result["url"]).toContain(`/images/${saved.id}/photo.webp`);
+        expect(
+            new Date(result["expiresAt"] as string).getTime() - started,
+        ).toBeWithin(899_000, 901_000);
+        expect(
+            (
+                await reader.callTool({
+                    name: "get_photo_image",
+                    arguments: { id: saved.id, filename: "../another.webp" },
+                })
+            ).isError,
+        ).toBe(true);
+    } finally {
+        signedDownloads = false;
+    }
+});
+
+test.each(["legacy", "auto"] as const)(
+    "MCP blocks deletion and replacement even with an admin token (%s)",
+    async (mode) => {
+        const responses: { status: number; headers: Pick<Headers, "get"> }[] =
+            [];
+        const admin = await connect("admin", mode, responses);
+        const saved = await photo();
+        const { tools } = await admin.listTools();
+        for (const name of [
+            "delete_photo",
+            "delete_camera",
+            "delete_lens",
+            "start_photo_replacement",
+        ]) {
+            expect(tools.map((tool) => tool.name)).not.toContain(name);
+            await expect(
+                admin.callTool({
+                    name,
+                    arguments: {
+                        id: saved.id,
+                        photoId: saved.id,
+                        contentType: "image/png",
+                    },
+                }),
+            ).rejects.toThrow("not found");
+        }
+        const replacement = await ImageUploadApi.replace(
+            db,
+            new ImageStorage(blobs),
+            saved.id,
+            "image/png",
+            testAuthIdentity,
+        );
+        for (const name of [
+            "get_photo_upload",
+            "complete_photo_upload",
+            "cancel_photo_upload",
+        ]) {
+            for (const args of [
+                { uploadId: replacement.id },
+                { uploadId: replacement.id, photoId: saved.id },
+            ]) {
+                const result = await admin.callTool({ name, arguments: args });
+                expect(result.isError).toBe(true);
+                const response = responses.at(-1)!;
+                expect(response.status).toBe(200);
+                expect(response.headers.get("WWW-Authenticate")).toBeNull();
+            }
+        }
+        expect(
+            (
+                await ImageUploadApi.read(
+                    db,
+                    replacement.id,
+                    testAuthIdentity,
+                    saved.id,
+                )
+            ).status,
+        ).toBe("pending");
+        expect((await PhotoApi.read(db, saved.id)).assets).toMatchObject([
+            { assetLocation: "photo.webp" },
+        ]);
+        const discovery = await app.request(config.metadataUrl);
+        const body = (await discovery.json()) as { scopes_supported: string[] };
+        expect(body.scopes_supported).not.toContain(Scope.PhotosDelete);
+        expect(body.scopes_supported).not.toContain(Scope.PhotosAssetsWrite);
+        expect(body.scopes_supported).not.toContain(Scope.CamerasDelete);
+        expect(body.scopes_supported).not.toContain(Scope.LensesDelete);
+    },
+);
+
+test("invalid tool inputs cannot smuggle assets or metadata writes", async () => {
+    const client = await connect("admin");
+    const saved = await photo();
+    for (const call of [
+        { name: "get_photo", arguments: { id: "invalid" } },
+        { name: "list_photos", arguments: { limit: 101 } },
+        { name: "update_photo", arguments: { id: saved.id, changes: {} } },
+        {
+            name: "update_photo",
+            arguments: { id: saved.id, changes: { assets: [] } },
+        },
+        { name: "start_photo_upload", arguments: { contentType: "text/html" } },
+        {
+            name: "create_photo",
+            arguments: {
+                ...metadata,
+                uploadId: await readyUpload(db),
+                assets: [],
+            },
+        },
+    ]) {
+        expect((await client.callTool(call)).isError).toBe(true);
+    }
+    expect(await PhotoApi.read(db, saved.id)).toMatchObject({
+        assets: [{ assetLocation: "photo.webp" }],
+    });
+});
+
+test("storage failures are reported internally without leaking details to MCP", async () => {
+    const saved = await photo();
+    const reader = await connect("reader");
+    const failure = new Error("private-storage-secret");
+    readError = failure;
+    try {
+        const result = await reader.callTool({
+            name: "get_photo_image",
+            arguments: { id: saved.id },
+        });
+        expect(result).toMatchObject({
+            isError: true,
+            content: [{ type: "text", text: "Internal server error" }],
+        });
+        expect(JSON.stringify(result)).not.toContain(failure.message);
+        expect(errors).toContain(failure);
+    } finally {
+        readError = undefined;
+    }
+});
