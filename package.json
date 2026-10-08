@@ -16,7 +16,8 @@
         "check": "tsc --noEmit",
         "format": "prettier . --write",
         "format:check": "prettier . --check",
-        "test": "bun test",
+        "test": "bun test --isolate",
+        "test:integration": "bun test --isolate .integration.test.ts",
         "db:generate": "bunx --bun drizzle-kit generate"
     },
     "type": "module",

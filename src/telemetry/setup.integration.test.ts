@@ -1,8 +1,42 @@
-import { testAuthToml } from "../auth/test-fixtures";
-import { expect, test } from "bun:test";
+import { testAuthDependencies, testAuthToml } from "../auth/test-fixtures";
+import { afterAll, afterEach, expect, test } from "bun:test";
+import { context, metrics, propagation, trace } from "@opentelemetry/api";
+import { PGlite } from "@electric-sql/pglite";
+import { drizzle } from "drizzle-orm/pglite";
+import { DatabaseSchema } from "../db/schema";
+import { ApplicationConfig } from "../application/config";
+import { HttpApplication } from "../http/app";
+import { Telemetry } from "./setup";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+const client = new PGlite();
+afterAll(() => client.close());
+
+const environment = {
+    OTEL_EXPORTER_OTLP_HEADERS: "x-environment-secret=must-not-export",
+    OTEL_EXPORTER_OTLP_TRACES_HEADERS: "authorization=wrong",
+    OTEL_EXPORTER_OTLP_METRICS_HEADERS: "authorization=wrong",
+    OTEL_EXPORTER_OTLP_LOGS_HEADERS: "authorization=wrong",
+    OTEL_SERVICE_NAME: "wrong-service",
+    OTEL_RESOURCE_ATTRIBUTES: "service.name=wrong-service",
+    OTEL_TRACES_SAMPLER: "always_off",
+    OTEL_SDK_DISABLED: "true",
+};
+const previousEnvironment = Object.fromEntries(
+    Object.keys(environment).map((key) => [key, process.env[key]]),
+);
+afterEach(() => {
+    trace.disable();
+    metrics.disable();
+    context.disable();
+    propagation.disable();
+    for (const [key, value] of Object.entries(previousEnvironment)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+    }
+});
 
 test.each([
     { traces: true, metrics: true, logs: true },
@@ -35,6 +69,7 @@ test.each([
             },
         });
         const directory = await mkdtemp(join(tmpdir(), "cms-telemetry-"));
+        let telemetry: Telemetry | undefined;
         try {
             const configPath = join(directory, "config.toml");
             const secretsPath = join(directory, "secrets.toml");
@@ -71,54 +106,39 @@ test.each([
                     )
                     .join(""),
             );
-            // OTel globals are process-wide: exercise real startup in an isolated process.
-            const script = [
-                'import { ApplicationConfig } from "./src/application/config";',
-                'import { Telemetry } from "./src/telemetry/setup";',
-                'import { Tracing } from "./src/telemetry/tracing";',
-                'import { testAuthDependencies } from "./src/auth/test-fixtures";',
-                "const config = await ApplicationConfig.fromFiles(" +
-                    JSON.stringify(configPath) +
-                    ", " +
-                    JSON.stringify(secretsPath) +
-                    ");",
-                "const telemetry = new Telemetry(config.telemetry);",
-                "try {",
-                "  telemetry.start();",
-                "  telemetry.start();",
-                '  if (process.env.OTEL_SERVICE_NAME !== "wrong-service") throw new Error("Environment was not restored");',
-                '  const { HttpApplication } = await import("./src/http/app");',
-                '  const app = new HttpApplication({ ...testAuthDependencies, db: { select() { throw new Error("unused"); }, query: {} }, reportError: () => {}, getImageStorage: () => { throw new Error("unused"); } });',
-                '  await app.request("/missing", { headers: { Authorization: "Bearer test-token" } });',
-                '  await Tracing.withSpan("file-config-span", async () => {});',
-                '  telemetry.log("file-config-log");',
-                "  await telemetry.forceFlush();",
-                '  telemetry.log("shutdown-log");',
-                "} finally { await telemetry.stop(); }",
-            ].join("\n");
-            const child = Bun.spawn([process.execPath, "--eval", script], {
-                cwd: process.cwd(),
-                env: {
-                    ...process.env,
-                    OTEL_EXPORTER_OTLP_HEADERS:
-                        "x-environment-secret=must-not-export",
-                    OTEL_EXPORTER_OTLP_TRACES_HEADERS: "authorization=wrong",
-                    OTEL_EXPORTER_OTLP_METRICS_HEADERS: "authorization=wrong",
-                    OTEL_EXPORTER_OTLP_LOGS_HEADERS: "authorization=wrong",
-                    OTEL_SERVICE_NAME: "wrong-service",
-                    OTEL_RESOURCE_ATTRIBUTES: "service.name=wrong-service",
-                    OTEL_TRACES_SAMPLER: "always_off",
-                    OTEL_SDK_DISABLED: "true",
+            Object.assign(process.env, environment);
+            const config = await ApplicationConfig.fromFiles(
+                configPath,
+                secretsPath,
+            );
+            telemetry = new Telemetry(config.telemetry);
+            telemetry.start();
+            telemetry.start();
+            for (const [key, value] of Object.entries(environment)) {
+                expect(process.env[key]).toBe(value);
+            }
+            const app = new HttpApplication({
+                ...testAuthDependencies,
+                db: drizzle(client, { schema: DatabaseSchema.definition }),
+                reportError: (error) => {
+                    throw error;
                 },
-                stdout: "ignore",
-                stderr: "pipe",
+                getImageStorage: () => {
+                    throw new Error("unused");
+                },
             });
-            const [exitCode, stderr] = await Promise.all([
-                child.exited,
-                new Response(child.stderr).text(),
-            ]);
-            expect(stderr).toBe("");
-            expect(exitCode).toBe(0);
+            const response = await app.request("/missing", {
+                headers: { Authorization: "Bearer test-token" },
+            });
+            expect(response.status).toBe(404);
+            trace
+                .getTracer("telemetry-integration")
+                .startSpan("file-config-span")
+                .end();
+            telemetry.log("file-config-log");
+            await telemetry.forceFlush();
+            telemetry.log("shutdown-log");
+            await telemetry.stop();
             for (const signal of signals) {
                 const exports = received.filter(
                     (entry) => entry.path === "/v1/" + signal,
@@ -148,8 +168,12 @@ test.each([
             if (enabled.traces && !enabled.disabled)
                 expect(JSON.stringify(received)).toContain("file-config-span");
         } finally {
-            await collector.stop(true);
-            await rm(directory, { recursive: true, force: true });
+            try {
+                await telemetry?.stop();
+            } finally {
+                await collector.stop(true);
+                await rm(directory, { recursive: true, force: true });
+            }
         }
     },
     20_000,
