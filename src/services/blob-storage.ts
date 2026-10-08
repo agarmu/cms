@@ -9,7 +9,7 @@ export type StoredBlob = {
     stream(): ReadableStream<Uint8Array>;
 };
 
-export type BlobDownload = { url: string } | { file: Blob };
+export type BlobDownload = { url: string; expiresAt: Date } | { file: Blob };
 
 export interface BlobStorage {
     // Optional for backends that support clients uploading directly to storage.

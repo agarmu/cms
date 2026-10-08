@@ -136,11 +136,11 @@ export class ImageStorage {
     }
 
     @Tracing.traced("image.storage.read")
-    async read(photoId: string, filename: string) {
+    async read(photoId: string, filename: string, expiresIn = 900) {
         // Only a single filename beneath a validated photo ID may be read.
         if (!ImageStorage.assetFilename.test(filename)) return undefined;
         const key = `images/${photoId}/${filename}`;
-        return this.storage.read(key, 3600);
+        return this.storage.read(key, expiresIn);
     }
 
     @Tracing.traced("image.storage.delete")

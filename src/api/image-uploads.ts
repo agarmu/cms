@@ -211,7 +211,15 @@ export class ImageUploadApi {
         ) {
             throw new NotFoundError("Upload asset not found");
         }
-        const asset = await storage.read(upload.photoId, filename);
+        const expiresIn = Math.min(
+            900,
+            Math.floor((upload.expires.getTime() - Date.now()) / 1000),
+        );
+        if (expiresIn <= 0)
+            throw new UploadExpiredError(
+                "Upload has expired; start a new upload",
+            );
+        const asset = await storage.read(upload.photoId, filename, expiresIn);
         if (!asset) throw new NotFoundError("Upload asset not found");
         return asset;
     }

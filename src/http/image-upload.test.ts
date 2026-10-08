@@ -178,6 +178,29 @@ const assetInput = ({ width, height, assetLocation }: ProcessedAsset) => ({
     assetLocation,
 });
 
+async function signedDownload(path: string, maxLifetime = 900) {
+    const before = Math.floor(Date.now() / 1000) * 1000;
+    const response = await requestAsUser(app, path);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toContain("application/json");
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(response.headers.has("Location")).toBe(false);
+    const body = (await response.json()) as { url: string; expiresAt: string };
+    expect(Object.keys(body).sort()).toEqual(["expiresAt", "url"]);
+    const url = new URL(body.url);
+    expect(url.searchParams.has("X-Amz-Signature")).toBe(true);
+    const lifetime = Number(url.searchParams.get("X-Amz-Expires"));
+    expect(lifetime).toBeGreaterThan(0);
+    expect(lifetime).toBeLessThanOrEqual(maxLifetime);
+    expect(Date.parse(body.expiresAt)).toBeGreaterThanOrEqual(
+        before + lifetime * 1000,
+    );
+    expect(Date.parse(body.expiresAt)).toBeLessThanOrEqual(
+        Date.now() + lifetime * 1000,
+    );
+    return { ...body, key: url.pathname.split("/").slice(-3).join("/") };
+}
+
 async function uploadedPhoto(id: string) {
     const upload = await initiate(id);
     objects.set(upload.key, png);
@@ -239,13 +262,11 @@ test("issues a presigned PUT and automatically processes the original on a sched
     expect(
         [...objects.keys()].filter((key) => key.startsWith(`images/${id}/`)),
     ).toHaveLength(1);
-    const redirect = await requestAsUser(app, `/photos/${id}/image`);
-    const download = await requestAsUser(
-        app,
-        redirect.headers.get("Location")!,
-    );
-    expect(download.status).toBe(302);
-    expect(redirect.headers.get("Location")).toBe(result.assets[0]!.url);
+    const largestDownload = await signedDownload(`/photos/${id}/image`);
+    const download = await signedDownload(result.assets[0]!.url);
+    expect(largestDownload.key).toBe(download.key);
+    expect(download.key).toBe(`images/${id}/${result.assets[0]!.filename}`);
+    expect(new URL(download.url).searchParams.get("X-Amz-Expires")).toBe("900");
     const largest = objects.get(`images/${id}/${result.assets[0]!.filename}`)!;
     expect((await sharp(largest).metadata()).width).toBe(640);
 });
@@ -274,23 +295,81 @@ test("uppercase photo IDs use canonical keys for scheduled uploads and asset rea
     await check();
     expect((await status(upload)).status).toBe("completed");
 
-    const redirect = await requestAsUser(
-        app,
-        `/photos/${id.toUpperCase()}/image`,
+    const largest = await signedDownload(`/photos/${id.toUpperCase()}/image`);
+    const filename = largest.key.split("/").at(-1)!;
+    const download = await signedDownload(
+        `/photos/${id.toUpperCase()}/assets/${filename}`,
     );
-    expect(redirect.status).toBe(302);
-    const assetUrl = redirect.headers.get("Location")!;
-    expect(assetUrl.startsWith(`/photos/${id}/`)).toBe(true);
-    const download = await requestAsUser(
-        app,
-        assetUrl.replace(id, id.toUpperCase()),
+    expect(download.key).toBe(largest.key);
+    expect(download.key.startsWith(`images/${id}/`)).toBe(true);
+    expect(objects.has(download.key)).toBe(true);
+});
+
+test("only attached assets can receive a download URL and the image endpoint selects the largest", async () => {
+    const { id } = await photo();
+    expect((await requestAsUser(app, `/photos/${id}/image`)).status).toBe(404);
+    await PhotoApi.update(db, id, {
+        assets: [
+            { width: 100, height: 50, assetLocation: "small.webp" },
+            { width: 600, height: 300, assetLocation: "large.webp" },
+        ],
+    });
+    expect((await signedDownload(`/photos/${id}/image`)).key).toBe(
+        `images/${id}/large.webp`,
     );
-    expect(download.status).toBe(302);
-    const key = new URL(download.headers.get("Location")!).pathname
+    expect((await signedDownload(`/photos/${id}/assets/small.webp`)).key).toBe(
+        `images/${id}/small.webp`,
+    );
+    expect(
+        (await requestAsUser(app, `/photos/${id}/assets/unattached.webp`))
+            .status,
+    ).toBe(404);
+    const other = await photo();
+    expect(
+        (await requestAsUser(app, `/photos/${other.id}/assets/large.webp`))
+            .status,
+    ).toBe(404);
+});
+
+test("upload previews return signed URL JSON bounded by the session expiry", async () => {
+    const upload = await ImageUploadApi.create(
+        db,
+        storage,
+        "image/png",
+        testAuthIdentity,
+    );
+    const key = new URL(upload.upload.url).pathname
         .split("/")
         .slice(-3)
         .join("/");
-    expect(objects.has(key)).toBe(true);
+    objects.set(key, png);
+    await ImageUploadApi.complete(db, storage, upload.id);
+    const receipt = await ImageUploadApi.read(db, upload.id, testAuthIdentity);
+    const asset = receipt.assets[0]!;
+    const download = await signedDownload(asset.url);
+    expect(objects.has(download.key)).toBe(true);
+    const expires = new Date(Date.now() + 60_000);
+    await db
+        .update(schema.imageUploads)
+        .set({ expires })
+        .where(eq(schema.imageUploads.id, upload.id));
+    const limited = await signedDownload(asset.url, 60);
+    expect(Date.parse(limited.expiresAt)).toBeLessThanOrEqual(
+        expires.getTime(),
+    );
+    expect(
+        (
+            await requestAsUser(
+                app,
+                `/photo-uploads/${upload.id}/assets/unattached.webp`,
+            )
+        ).status,
+    ).toBe(404);
+    await db
+        .update(schema.imageUploads)
+        .set({ expires: new Date(0) })
+        .where(eq(schema.imageUploads.id, upload.id));
+    expect((await requestAsUser(app, asset.url)).status).toBe(409);
 });
 
 test("uppercase photo and upload IDs can complete an upload immediately", async () => {

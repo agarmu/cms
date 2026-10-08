@@ -58,7 +58,10 @@ export class S3Storage implements BlobStorage {
     @Tracing.traced("storage.s3.download.sign")
     async read(key: string, expiresIn: number): Promise<BlobDownload> {
         Tracing.setSpanAttributes({ "storage.url.expires_in": expiresIn });
-        return { url: this.client.presign(key, { expiresIn }) };
+        const expiresAt = new Date(
+            (Math.floor(Date.now() / 1000) + expiresIn) * 1000,
+        );
+        return { url: this.client.presign(key, { expiresIn }), expiresAt };
     }
 
     @Tracing.traced("storage.s3.write", {}, { kind: SpanKind.CLIENT })

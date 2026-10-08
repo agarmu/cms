@@ -9,8 +9,7 @@ import { ImageUploadApi } from "../api/image-uploads";
 import type { ScopeMiddleware } from "./scope";
 import { HttpValidation as validation } from "./validation";
 import type { ImageStorage } from "../services/image-storage";
-import { Tracing } from "../telemetry/tracing";
-import { assetUrl, photoResponse } from "./response";
+import { downloadResponse, photoResponse } from "./response";
 
 export class PhotoRoutes extends Hono<AuthEnvironment> {
     constructor(access: ScopeMiddleware, getStorage: () => ImageStorage) {
@@ -44,10 +43,15 @@ export class PhotoRoutes extends Hono<AuthEnvironment> {
                 throw new HTTPException(404, {
                     message: "Photo has no image assets",
                 });
-            return context.redirect(
-                assetUrl(photo.id, asset.assetLocation),
-                302,
+            const stored = await getStorage().read(
+                photo.id,
+                asset.assetLocation,
             );
+            if (!stored)
+                throw new HTTPException(404, {
+                    message: "Image asset not found",
+                });
+            return downloadResponse(stored);
         });
         this.get(
             "/:id/assets/:filename",
@@ -72,15 +76,7 @@ export class PhotoRoutes extends Hono<AuthEnvironment> {
                     throw new HTTPException(404, {
                         message: "Image asset not found",
                     });
-                if ("url" in stored) return context.redirect(stored.url, 302);
-                return new Response(
-                    Tracing.tracedStream("image.asset.download", () =>
-                        stored.file.stream(),
-                    ),
-                    {
-                        headers: { "Content-Type": stored.file.type },
-                    },
-                );
+                return downloadResponse(stored);
             },
         );
         this.post(

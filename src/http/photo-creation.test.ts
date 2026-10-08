@@ -192,6 +192,20 @@ test("a creator prepares an image, previews it, and saves metadata and equipment
         lens: { name: "New lens" },
         assets: [{ width: 200, height: 100 }],
     });
+    for (const path of [
+        `/photos/${photo.id}/image`,
+        `/photos/${photo.id}/assets/${saved.assets[0]!.assetLocation}`,
+    ]) {
+        const downloaded = await request("reader", path);
+        expect(downloaded.status).toBe(200);
+        expect(downloaded.headers.get("Content-Type")).toBe("image/webp");
+        expect(downloaded.headers.get("Cache-Control")).toBe(
+            "private, no-store",
+        );
+        expect(
+            (await sharp(await downloaded.arrayBuffer()).metadata()).width,
+        ).toBe(200);
+    }
     expect((await request("creator", upload.assets[0]!.url)).status).toBe(404);
     expect((await request("creator", `/photos/${photo.id}`)).status).toBe(403);
     expect(

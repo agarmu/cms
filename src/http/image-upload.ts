@@ -7,6 +7,7 @@ import { ApiValidation } from "../api/validation";
 import { Scope } from "../api/scope";
 import type { ImageStorage } from "../services/image-storage";
 import type { ScopeMiddleware } from "./scope";
+import { downloadResponse } from "./response";
 
 export class UploadValidation {
     static readonly uploadRequest = z.strictObject({
@@ -64,10 +65,7 @@ export class PhotoUploadRoutes extends Hono<AuthEnvironment> {
                     context.req.param("filename"),
                     context.var.authIdentity,
                 );
-                if ("url" in stored) return context.redirect(stored.url, 302);
-                return new Response(stored.file.stream(), {
-                    headers: { "Content-Type": stored.file.type },
-                });
+                return downloadResponse(stored);
             },
         );
         this.post(
