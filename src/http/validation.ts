@@ -7,21 +7,16 @@ export class HttpValidation {
     private static readonly timestamp = z.iso
         .datetime({ offset: true })
         .transform((value) => new Date(value));
-    private static readonly asset = ApiValidation.imageAsset
-        .omit({ photoId: true, assetLocation: true })
+    private static readonly metadata = PhotoValidation.photo
+        .omit({ assets: true })
         .extend({
-            filename: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/),
-        })
-        .transform(({ filename, ...dimensions }) => ({
-            ...dimensions,
-            assetLocation: filename,
-        }));
-    static readonly photo = PhotoValidation.photo.extend({
-        taken: HttpValidation.timestamp,
-        posted: HttpValidation.timestamp,
-        assets: z.array(HttpValidation.asset).optional(),
+            taken: HttpValidation.timestamp,
+            posted: HttpValidation.timestamp,
+        });
+    static readonly photo = HttpValidation.metadata.extend({
+        uploadId: ApiValidation.uuid,
     });
-    static readonly photoChanges = HttpValidation.photo
+    static readonly photoChanges = HttpValidation.metadata
         .partial()
         .refine((value) =>
             Object.values(value).some((field) => field !== undefined),

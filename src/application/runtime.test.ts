@@ -1,4 +1,9 @@
-import { testAuthSettings, testAuthentication } from "../auth/test-fixtures";
+import { readyUpload } from "../api/test-fixtures";
+import {
+    testAuthSettings,
+    testAuthentication,
+    testAuthIdentity,
+} from "../auth/test-fixtures";
 import { expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
@@ -82,6 +87,10 @@ test("runtime uses the configured RFC 9068 provider for real HTTP requests", asy
                 })
             ).status,
         ).toBe(403);
+        const uploadId = await readyUpload(db, undefined, {
+            ...testAuthIdentity,
+            issuer: issuer.url.href,
+        });
         const create = (token: string) =>
             fetch(url, {
                 method: "POST",
@@ -90,6 +99,7 @@ test("runtime uses the configured RFC 9068 provider for real HTTP requests", asy
                     "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
+                    uploadId,
                     taken: "2026-10-02T12:00:00Z",
                     posted: "2026-10-02T12:00:00Z",
                     alt: "Photo",
@@ -174,6 +184,7 @@ test("runtime serves requests on an allocated port, shares lazy storage, and clo
                 Authorization: "Bearer test-token",
             },
             body: JSON.stringify({
+                uploadId: await readyUpload(db),
                 taken: "2026-10-02T12:00:00Z",
                 posted: "2026-10-02T13:00:00Z",
                 alt: "Photo",

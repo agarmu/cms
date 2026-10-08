@@ -5,6 +5,7 @@ import { HTTPException } from "hono/http-exception";
 import { validator } from "hono/validator";
 import type { AuthEnvironment } from "./auth";
 import { PhotoApi } from "../api/photos";
+import { ImageUploadApi } from "../api/image-uploads";
 import type { ScopeMiddleware } from "./scope";
 import { HttpValidation as validation } from "./validation";
 import type { ImageStorage } from "../services/image-storage";
@@ -84,25 +85,22 @@ export class PhotoRoutes extends Hono<AuthEnvironment> {
         );
         this.post(
             "/",
-            access.write(PhotoApi.create),
+            access.write(ImageUploadApi.createPhoto),
             validator("json", (value) => validation.photo.parse(value)),
             async (context) => {
                 const db = context.var.db;
-                const photo = await PhotoApi.create(
+                const photo = await ImageUploadApi.createPhoto(
                     db,
                     context.req.valid("json"),
+                    context.var.authIdentity,
                 );
                 context.header("Location", `/photos/${photo.id}`);
-                return context.json(photoResponse(photo), 201);
+                return context.json(photo, 201);
             },
         );
         this.patch(
             "/:id",
-            access.write(
-                PhotoApi.update,
-                Scope.PhotosTextUpdate,
-                Scope.PhotosAssetsWrite,
-            ),
+            access.write(PhotoApi.update, Scope.PhotosTextUpdate),
             validator("json", (value) => validation.photoChanges.parse(value)),
             async (context) => {
                 const db = context.var.db;

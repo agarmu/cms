@@ -1,3 +1,5 @@
+import { readyUpload } from "../api/test-fixtures";
+import { PhotoApi } from "../api/photos";
 import { requestAsUser } from "../auth/test-fixtures";
 import { testAuthSettings, testAuthDependencies } from "../auth/test-fixtures";
 import { afterAll, beforeAll, expect, test } from "bun:test";
@@ -75,7 +77,7 @@ test("application instances enforce their configured HTTP body limits independen
     const init = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(metadata),
+        body: JSON.stringify({ ...metadata, uploadId: await readyUpload(db) }),
     };
     expect((await requestAsUser(custom.http, "/photos", init)).status).toBe(
         413,
@@ -102,10 +104,16 @@ const photoRecord = z.object({
 async function createPhoto(extra: object = {}) {
     const response = await request("/photos", "POST", {
         ...metadata,
+        uploadId: await readyUpload(db),
         ...extra,
     });
     expect(response.status).toBe(201);
-    const body = (await response.json()) as { id: string; assets: object[] };
+    const created = (await response.json()) as { id: string };
+    expect(Object.keys(created)).toEqual(["id"]);
+    const body = (await (await request(`/photos/${created.id}`)).json()) as {
+        id: string;
+        assets: object[];
+    };
     expect(response.headers.get("Location")).toBe(`/photos/${body.id}`);
     expect(body).not.toHaveProperty("cameraId");
     expect(body).not.toHaveProperty("lensId");
@@ -120,7 +128,6 @@ test("adds, reads, modifies, and removes a photo with assets and explicit new eq
     const photo = await createPhoto({
         camera: { create: { name: " Camera " } },
         lens: { create: { name: "Lens" } },
-        assets: [asset],
     });
     expect(photo.camera?.name).toBe("Camera");
     expect(photo.lens?.name).toBe("Lens");
@@ -131,12 +138,11 @@ test("adds, reads, modifies, and removes a photo with assets and explicit new eq
     expect(await loaded.json()).toMatchObject({ ...metadata, ...photo });
     const updated = await request(`/photos/${photo.id}`, "PATCH", {
         enabled: false,
-        assets: [{ ...asset, width: 1080 }],
     });
     expect(updated.status).toBe(200);
     expect(await updated.json()).toMatchObject({
         enabled: false,
-        assets: [{ ...asset, width: 1080 }],
+        assets: [asset],
     });
     expect((await request(`/photos/${photo.id}`, "DELETE")).status).toBe(204);
     expect((await request(`/photos/${photo.id}`)).status).toBe(404);
@@ -207,6 +213,7 @@ test("failed photo creation rolls back new equipment", async () => {
     const before = await db.query.cameras.findMany();
     const response = await request("/photos", "POST", {
         ...metadata,
+        uploadId: await readyUpload(db),
         camera: { create: { name: "Should roll back" } },
         lens: { id: crypto.randomUUID() },
     });
@@ -215,12 +222,11 @@ test("failed photo creation rolls back new equipment", async () => {
 });
 
 test("failed modification rolls back equipment and leaves the photo unchanged", async () => {
-    const photo = await createPhoto({ assets: [asset] });
+    const photo = await createPhoto();
     const before = await db.query.cameras.findMany();
     const response = await request(`/photos/${photo.id}`, "PATCH", {
         camera: { create: { name: "Should roll back" } },
         lens: { id: crypto.randomUUID() },
-        assets: [],
     });
     expect(response.status).toBe(409);
     expect(await db.query.cameras.findMany()).toEqual(before);
@@ -245,7 +251,7 @@ test("missing photos cannot create equipment during modification", async () => {
 });
 
 test("an asset insertion failure rolls back replaced assets, metadata, and new equipment", async () => {
-    const photo = await createPhoto({ assets: [asset] });
+    const photo = await createPhoto();
     const before = await db.query.cameras.findMany();
     await client.exec(`
     CREATE FUNCTION reject_test_asset() RETURNS trigger AS $$
@@ -260,12 +266,15 @@ test("an asset insertion failure rolls back replaced assets, metadata, and new e
       FOR EACH ROW EXECUTE FUNCTION reject_test_asset();
   `);
     try {
-        const response = await request(`/photos/${photo.id}`, "PATCH", {
-            enabled: false,
-            camera: { create: { name: "Should roll back" } },
-            assets: [asset, { ...asset, filename: "reject.webp" }],
-        });
-        expect(response.status).toBe(400);
+        await expect(
+            PhotoApi.update(db, photo.id, {
+                enabled: false,
+                camera: { create: { name: "Should roll back" } },
+                assets: [
+                    { width: 640, height: 320, assetLocation: "reject.webp" },
+                ],
+            }),
+        ).rejects.toThrow();
         expect(await db.query.cameras.findMany()).toEqual(before);
         expect(
             photoRecord.parse(
@@ -306,7 +315,7 @@ test.each(["cameras", "lenses"])(
     },
 );
 
-test("assets are managed only through photos", async () => {
+test("raw assets cannot be written through the public API", async () => {
     expect(
         (
             await request("/image-assets", "POST", {
@@ -316,12 +325,27 @@ test("assets are managed only through photos", async () => {
         ).status,
     ).toBe(404);
     expect((await request("/image-assets")).status).toBe(404);
-    const photo = await createPhoto({ assets: [asset] });
+    const photo = await createPhoto();
     const response = await request(`/photos/${photo.id}`, "PATCH", {
         assets: [],
     });
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ assets: [] });
+    expect(response.status).toBe(400);
+    expect(
+        (
+            (await (await request(`/photos/${photo.id}`)).json()) as {
+                assets: object[];
+            }
+        ).assets,
+    ).toHaveLength(1);
+    expect(
+        (
+            await request("/photos", "POST", {
+                ...metadata,
+                uploadId: await readyUpload(db),
+                assets: [asset],
+            })
+        ).status,
+    ).toBe(400);
 });
 
 const invalidRequests = [
@@ -353,7 +377,11 @@ const invalidRequests = [
 test.each(invalidRequests)(
     "rejects invalid %s %s requests",
     async (path, method, body) => {
-        expect((await request(path, method, body)).status).toBe(400);
+        const input =
+            method === "POST"
+                ? { uploadId: crypto.randomUUID(), ...(body as object) }
+                : body;
+        expect((await request(path, method, input)).status).toBe(400);
     },
 );
 
@@ -391,7 +419,10 @@ test.each(["application/json; charset=utf-8", "application/vnd.cms+json"])(
         const response = await requestAsUser(app, "/photos", {
             method: "POST",
             headers: { "Content-Type": contentType },
-            body: JSON.stringify(metadata),
+            body: JSON.stringify({
+                ...metadata,
+                uploadId: await readyUpload(db),
+            }),
         });
         expect(response.status).toBe(201);
     },

@@ -1,11 +1,12 @@
-import { and, asc, eq, isNull, lte } from "drizzle-orm";
-import { ImageUploadApi } from "../api/image-uploads";
+import { and, asc, eq, gt, isNull, lte } from "drizzle-orm";
+import { ImageUploadApi, UploadExpiredError } from "../api/image-uploads";
 import type { Database } from "../api/database";
 import { DatabaseSchema } from "../db/schema";
 import { NotFoundError } from "../lib/errors";
 import {
     ImageTooLargeError,
     InvalidImageError,
+    MissingOriginalError,
     UploadCancelledError,
 } from "./image-storage";
 import type { ImageStorage } from "./image-storage";
@@ -36,6 +37,7 @@ export class ImageUploadWorker {
                 .where(
                     and(
                         this.pending,
+                        gt(DatabaseSchema.imageUploads.expires, new Date()),
                         lte(DatabaseSchema.imageUploads.nextCheck, new Date()),
                     ),
                 )
@@ -53,14 +55,16 @@ export class ImageUploadWorker {
                             await ImageUploadApi.complete(
                                 this.options.db,
                                 this.options.getStorage(),
-                                upload.photoId,
                                 upload.id,
                             );
                             Tracing.setSpanAttributes({
                                 "job.outcome": "completed",
                             });
                         } catch (error) {
-                            if (error instanceof UploadCancelledError) {
+                            if (
+                                error instanceof UploadCancelledError ||
+                                error instanceof UploadExpiredError
+                            ) {
                                 Tracing.setSpanAttributes({
                                     "job.outcome": "cancelled",
                                 });
@@ -74,7 +78,7 @@ export class ImageUploadWorker {
                                 error instanceof ImageTooLargeError
                             ) {
                                 failed = error.message;
-                            } else if (error instanceof NotFoundError) {
+                            } else if (error instanceof MissingOriginalError) {
                                 if (
                                     Date.now() - upload.created.getTime() >=
                                     this.config.upload.waitTime
@@ -85,6 +89,8 @@ export class ImageUploadWorker {
                                             ? "Original image was not uploaded within one hour"
                                             : `Original image was not uploaded within ${this.config.upload.waitTime / 1000} seconds`;
                                 }
+                            } else if (error instanceof NotFoundError) {
+                                failed = error.message;
                             } else {
                                 this.options.reportError(
                                     error instanceof Error

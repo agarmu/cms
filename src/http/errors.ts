@@ -1,4 +1,3 @@
-import { InvalidUploadTokenError } from "../api/image-uploads";
 import {
     InvalidImageError,
     ImageTooLargeError,
@@ -37,8 +36,6 @@ export class HttpErrorHandler {
             this.reportError(error);
             return context.json({ error: error.message }, 503);
         }
-        if (error instanceof InvalidUploadTokenError)
-            return context.json({ error: error.message }, 403);
         if (error instanceof InvalidImageError)
             return context.json({ error: error.message }, 400);
         if (error instanceof ImageTooLargeError)

@@ -1,4 +1,4 @@
-import { requestAsUser } from "../auth/test-fixtures";
+import { requestAsUser, testAuthIdentity } from "../auth/test-fixtures";
 import { testAuthDependencies } from "../auth/test-fixtures";
 import { ImageConfiguration } from "../services/image-config";
 import { WorkerConfiguration } from "../services/worker-config";
@@ -88,18 +88,13 @@ afterAll(async () => {
 });
 
 async function photo() {
-    const response = await requestAsUser(app, "/photos", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            taken: "2026-10-02T12:00:00.000Z",
-            posted: "2026-10-02T13:00:00.000Z",
-            alt: "Photo",
-            description: "",
-            enabled: true,
-        }),
+    return PhotoApi.create(db, {
+        taken: new Date("2026-10-02T12:00:00Z"),
+        posted: new Date("2026-10-02T13:00:00Z"),
+        alt: "Photo",
+        description: "",
+        enabled: true,
     });
-    return (await response.json()) as { id: string };
 }
 async function initiate(id: string) {
     const response = await requestAsUser(app, `/photos/${id}/uploads`, {
@@ -111,7 +106,6 @@ async function initiate(id: string) {
     const receipt = (await response.json()) as {
         id: string;
         status: string;
-        token: string;
         upload: {
             url: string;
             method: string;
@@ -126,7 +120,6 @@ async function initiate(id: string) {
     return {
         ...receipt.upload,
         uploadId: receipt.id,
-        token: receipt.token,
         key: `originals/${id.toLowerCase()}/${receipt.id}`,
         statusUrl,
         completeUrl: `${statusUrl}/complete`,
@@ -144,13 +137,14 @@ const due = (uploadId: string) =>
         .set({ nextCheck: new Date(0) })
         .where(eq(schema.imageUploads.id, ApiValidation.uuid.parse(uploadId)))
         .execute();
-const process = (id: string, uploadId: string) =>
-    ImageUploadApi.complete(
+const process = async (id: string, uploadId: string) => {
+    await ImageUploadApi.complete(
         db,
         storage,
-        ApiValidation.uuid.parse(id),
         ApiValidation.uuid.parse(uploadId),
     );
+    return PhotoApi.read(db, ApiValidation.uuid.parse(id));
+};
 const png = await sharp({
     create: { width: 1000, height: 500, channels: 3, background: "red" },
 })
@@ -306,9 +300,7 @@ test("uppercase photo and upload IDs can complete an upload immediately", async 
     const response = await control(
         `/photos/${id.toUpperCase()}/uploads/${upload.uploadId.toUpperCase()}/complete`,
         "POST",
-        {
-            token: upload.token,
-        },
+        {},
     );
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
@@ -447,14 +439,15 @@ test("failed replacement rolls back the GC queue along with assets", async () =>
       FOR EACH ROW EXECUTE FUNCTION reject_gc_replacement();
   `);
     try {
-        const response = await control(`/photos/${id}`, "PATCH", {
-            assets: assets.map(({ width, height }) => ({
-                width,
-                height,
-                filename: "new.webp",
-            })),
-        });
-        expect(response.status).toBe(400);
+        await expect(
+            PhotoApi.update(db, ApiValidation.uuid.parse(id), {
+                assets: assets.map(({ width, height }) => ({
+                    width,
+                    height,
+                    assetLocation: "new.webp",
+                })),
+            }),
+        ).rejects.toThrow();
         expect(await garbageFor(id)).toEqual([]);
         expect(
             (await PhotoApi.read(db, ApiValidation.uuid.parse(id))).assets,
@@ -845,13 +838,11 @@ function control(url: string, method: string, body: object) {
     });
 }
 
-test("a client with the token can process immediately and repeated requests are safe", async () => {
+test("an authenticated uploader can process immediately and repeated requests are safe", async () => {
     const { id } = await photo();
     const upload = await initiate(id);
     objects.set(upload.key, png);
-    const first = await control(upload.completeUrl, "POST", {
-        token: upload.token,
-    });
+    const first = await control(upload.completeUrl, "POST", {});
     expect(first.status).toBe(200);
     expect(await first.json()).toMatchObject({
         status: "completed",
@@ -860,68 +851,48 @@ test("a client with the token can process immediately and repeated requests are 
     const before = [...objects.keys()];
     await due(upload.uploadId);
     await check();
-    const repeated = await control(upload.completeUrl, "POST", {
-        token: upload.token,
-    });
+    const repeated = await control(upload.completeUrl, "POST", {});
     expect(repeated.status).toBe(200);
     expect([...objects.keys()]).toEqual(before);
-    expect(
-        (await control(upload.cancelUrl, "POST", { token: upload.token }))
-            .status,
-    ).toBe(409);
+    expect((await control(upload.cancelUrl, "POST", {})).status).toBe(409);
 });
 
 test("completion with a missing original leaves the upload pending", async () => {
     const { id } = await photo();
     const upload = await initiate(id);
-    const response = await control(upload.completeUrl, "POST", {
-        token: upload.token,
-    });
+    const response = await control(upload.completeUrl, "POST", {});
     expect(response.status).toBe(404);
     expect((await status(upload)).status).toBe("pending");
     objects.set(upload.key, png);
-    const completed = await control(upload.completeUrl, "POST", {
-        token: upload.token,
-    });
+    const completed = await control(upload.completeUrl, "POST", {});
     expect(completed.status).toBe(200);
     expect((await status(upload)).status).toBe("completed");
 });
 
-test("explicit cancellation is idempotent and invalid or cross-upload tokens cannot mutate jobs", async () => {
+test("explicit cancellation is idempotent and another account cannot control the upload", async () => {
     const { id } = await photo();
     const upload = await initiate(id);
-    const another = await initiate(id);
-    expect(upload.token).not.toBe(another.token);
-    expect((await status(upload)) as object).not.toHaveProperty("token");
-    const [receipt] = await db
-        .select()
-        .from(schema.imageUploads)
-        .where(
-            eq(
-                schema.imageUploads.id,
-                ApiValidation.uuid.parse(upload.uploadId),
-            ),
-        )
-        .execute();
-    expect(receipt!.tokenHash).not.toBe(upload.token);
-    for (const token of ["0".repeat(64), another.token]) {
-        expect(
-            (await control(upload.completeUrl, "POST", { token })).status,
-        ).toBe(403);
-        expect(
-            (await control(upload.cancelUrl, "POST", { token })).status,
-        ).toBe(403);
-        expect((await status(upload)).status).toBe("pending");
-    }
-    expect((await control(upload.cancelUrl, "POST", {})).status).toBe(400);
-    expect(
-        (await control(upload.cancelUrl, "POST", { token: upload.token }))
-            .status,
-    ).toBe(200);
-    expect(
-        (await control(upload.cancelUrl, "POST", { token: upload.token }))
-            .status,
-    ).toBe(200);
+    const stranger = { ...testAuthIdentity, subject: "other-user" };
+    await expect(
+        ImageUploadApi.finish(
+            db,
+            storage,
+            ApiValidation.uuid.parse(upload.uploadId),
+            stranger,
+            id,
+        ),
+    ).rejects.toThrow("another account");
+    await expect(
+        ImageUploadApi.cancel(
+            db,
+            ApiValidation.uuid.parse(upload.uploadId),
+            stranger,
+            id,
+        ),
+    ).rejects.toThrow("another account");
+    expect((await status(upload)).status).toBe("pending");
+    expect((await control(upload.cancelUrl, "POST", {})).status).toBe(200);
+    expect((await control(upload.cancelUrl, "POST", {})).status).toBe(200);
     expect((await status(upload)).status).toBe("cancelled");
 });
 
@@ -948,9 +919,7 @@ test("cancelling an active worker discards generated files and preserves the cur
     const running = check();
     try {
         await reached.promise;
-        const response = await control(upload.cancelUrl, "POST", {
-            token: upload.token,
-        });
+        const response = await control(upload.cancelUrl, "POST", {});
         expect(response.status).toBe(200);
         expect(await response.json()).toMatchObject({ status: "cancelled" });
     } finally {

@@ -58,18 +58,35 @@ export class DatabaseSchema {
         "image_uploads",
         {
             id: pg.uuid("id").$type<UUID>().primaryKey(),
-            photoId: pg
-                .uuid("photo_id")
-                .$type<UUID>()
+            photoId: pg.uuid("photo_id").$type<UUID>().notNull(),
+            kind: pg
+                .text("kind", { enum: ["creation", "replacement"] })
                 .notNull()
-                .references(() => DatabaseSchema.images.id, {
-                    onDelete: "cascade",
-                }),
+                .default("replacement"),
+            ownerIssuer: pg.text("owner_issuer"),
+            ownerSubject: pg.text("owner_subject"),
             created: pg
                 .timestamp("created", { withTimezone: true, mode: "date" })
                 .notNull()
                 .defaultNow(),
-            tokenHash: pg.text("token_hash").notNull(),
+            assets: pg
+                .jsonb("assets")
+                .$type<
+                    { width: number; height: number; assetLocation: string }[]
+                >(),
+            consumed: pg.timestamp("consumed", {
+                withTimezone: true,
+                mode: "date",
+            }),
+            inputHash: pg.text("input_hash"),
+            expires: pg
+                .timestamp("expires", { withTimezone: true, mode: "date" })
+                .notNull()
+                .default(sql`now() + interval '24 hours'`),
+            cleaned: pg.timestamp("cleaned", {
+                withTimezone: true,
+                mode: "date",
+            }),
             completed: pg.timestamp("completed", {
                 withTimezone: true,
                 mode: "date",
@@ -87,6 +104,10 @@ export class DatabaseSchema {
         },
         (table) => [
             pg.index("image_uploads_photo_id_idx").on(table.photoId),
+            pg
+                .index("image_uploads_expiry_idx")
+                .on(table.expires)
+                .where(sql`cleaned IS NULL`),
             pg
                 .index("image_uploads_pending_idx")
                 .on(table.nextCheck)

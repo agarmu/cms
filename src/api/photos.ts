@@ -33,6 +33,9 @@ export class PhotoValidation {
         .refine((value) =>
             Object.values(value).some((field) => field !== undefined),
         );
+    static readonly creation = PhotoValidation.photo
+        .omit({ assets: true })
+        .extend({ uploadId: validation.uuid });
 }
 
 // Photo writes are atomic: inline equipment and assets cannot outlive a failed write.
@@ -153,6 +156,7 @@ export class PhotoApi {
     static async create(
         db: Database,
         input: z.infer<typeof PhotoValidation.photo>,
+        id?: UUID,
     ) {
         const { camera, lens, assets, ...metadata } =
             PhotoValidation.photo.parse(input);
@@ -164,13 +168,14 @@ export class PhotoApi {
                     "camera",
                 );
                 const lensId = await PhotoApi.equipmentId(tx, lens, "lens");
-                const [row] = await ImageApi.create(tx, {
-                    ...metadata,
-                    cameraId,
-                    lensId,
-                });
+                const [row] = await ImageApi.create(
+                    tx,
+                    { ...metadata, cameraId, lensId },
+                    id,
+                );
                 if (!row) throw new Error("Photo insert returned no record");
-                if (assets) await PhotoApi.replaceAssets(tx, row.id, assets);
+                if (assets?.length)
+                    await PhotoApi.replaceAssets(tx, row.id, assets);
                 return PhotoApi.read(tx, row.id);
             }),
         );

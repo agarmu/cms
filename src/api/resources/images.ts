@@ -40,7 +40,7 @@ export class ImageApi {
 
     @ApiScope.scoped(Scope.PhotosCreate)
     @Tracing.traced("images.create")
-    static async create(db: Database, value: Omit<NewImage, "id">) {
+    static async create(db: Database, value: Omit<NewImage, "id">, id?: UUID) {
         value = validation.image.parse(value);
         if (value.cameraId != null)
             await References.requireReference(
@@ -58,7 +58,10 @@ export class ImageApi {
             );
         return db
             .insert(DatabaseSchema.images)
-            .values(value)
+            .values({
+                ...value,
+                ...(id ? { id: validation.uuid.parse(id) } : {}),
+            })
             .returning()
             .execute();
     }

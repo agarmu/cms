@@ -8,7 +8,7 @@ import { PhotoRoutes } from "./photos";
 import { EquipmentRoutes } from "./equipment";
 import { HttpErrorHandler } from "./errors";
 import { ScopeMiddleware } from "./scope";
-import { ImageUploadRoutes } from "./image-upload";
+import { ImageUploadRoutes, PhotoUploadRoutes } from "./image-upload";
 import { HttpConfiguration } from "./config";
 import type { ImageStorage } from "../services/image-storage";
 import { Tracing } from "../telemetry/tracing";
@@ -42,6 +42,10 @@ export class HttpApplication extends Hono<AuthEnvironment> {
             this.route(
                 "/photos",
                 new ImageUploadRoutes(access, options.getImageStorage),
+            );
+            this.route(
+                "/photo-uploads",
+                new PhotoUploadRoutes(access, options.getImageStorage),
             );
             this.route("/cameras", new EquipmentRoutes(CameraApi, access));
             this.route("/lenses", new EquipmentRoutes(LensApi, access));

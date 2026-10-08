@@ -4,6 +4,7 @@ import type { AuthEnvironment } from "./auth";
 import { z } from "zod";
 import { ImageUploadApi } from "../api/image-uploads";
 import { ApiValidation } from "../api/validation";
+import { Scope } from "../api/scope";
 import type { ImageStorage } from "../services/image-storage";
 import type { ScopeMiddleware } from "./scope";
 
@@ -17,9 +18,86 @@ export class UploadValidation {
             "image/tiff",
         ]),
     });
-    static readonly controlRequest = z.strictObject({
-        token: z.string().regex(/^[a-f0-9]{64}$/),
-    });
+}
+
+export class PhotoUploadRoutes extends Hono<AuthEnvironment> {
+    constructor(access: ScopeMiddleware, getStorage: () => ImageStorage) {
+        super();
+        this.post(
+            "/",
+            access.write(ImageUploadApi.create),
+            validator("json", (value) =>
+                UploadValidation.uploadRequest.parse(value),
+            ),
+            async (context) => {
+                const upload = await ImageUploadApi.create(
+                    context.var.db,
+                    getStorage(),
+                    context.req.valid("json").contentType,
+                    context.var.authIdentity,
+                );
+                context.header("Location", `/photo-uploads/${upload.id}`);
+                return context.json(upload, 201);
+            },
+        );
+        this.get(
+            "/:uploadId",
+            access.require(Scope.PhotosCreate),
+            async (context) => {
+                return context.json(
+                    await ImageUploadApi.read(
+                        context.var.db,
+                        ApiValidation.uuid.parse(context.req.param("uploadId")),
+                        context.var.authIdentity,
+                    ),
+                );
+            },
+        );
+        this.get(
+            "/:uploadId/assets/:filename",
+            access.require(Scope.PhotosCreate),
+            async (context) => {
+                const stored = await ImageUploadApi.readAsset(
+                    context.var.db,
+                    getStorage(),
+                    ApiValidation.uuid.parse(context.req.param("uploadId")),
+                    context.req.param("filename"),
+                    context.var.authIdentity,
+                );
+                if ("url" in stored) return context.redirect(stored.url, 302);
+                return new Response(stored.file.stream(), {
+                    headers: { "Content-Type": stored.file.type },
+                });
+            },
+        );
+        this.post(
+            "/:uploadId/complete",
+            access.require(Scope.PhotosCreate),
+            async (context) => {
+                return context.json(
+                    await ImageUploadApi.finish(
+                        context.var.db,
+                        getStorage(),
+                        ApiValidation.uuid.parse(context.req.param("uploadId")),
+                        context.var.authIdentity,
+                    ),
+                );
+            },
+        );
+        this.post(
+            "/:uploadId/cancel",
+            access.require(Scope.PhotosCreate),
+            async (context) => {
+                return context.json(
+                    await ImageUploadApi.cancel(
+                        context.var.db,
+                        ApiValidation.uuid.parse(context.req.param("uploadId")),
+                        context.var.authIdentity,
+                    ),
+                );
+            },
+        );
+    }
 }
 
 export class ImageUploadRoutes extends Hono<AuthEnvironment> {
@@ -27,92 +105,77 @@ export class ImageUploadRoutes extends Hono<AuthEnvironment> {
         super();
         this.post(
             "/:id/uploads",
-            access.write(ImageUploadApi.create),
+            access.write(ImageUploadApi.replace),
             validator("json", (value) =>
                 UploadValidation.uploadRequest.parse(value),
             ),
             async (context) => {
-                const db = context.var.db;
                 const id = ApiValidation.uuid.parse(context.req.param("id"));
-                const upload = await ImageUploadApi.create(
-                    db,
+                const upload = await ImageUploadApi.replace(
+                    context.var.db,
                     getStorage(),
                     id,
                     context.req.valid("json").contentType,
+                    context.var.authIdentity,
                 );
-                const { uploadId, token, url, method, headers, expiresIn } =
-                    upload;
                 context.header(
                     "Location",
-                    `/photos/${id.toLowerCase()}/uploads/${uploadId}`,
+                    `/photos/${id.toLowerCase()}/uploads/${upload.id}`,
                 );
-                return context.json(
-                    {
-                        id: uploadId,
-                        status: "pending",
-                        token,
-                        upload: { url, method, headers, expiresIn },
-                    },
-                    201,
-                );
+                return context.json(upload, 201);
             },
         );
         this.get(
             "/:id/uploads/:uploadId",
-            access.read(ImageUploadApi.read),
+            access.require(Scope.PhotosAssetsWrite),
             async (context) => {
-                const db = context.var.db;
                 const id = ApiValidation.uuid.parse(context.req.param("id"));
                 const uploadId = ApiValidation.uuid.parse(
                     context.req.param("uploadId"),
                 );
                 return context.json(
-                    await ImageUploadApi.read(db, id, uploadId),
+                    await ImageUploadApi.read(
+                        context.var.db,
+                        uploadId,
+                        context.var.authIdentity,
+                        id,
+                    ),
                 );
             },
         );
         this.post(
             "/:id/uploads/:uploadId/complete",
-            access.write(ImageUploadApi.finish),
-            validator("json", (value) =>
-                UploadValidation.controlRequest.parse(value),
-            ),
+            access.require(Scope.PhotosAssetsWrite),
             async (context) => {
-                const db = context.var.db;
                 const id = ApiValidation.uuid.parse(context.req.param("id"));
                 const uploadId = ApiValidation.uuid.parse(
                     context.req.param("uploadId"),
                 );
-                const { token } = context.req.valid("json");
                 return context.json(
                     await ImageUploadApi.finish(
-                        db,
+                        context.var.db,
                         getStorage(),
-                        id,
                         uploadId,
-                        token,
+                        context.var.authIdentity,
+                        id,
                     ),
                 );
             },
         );
         this.post(
             "/:id/uploads/:uploadId/cancel",
-            access.write(ImageUploadApi.cancel),
-            validator("json", (value) =>
-                UploadValidation.controlRequest.parse(value),
-            ),
+            access.require(Scope.PhotosAssetsWrite),
             async (context) => {
-                const db = context.var.db;
                 const id = ApiValidation.uuid.parse(context.req.param("id"));
                 const uploadId = ApiValidation.uuid.parse(
                     context.req.param("uploadId"),
                 );
                 return context.json(
                     await ImageUploadApi.cancel(
-                        db,
-                        id,
+                        context.var.db,
                         uploadId,
-                        context.req.valid("json").token,
+                        context.var.authIdentity,
+                        id,
                     ),
                 );
             },

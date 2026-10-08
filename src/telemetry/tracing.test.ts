@@ -1,4 +1,5 @@
-import { requestAsUser } from "../auth/test-fixtures";
+import { readyUpload } from "../api/test-fixtures";
+import { requestAsUser, testAuthIdentity } from "../auth/test-fixtures";
 import { testAuthSettings, testAuthDependencies } from "../auth/test-fixtures";
 import { StorageConfiguration } from "../services/storage-config";
 import { WorkerConfiguration } from "../services/worker-config";
@@ -95,8 +96,8 @@ test("Bun propagates incoming W3C context through HTTP, transactions, and API sp
         },
         body: JSON.stringify({
             ...metadata,
+            uploadId: await readyUpload(db),
             camera: { create: { name: "Camera" } },
-            assets: [{ width: 100, height: 100, filename: "photo.webp" }],
         }),
     });
     expect(response.status).toBe(201);
@@ -112,7 +113,11 @@ test("Bun propagates incoming W3C context through HTTP, transactions, and API sp
     const camera = spans.find((span) => span.name === "cameras.create")!;
     const assets = spans.find((span) => span.name === "photo.assets.replace")!;
     const asset = spans.find((span) => span.name === "image-assets.create")!;
-    expect(create.parentSpanContext?.spanId).toBe(server.spanContext().spanId);
+    expect(create.parentSpanContext?.spanId).toBe(
+        spans
+            .find((span) => span.name === "photo.createFromUpload")!
+            .spanContext().spanId,
+    );
     expect(transaction.parentSpanContext?.spanId).toBe(
         create.spanContext().spanId,
     );
@@ -136,6 +141,7 @@ test("handled API errors still mark and finish the HTTP and child spans", async 
         },
         body: JSON.stringify({
             ...metadata,
+            uploadId: await readyUpload(db),
             camera: { id: crypto.randomUUID() },
         }),
     });
@@ -233,7 +239,6 @@ test("upload processing and GC retain nested storage spans and handled retry fai
         .png()
         .toBuffer();
     let traceId = "";
-    let token = "";
     await Tracing.withSpan("test.image.pipeline", async () => {
         traceId = trace.getActiveSpan()!.spanContext().traceId;
         const photo = await PhotoApi.create(db, {
@@ -241,14 +246,14 @@ test("upload processing and GC retain nested storage spans and handled retry fai
             taken: new Date(metadata.taken),
             posted: new Date(metadata.posted),
         });
-        const upload = await ImageUploadApi.create(
+        const upload = await ImageUploadApi.replace(
             db,
             storage,
             photo.id,
             "image/png",
+            testAuthIdentity,
         );
-        token = upload.token;
-        objects.set(upload.key, original);
+        objects.set(`originals/${photo.id}/${upload.id}`, original);
         await db
             .update(schema.imageUploads)
             .set({ nextCheck: new Date(0) })
@@ -320,7 +325,6 @@ test("upload processing and GC retain nested storage spans and handled retry fai
     const exported = JSON.stringify(
         spans.map(({ attributes, events }) => ({ attributes, events })),
     );
-    expect(exported).not.toContain(token);
     expect(exported).not.toContain("secret-signature");
 });
 
