@@ -73,6 +73,10 @@ export class ImageStorage {
         return `originals/${photoId}/${uploadId}`;
     }
 
+    async deleteOriginal(photoId: string, uploadId: string) {
+        await this.storage.delete(this.originalKey(photoId, uploadId));
+    }
+
     @Tracing.traced("image.storage.process")
     async processUpload(
         photoId: string,

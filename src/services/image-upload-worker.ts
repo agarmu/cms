@@ -144,6 +144,55 @@ export class ImageUploadWorker {
                     },
                 );
             }
+            const expired = await this.options.db
+                .select()
+                .from(DatabaseSchema.imageUploads)
+                .where(
+                    and(
+                        isNull(DatabaseSchema.imageUploads.cleaned),
+                        lte(DatabaseSchema.imageUploads.expires, new Date()),
+                        lte(DatabaseSchema.imageUploads.nextCheck, new Date()),
+                    ),
+                )
+                .orderBy(asc(DatabaseSchema.imageUploads.nextCheck))
+                .limit(this.config.batchSize)
+                .execute();
+            for (const upload of expired) {
+                try {
+                    await ImageUploadApi.expire(
+                        this.options.db,
+                        this.options.getStorage(),
+                        upload.id,
+                    );
+                } catch (error) {
+                    this.options.reportError(
+                        error instanceof Error
+                            ? error
+                            : new Error(String(error)),
+                    );
+                    const delay = Math.min(
+                        3_600_000,
+                        this.config.retryDelay(upload.retryCount) ?? 3_600_000,
+                    );
+                    await this.options.db
+                        .update(DatabaseSchema.imageUploads)
+                        .set({
+                            nextCheck: new Date(Date.now() + delay),
+                            retryCount: upload.retryCount + 1,
+                        })
+                        .where(
+                            and(
+                                eq(DatabaseSchema.imageUploads.id, upload.id),
+                                isNull(DatabaseSchema.imageUploads.cleaned),
+                                eq(
+                                    DatabaseSchema.imageUploads.retryCount,
+                                    upload.retryCount,
+                                ),
+                            ),
+                        )
+                        .execute();
+                }
+            }
         });
     }
 }

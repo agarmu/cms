@@ -16,6 +16,8 @@ import { DatabaseSchema as schema } from "../db/schema";
 import { ImageStorage } from "../services/image-storage";
 import type { BlobStorage } from "../services/blob-storage";
 import { ImageUploadWorker } from "../services/image-upload-worker";
+import { ImageGarbageCollector } from "../services/image-garbage-collector";
+import { WorkerConfiguration } from "../services/worker-config";
 import { HttpApplication } from "./app";
 
 const client = new PGlite();
@@ -163,6 +165,7 @@ const expire = (id: UUID) =>
         .update(schema.imageUploads)
         .set({ expires: new Date(0), nextCheck: new Date(0) })
         .where(eq(schema.imageUploads.id, id));
+const collect = () => new ImageGarbageCollector(options).collect();
 
 test("a creator prepares an image, previews it, and saves metadata and equipment atomically", async () => {
     const before = await db.query.images.findMany();
@@ -425,6 +428,85 @@ test("the worker prepares new uploads without creating photos and ignores overwr
     ).toBe(200);
     expect([...objects.keys()]).toEqual(keys);
     expect((await save(upload.id)).status).toBe(201);
+});
+
+test("cancelled and expired sessions cannot create photos and abandoned files are collected", async () => {
+    for (const cancel of [true, false]) {
+        const upload = await prepare();
+        if (cancel) {
+            expect(
+                (await request("creator", `${upload.path}/cancel`, "POST"))
+                    .status,
+            ).toBe(200);
+            expect(
+                (await request("creator", `${upload.path}/cancel`, "POST"))
+                    .status,
+            ).toBe(200);
+        }
+        await expire(upload.id);
+        expect((await save(upload.id)).status).toBe(409);
+        expect(
+            (await request("creator", `${upload.path}/complete`, "POST"))
+                .status,
+        ).toBe(409);
+        await new ImageUploadWorker(options).check();
+        await collect();
+        expect(objects.has(upload.key)).toBe(false);
+        const photoId = upload.key.split("/")[1]!;
+        expect(
+            [...objects.keys()].filter((key) =>
+                key.startsWith(`images/${photoId}/`),
+            ),
+        ).toEqual([]);
+    }
+    const used = await prepare();
+    const { id } = (await (await save(used.id)).json()) as { id: UUID };
+    await expire(used.id);
+    await new ImageUploadWorker(options).check();
+    await collect();
+    expect(objects.has(used.key)).toBe(false);
+    expect(
+        [...objects.keys()].filter((key) => key.startsWith(`images/${id}/`)),
+    ).toHaveLength(1);
+    expect((await save(used.id)).status).toBe(201);
+});
+
+test("expiration cleanup backs off failures without starving later sessions", async () => {
+    const first = await start();
+    const second = await start();
+    for (const upload of [first, second]) {
+        objects.set(upload.key, png);
+        await expire(upload.id);
+    }
+    const failure = new Error("Temporary deletion failure");
+    const cleanupErrors: Error[] = [];
+    const faultyStorage = new ImageStorage({
+        ...blobs,
+        delete: async (key) => {
+            if (key === first.key) throw failure;
+            await blobs.delete(key);
+        },
+    });
+    await db
+        .update(schema.imageUploads)
+        .set({ nextCheck: new Date(1) })
+        .where(eq(schema.imageUploads.id, second.id));
+    const worker = new ImageUploadWorker(
+        {
+            db,
+            getStorage: () => faultyStorage,
+            reportError: (error) => cleanupErrors.push(error),
+        },
+        new WorkerConfiguration({ batchSize: 1 }),
+    );
+    await worker.check();
+    expect(cleanupErrors).toEqual([failure]);
+    await worker.check();
+    expect(objects.has(first.key)).toBe(true);
+    expect(objects.has(second.key)).toBe(false);
+    await expire(first.id);
+    await new ImageUploadWorker(options).check();
+    expect(objects.has(first.key)).toBe(false);
 });
 
 test("cancelling a creation during processing discards its generated files", async () => {

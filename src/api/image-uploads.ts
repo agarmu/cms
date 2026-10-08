@@ -387,4 +387,46 @@ export class ImageUploadApi {
             throw error;
         }
     }
+
+    static async expire(db: Database, storage: ImageStorage, uploadId: UUID) {
+        const upload = await ImageUploadApi.receipt(db, uploadId);
+        if (upload.cleaned || upload.expires.getTime() > Date.now()) return;
+        await storage.deleteOriginal(upload.photoId, upload.id);
+        await db.transaction(async (tx) => {
+            const [current] = await tx
+                .select()
+                .from(uploads)
+                .where(eq(uploads.id, upload.id))
+                .for("update")
+                .execute();
+            if (
+                !current ||
+                current.cleaned ||
+                current.expires.getTime() > Date.now()
+            )
+                return;
+            if (
+                current.kind === "creation" &&
+                !current.consumed &&
+                current.assets?.length
+            ) {
+                await tx
+                    .insert(DatabaseSchema.imageAssetGarbage)
+                    .values(
+                        current.assets.map((asset) => ({
+                            photoId: current.photoId,
+                            assetLocation: asset.assetLocation,
+                            nextCheck: new Date(),
+                        })),
+                    )
+                    .onConflictDoNothing()
+                    .execute();
+            }
+            await tx
+                .update(uploads)
+                .set({ cleaned: new Date(), assets: null })
+                .where(eq(uploads.id, current.id))
+                .execute();
+        });
+    }
 }
