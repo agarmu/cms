@@ -1,7 +1,10 @@
 # Example config file
 # All times in ms
-port = 3000
+[serve]
 baseUrl = "https://photos.example.com"
+port = 3000
+# Bind to loopback even with authentication enabled. no-auth always uses loopback.
+bindLocal = false
 
 [mcp]
 enabled = false

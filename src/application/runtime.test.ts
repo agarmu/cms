@@ -44,7 +44,7 @@ test("runtime uses the configured RFC 9068 provider for real HTTP requests", asy
             jwksUrl: issuer.url.href,
         },
         database: { url: databaseUrl },
-        port: 0,
+        serve: { port: 0 },
         storage: { backend: "local", directory: "./data/blobs" },
     });
     const runtime = new ApplicationRuntime(config, {
@@ -140,7 +140,7 @@ test("runtime serves requests on an allocated port, shares lazy storage, and clo
             new ApplicationConfig({
                 auth: testAuthSettings,
                 database: { url: databaseUrl },
-                port: 0,
+                serve: { port: 0 },
                 storage: { backend: "local", directory: "./data/blobs" },
             }),
             {
@@ -240,7 +240,7 @@ test("runtime closes its database when the HTTP listener cannot start", async ()
                     auth: testAuthSettings,
                     database: { url: databaseUrl },
                     storage: { backend: "local", directory: "./data/blobs" },
-                    port: occupied.port!,
+                    serve: { port: occupied.port! },
                 }),
                 {
                     authentication: testAuthentication,
@@ -274,7 +274,7 @@ test("stopping during startup waits for the connection and closes resources once
             auth: testAuthSettings,
             database: { url: databaseUrl },
             storage: { backend: "local", directory: "./data/blobs" },
-            port: 0,
+            serve: { port: 0 },
         }),
         {
             authentication: testAuthentication,
@@ -317,7 +317,7 @@ test("configured no-auth supports header-free reads and writes with stable uploa
         new ApplicationConfig({
             auth: { kind: "no-auth" },
             database: { url: databaseUrl },
-            port: 0,
+            serve: { port: 0 },
             storage: { backend: "local", directory: "./data/blobs" },
         }),
         { connect: async () => ({ db, close: () => client.close() }) },

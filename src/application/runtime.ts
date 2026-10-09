@@ -75,6 +75,7 @@ export class ApplicationRuntime {
                     async () =>
                         Bun.serve({
                             port: this.config.port,
+                            hostname: this.config.hostname,
                             fetch: this.application!.http.fetch,
                         }),
                 );

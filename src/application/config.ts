@@ -19,13 +19,19 @@ export type ApplicationSecrets = z.input<
 export class ApplicationConfig {
     static readonly schema = z
         .strictObject({
-            port: z.int().min(0).max(65535).default(3000),
-            baseUrl: publicUrl
-                .refine(
-                    (value) =>
-                        URL.canParse(value) && new URL(value).pathname === "/",
-                )
-                .optional(),
+            serve: z
+                .strictObject({
+                    port: z.int().min(0).max(65535).default(3000),
+                    bindLocal: z.boolean().default(false),
+                    baseUrl: publicUrl
+                        .refine(
+                            (value) =>
+                                URL.canParse(value) &&
+                                new URL(value).pathname === "/",
+                        )
+                        .optional(),
+                })
+                .prefault({}),
             database: DatabaseConfiguration.schema,
             auth: AuthenticationConfiguration.schema,
             mcp: McpConfiguration.schema.optional(),
@@ -37,7 +43,7 @@ export class ApplicationConfig {
         })
         .refine(
             (settings) =>
-                !settings.mcp?.enabled || settings.baseUrl !== undefined,
+                !settings.mcp?.enabled || settings.serve.baseUrl !== undefined,
         );
     static readonly secretsSchema = z.strictObject({
         database: DatabaseConfiguration.secretsSchema.prefault({}),
@@ -50,6 +56,7 @@ export class ApplicationConfig {
     readonly baseUrl: URL | undefined;
     readonly mcp: McpConfiguration | undefined;
     readonly port: number;
+    readonly hostname: string;
     readonly storage: StorageConfiguration;
     readonly images: ImageConfiguration;
     readonly workers: WorkerConfiguration;
@@ -73,12 +80,18 @@ export class ApplicationConfig {
             settings.secrets.database,
         );
         this.auth = Object.freeze(settings.auth);
-        this.baseUrl = settings.baseUrl ? new URL(settings.baseUrl) : undefined;
+        this.baseUrl = settings.serve.baseUrl
+            ? new URL(settings.serve.baseUrl)
+            : undefined;
         this.mcp =
             settings.mcp?.enabled && this.baseUrl
                 ? new McpConfiguration(this.baseUrl, this.auth, settings.mcp)
                 : undefined;
-        this.port = settings.port;
+        this.port = settings.serve.port;
+        this.hostname =
+            settings.auth.kind === "no-auth" || settings.serve.bindLocal
+                ? "127.0.0.1"
+                : "0.0.0.0";
         this.storage = new StorageConfiguration(
             settings.storage,
             settings.secrets.storage,

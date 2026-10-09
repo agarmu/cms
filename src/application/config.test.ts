@@ -211,7 +211,9 @@ test.each([
     "https://cms.example.com/#fragment",
 ])("rejects an invalid application base URL (%s)", (baseUrl) => {
     expect(
-        ApplicationConfig.schema.shape.baseUrl.safeParse(baseUrl).success,
+        ApplicationConfig.schema.shape.serve
+            .unwrap()
+            .shape.baseUrl.safeParse(baseUrl).success,
     ).toBe(false);
 });
 
@@ -233,7 +235,7 @@ test("example configuration leaves MCP disabled", async () => {
 
 test("accepts the general base URL and rejects mcp.baseUrl", () => {
     const settings = {
-        baseUrl: "https://cms.example.com",
+        serve: { baseUrl: "https://cms.example.com" },
         auth: testAuthSettings,
         database: { url: "postgres://localhost/cms" },
         storage: { backend: "local" as const, directory: "./data" },
@@ -245,7 +247,7 @@ test("accepts the general base URL and rejects mcp.baseUrl", () => {
     expect(
         ApplicationConfig.schema.safeParse({
             ...settings,
-            mcp: { baseUrl: settings.baseUrl },
+            mcp: { baseUrl: settings.serve.baseUrl },
         }).success,
     ).toBe(false);
 });
@@ -257,7 +259,10 @@ test("MCP is opt-in and only enabled MCP requires a public URL and compatible au
         storage: { backend: "local" as const, directory: "./data" },
     };
     for (const mcp of [undefined, {}, { enabled: false }]) {
-        for (const address of [{}, { baseUrl: "https://cms.example.com" }]) {
+        for (const address of [
+            {},
+            { serve: { baseUrl: "https://cms.example.com" } },
+        ]) {
             const config = new ApplicationConfig({
                 ...settings,
                 ...address,
@@ -273,7 +278,7 @@ test("MCP is opt-in and only enabled MCP requires a public URL and compatible au
         () =>
             new ApplicationConfig({
                 ...settings,
-                baseUrl: "https://cms.example.com",
+                serve: { baseUrl: "https://cms.example.com" },
                 mcp: { enabled: true },
             }),
     ).toThrow("MCP requires");
@@ -294,11 +299,26 @@ test("loads explicit no-auth settings from TOML without OAuth configuration", as
     );
     const config = new ApplicationConfig({
         auth: { kind: "no-auth" },
-        baseUrl: "http://localhost:3000",
+        serve: { baseUrl: "http://localhost:3000" },
         mcp: { enabled: true },
         database: { url: "postgres://localhost/cms" },
         storage: { backend: "local", directory: "./data/blobs" },
     });
     expect(config.mcp?.url.href).toBe("http://localhost:3000/mcp");
     expect(config.mcp?.authorization).toBeUndefined();
+});
+
+test.each([
+    ["no-auth", false, "127.0.0.1"],
+    ["no-auth", true, "127.0.0.1"],
+    ["rfc-9068", false, "0.0.0.0"],
+    ["rfc-9068", true, "127.0.0.1"],
+] as const)("binds %s with bindLocal=%s to %s", (kind, bindLocal, hostname) => {
+    const config = new ApplicationConfig({
+        auth: kind === "no-auth" ? { kind } : testAuthSettings,
+        serve: { bindLocal },
+        database: { url: "postgres://localhost/cms" },
+        storage: { backend: "local", directory: "./data/blobs" },
+    });
+    expect(config.hostname).toBe(hostname);
 });
