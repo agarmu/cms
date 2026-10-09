@@ -35,9 +35,9 @@ export class HttpApplication {
     ) {
         this.app = Tracing.withSyncSpan("http.app.initialize", () => {
             const publicPaths = new Set(["/openapi.json"]);
-            if (options.mcp)
+            if (options.mcp) publicPaths.add("/mcp");
+            if (options.mcp?.authorization)
                 for (const path of [
-                    "/mcp",
                     "/.well-known/oauth-protected-resource",
                     "/.well-known/oauth-protected-resource/mcp",
                 ])
@@ -67,26 +67,28 @@ export class HttpApplication {
             const app = new Elysia()
                 .use(new HttpTelemetry().plugin)
                 .use(new HttpErrorHandler(options.reportError).plugin)
-                .get("/openapi.json", () => HttpOpenApi.document(routes))
+                .get("/openapi.json", () =>
+                    HttpOpenApi.document(routes, options.authentication.scheme),
+                )
                 .use(routes);
             if (options.mcp) {
                 const mcp = options.mcp;
-                app.get(
-                    "/.well-known/oauth-protected-resource",
-                    ({ set }) => {
-                        set.headers["Access-Control-Allow-Origin"] = "*";
-                        return McpRoutes.metadata(mcp);
-                    },
-                    { detail: { hide: true } },
-                );
-                app.get(
-                    "/.well-known/oauth-protected-resource/mcp",
-                    ({ set }) => {
-                        set.headers["Access-Control-Allow-Origin"] = "*";
-                        return McpRoutes.metadata(mcp);
-                    },
-                    { detail: { hide: true } },
-                );
+                const authorization = mcp.authorization;
+                if (authorization)
+                    for (const path of [
+                        "/.well-known/oauth-protected-resource",
+                        "/.well-known/oauth-protected-resource/mcp",
+                    ]) {
+                        app.get(
+                            path,
+                            ({ set }) => {
+                                set.headers["Access-Control-Allow-Origin"] =
+                                    "*";
+                                return McpRoutes.metadata(authorization);
+                            },
+                            { detail: { hide: true } },
+                        );
+                    }
                 app.mount(
                     "/mcp",
                     new McpRoutes(

@@ -1,7 +1,7 @@
 import { createRemoteJWKSet, customFetch, errors, jwtVerify } from "jose";
 import { z } from "zod";
 import { Scopes } from "../api/scope";
-import type { AuthenticationConfiguration } from "./config";
+import type { Rfc9068Settings } from "./config";
 import {
     AuthenticationError,
     AuthenticationUnavailableError,
@@ -9,6 +9,7 @@ import {
 import type { AuthenticationProvider, AuthIdentity } from "./provider";
 
 export class Rfc9068AuthenticationProvider implements AuthenticationProvider {
+    readonly scheme = "bearer";
     private static readonly claims = z.object({
         sub: z.string().min(1),
         aud: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]),
@@ -23,7 +24,7 @@ export class Rfc9068AuthenticationProvider implements AuthenticationProvider {
 
     constructor(
         private readonly config: Pick<
-            AuthenticationConfiguration,
+            Rfc9068Settings,
             "issuer" | "audience" | "jwksUrl"
         >,
     ) {
@@ -39,7 +40,8 @@ export class Rfc9068AuthenticationProvider implements AuthenticationProvider {
         });
     }
 
-    async authenticate(token: string): Promise<AuthIdentity> {
+    async authenticate(token?: string): Promise<AuthIdentity> {
+        if (!token) throw new AuthenticationError();
         try {
             const { payload } = await jwtVerify(token, this.keys, {
                 issuer: this.config.issuer,

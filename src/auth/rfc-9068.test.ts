@@ -30,7 +30,7 @@ beforeAll(() => {
         },
     });
     provider = new Rfc9068AuthenticationProvider(
-        new AuthenticationConfiguration({
+        AuthenticationConfiguration.rfc9068.parse({
             ...testAuthSettings,
             jwksUrl: server.url.href,
         }),
@@ -175,7 +175,7 @@ test.each(["unavailable", "invalid-json", "invalid-jwks"])(
         });
         try {
             const auth = new Rfc9068AuthenticationProvider(
-                new AuthenticationConfiguration({
+                AuthenticationConfiguration.rfc9068.parse({
                     ...testAuthSettings,
                     jwksUrl: failing.url.href,
                 }),
@@ -217,4 +217,12 @@ test("allows query parameters on JWKS endpoints", () => {
             jwksUrl: "https://issuer.example.com/keys?tenant=cms",
         }).success,
     ).toBe(true);
+});
+
+test("RFC 9068 rejects missing tokens without requesting JWKS", async () => {
+    const before = requests;
+    await expect(provider.authenticate()).rejects.toBeInstanceOf(
+        AuthenticationError,
+    );
+    expect(requests).toBe(before);
 });

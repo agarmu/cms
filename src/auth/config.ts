@@ -11,7 +11,7 @@ const endpoint = z.url().refine((value) => {
 }, "Use HTTPS (HTTP is allowed only on loopback), without credentials or fragment");
 
 export class AuthenticationConfiguration {
-    static readonly schema = z.strictObject({
+    static readonly rfc9068 = z.strictObject({
         kind: z.literal("rfc-9068"),
         issuer: endpoint.refine(
             (value) => !value.includes("?"),
@@ -19,21 +19,17 @@ export class AuthenticationConfiguration {
         ),
         audience: z.string().trim().min(1),
         jwksUrl: endpoint,
-        allowedSubjects: z.array(z.string().trim().min(1)).min(1),
+        allowedSubjects: z.array(z.string().trim().min(1)).min(1).readonly(),
     });
-
-    readonly issuer: string;
-    readonly kind: "rfc-9068";
-    readonly audience: string;
-    readonly jwksUrl: string;
-    readonly allowedSubjects: readonly string[];
-
-    constructor(values: z.input<typeof AuthenticationConfiguration.schema>) {
-        const settings = AuthenticationConfiguration.schema.parse(values);
-        this.kind = settings.kind;
-        this.issuer = settings.issuer;
-        this.audience = settings.audience;
-        this.jwksUrl = settings.jwksUrl;
-        this.allowedSubjects = Object.freeze(settings.allowedSubjects);
-    }
+    static readonly schema = z.discriminatedUnion("kind", [
+        AuthenticationConfiguration.rfc9068,
+        z.strictObject({ kind: z.literal("no-auth") }),
+    ]);
 }
+
+export type AuthenticationSettings = z.output<
+    typeof AuthenticationConfiguration.schema
+>;
+export type Rfc9068Settings = z.output<
+    typeof AuthenticationConfiguration.rfc9068
+>;

@@ -1,3 +1,4 @@
+import { NoAuthenticationProvider } from "../auth/no-auth";
 import { requestApp } from "../auth/test-fixtures";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import {
@@ -84,8 +85,9 @@ const app = new HttpApplication(
         getImageStorage: () => new ImageStorage(blobs),
         reportError: (error) => errors.push(error),
         authentication: {
+            scheme: "bearer",
             authenticate: async (token) => {
-                const identity = identities[token];
+                const identity = token ? identities[token] : undefined;
                 if (!identity) throw new AuthenticationError();
                 return identity;
             },
@@ -218,17 +220,17 @@ test("authentication errors advertise public OAuth discovery without exposing to
         const response = await request(token);
         expect(response.status).toBe(401);
         expect(response.headers.get("WWW-Authenticate")).toContain(
-            `resource_metadata="${config.metadataUrl}"`,
+            `resource_metadata="${config.authorization!.metadataUrl}"`,
         );
         if (token === undefined) {
             expect(response.headers.get("WWW-Authenticate")).toBe(
-                `Bearer resource_metadata="${config.metadataUrl}"`,
+                `Bearer resource_metadata="${config.authorization!.metadataUrl}"`,
             );
         }
         expect(response.headers.get("Cache-Control")).toBe("private, no-store");
     }
     expect((await request("outsider")).status).toBe(403);
-    const response = await requestApp(app, config.metadataUrl);
+    const response = await requestApp(app, config.authorization!.metadataUrl);
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
         resource: testAuthSettings.audience,
@@ -390,7 +392,7 @@ test.each(["legacy", "auto"] as const)(
             expect(challenge).toContain('error="insufficient_scope"');
             expect(challenge).toContain(`scope="${scopes.join(" ")}"`);
             expect(challenge).toContain(
-                `resource_metadata="${config.metadataUrl}"`,
+                `resource_metadata="${config.authorization!.metadataUrl}"`,
             );
         }
         expect(await PhotoApi.read(db, saved.id)).toMatchObject({
@@ -618,7 +620,10 @@ test.each(["legacy", "auto"] as const)(
         expect((await PhotoApi.read(db, saved.id)).assets).toMatchObject([
             { assetLocation: "photo.webp" },
         ]);
-        const discovery = await requestApp(app, config.metadataUrl);
+        const discovery = await requestApp(
+            app,
+            config.authorization!.metadataUrl,
+        );
         const body = (await discovery.json()) as { scopes_supported: string[] };
         expect(body.scopes_supported).not.toContain(Scope.PhotosDelete);
         expect(body.scopes_supported).not.toContain(Scope.PhotosAssetsWrite);
@@ -673,5 +678,65 @@ test("storage failures are reported internally without leaking details to MCP", 
         expect(errors).toContain(failure);
     } finally {
         readError = undefined;
+    }
+});
+
+test("no-auth MCP works without bearer tokens and retains origin checks and the tool ceiling", async () => {
+    const noAuth = new NoAuthenticationProvider();
+    const mcp = new McpConfiguration(config.url, { kind: "no-auth" });
+    const open = new HttpApplication({
+        db,
+        mcp,
+        authentication: noAuth,
+        allowedSubjects: [NoAuthenticationProvider.subject],
+        getImageStorage: () => new ImageStorage(blobs),
+        reportError: (error) => errors.push(error),
+    });
+    const client = new Client({ name: "no-auth-test", version: "1.0.0" });
+    try {
+        await client.connect(
+            new StreamableHTTPClientTransport(mcp.url, {
+                fetch: (input, init) =>
+                    Promise.resolve(requestApp(open, input.toString(), init)),
+            }),
+        );
+        const tools = await client.listTools();
+        expect(tools.tools.map((tool) => tool.name)).toContain("list_photos");
+        for (const name of [
+            "delete_photo",
+            "delete_camera",
+            "delete_lens",
+            "start_photo_replacement",
+        ]) {
+            expect(tools.tools.map((tool) => tool.name)).not.toContain(name);
+            await expect(
+                client.callTool({
+                    name,
+                    arguments: { id: crypto.randomUUID() },
+                }),
+            ).rejects.toThrow("not found");
+        }
+        const result = await client.callTool({
+            name: "list_photos",
+            arguments: {},
+        });
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toHaveProperty("items");
+        for (const path of [
+            "/.well-known/oauth-protected-resource",
+            "/.well-known/oauth-protected-resource/mcp",
+        ]) {
+            expect(
+                (await requestApp(open, new URL(path, config.url).href)).status,
+            ).toBe(404);
+        }
+        const rejected = await requestApp(open, mcp.url.href, {
+            method: "POST",
+            headers: { Origin: "https://other.example.com" },
+        });
+        expect(rejected.status).toBe(403);
+        expect(rejected.headers.get("WWW-Authenticate")).toBeNull();
+    } finally {
+        await client.close();
     }
 });

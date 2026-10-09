@@ -20,6 +20,7 @@ const reportedErrors: Error[] = [];
 const providerBug = new TypeError("provider bug");
 const outageCause = new Error("connection refused");
 const authentication: AuthenticationProvider = {
+    scheme: "bearer",
     async authenticate(token) {
         if (token === "reader")
             return { ...testAuthIdentity, scopes: new Set([Scope.PhotosRead]) };

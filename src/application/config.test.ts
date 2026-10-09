@@ -278,3 +278,27 @@ test("MCP is opt-in and only enabled MCP requires a public URL and compatible au
             }),
     ).toThrow("MCP requires");
 });
+
+test("loads explicit no-auth settings from TOML without OAuth configuration", async () => {
+    await withFiles(
+        minimal.replace(testAuthToml, '[auth]\nkind = "no-auth"\n'),
+        "",
+        async (configPath, secretsPath) => {
+            const config = await ApplicationConfig.fromFiles(
+                configPath,
+                secretsPath,
+            );
+            expect(config.auth).toEqual({ kind: "no-auth" });
+            expect(config.mcp).toBeUndefined();
+        },
+    );
+    const config = new ApplicationConfig({
+        auth: { kind: "no-auth" },
+        baseUrl: "http://localhost:3000",
+        mcp: { enabled: true },
+        database: { url: "postgres://localhost/cms" },
+        storage: { backend: "local", directory: "./data/blobs" },
+    });
+    expect(config.mcp?.url.href).toBe("http://localhost:3000/mcp");
+    expect(config.mcp?.authorization).toBeUndefined();
+});

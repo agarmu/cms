@@ -14,6 +14,7 @@ export const testAuthIdentity: AuthIdentity = {
     scopes: new Set(Object.values(Scope)),
 };
 export const testAuthentication: AuthenticationProvider = {
+    scheme: "bearer",
     authenticate: async () => testAuthIdentity,
 };
 export const testAuthDependencies = {

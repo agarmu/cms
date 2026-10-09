@@ -20,7 +20,8 @@ export class HttpAuthentication {
                 const token = /^Bearer +([^\s,]+)$/i.exec(
                     request.headers.get("Authorization") ?? "",
                 )?.[1];
-                if (!token) throw new AuthenticationError();
+                if (provider.scheme === "bearer" && !token)
+                    throw new AuthenticationError();
                 const identity = await provider.authenticate(token);
                 if (!allowed.has(identity.subject))
                     throw new ForbiddenError("Account is not authorized");

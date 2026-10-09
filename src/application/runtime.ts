@@ -7,6 +7,7 @@ import { Application } from "./index";
 import { StorageFactory } from "./storage";
 import type { AuthenticationProvider } from "../auth/provider";
 import { Rfc9068AuthenticationProvider } from "../auth/rfc-9068";
+import { NoAuthenticationProvider } from "../auth/no-auth";
 
 export type RuntimeDependencies = {
     authentication?: AuthenticationProvider;
@@ -49,8 +50,15 @@ export class ApplicationRuntime {
                 this.application = new Application({
                     authentication:
                         this.options.authentication ??
-                        new Rfc9068AuthenticationProvider(this.config.auth),
-                    allowedSubjects: this.config.auth.allowedSubjects,
+                        (this.config.auth.kind === "no-auth"
+                            ? new NoAuthenticationProvider()
+                            : new Rfc9068AuthenticationProvider(
+                                  this.config.auth,
+                              )),
+                    allowedSubjects:
+                        this.config.auth.kind === "no-auth"
+                            ? [NoAuthenticationProvider.subject]
+                            : this.config.auth.allowedSubjects,
                     db: this.connection.db,
                     getBlobStorage:
                         this.options.getBlobStorage ?? (() => factory.create()),

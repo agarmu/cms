@@ -6,6 +6,9 @@ baseUrl = "https://photos.example.com"
 [mcp]
 enabled = false
 
+# For local tests, replace this section with:
+# [auth]
+# kind = "no-auth"
 [auth]
 kind = "rfc-9068"
 issuer = "https://your-tenant.us.auth0.com/"

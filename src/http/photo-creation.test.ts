@@ -76,7 +76,10 @@ const app = new HttpApplication({
     db,
     getImageStorage: () => storage,
     reportError: options.reportError,
-    authentication: { authenticate: async (token) => identities[token]! },
+    authentication: {
+        scheme: "bearer",
+        authenticate: async (token) => identities[token ?? ""]!,
+    },
     allowedSubjects: [testAuthIdentity.subject, "another-user"],
 });
 const metadata = {

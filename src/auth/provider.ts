@@ -7,7 +7,8 @@ export interface AuthIdentity {
 }
 
 export interface AuthenticationProvider {
-    authenticate(token: string): Promise<AuthIdentity>;
+    readonly scheme: "bearer" | "none";
+    authenticate(token?: string): Promise<AuthIdentity>;
 }
 
 export class AuthenticationError extends Error {

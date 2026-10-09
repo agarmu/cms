@@ -7,6 +7,7 @@ import { WorkerConfiguration } from "../services/worker-config";
 import { StorageConfiguration } from "../services/storage-config";
 import { TelemetryConfiguration } from "../telemetry/config";
 import { AuthenticationConfiguration } from "../auth/config";
+import type { AuthenticationSettings } from "../auth/config";
 import { McpConfiguration } from "../mcp/config";
 import { publicUrl } from "../lib/url";
 
@@ -45,7 +46,7 @@ export class ApplicationConfig {
     });
 
     readonly database: DatabaseConfiguration;
-    readonly auth: AuthenticationConfiguration;
+    readonly auth: AuthenticationSettings;
     readonly baseUrl: URL | undefined;
     readonly mcp: McpConfiguration | undefined;
     readonly port: number;
@@ -71,7 +72,7 @@ export class ApplicationConfig {
             settings.database,
             settings.secrets.database,
         );
-        this.auth = new AuthenticationConfiguration(settings.auth);
+        this.auth = Object.freeze(settings.auth);
         this.baseUrl = settings.baseUrl ? new URL(settings.baseUrl) : undefined;
         this.mcp =
             settings.mcp?.enabled && this.baseUrl

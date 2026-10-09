@@ -1,9 +1,13 @@
 import { toOpenAPISchema } from "@elysiajs/openapi";
 import type { AnyElysia } from "elysia";
 import { z } from "zod";
+import type { AuthenticationProvider } from "../auth/provider";
 
 export class HttpOpenApi {
-    static document(app: AnyElysia) {
+    static document(
+        app: AnyElysia,
+        scheme: AuthenticationProvider["scheme"] = "bearer",
+    ) {
         const generated = toOpenAPISchema(app, undefined, undefined, {
             zod: (schema: z.ZodType) =>
                 z.toJSONSchema(schema, {
@@ -53,15 +57,18 @@ export class HttpOpenApi {
             ...generated,
             components: {
                 ...generated.components,
-                securitySchemes: {
-                    bearerAuth: {
-                        type: "http",
-                        scheme: "bearer",
-                        bearerFormat: "JWT",
-                    },
-                },
+                securitySchemes:
+                    scheme === "none"
+                        ? {}
+                        : {
+                              bearerAuth: {
+                                  type: "http",
+                                  scheme: "bearer",
+                                  bearerFormat: "JWT",
+                              },
+                          },
             },
-            security: [{ bearerAuth: [] }],
+            security: scheme === "none" ? [] : [{ bearerAuth: [] }],
         };
     }
 }

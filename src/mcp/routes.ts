@@ -28,12 +28,15 @@ export class McpRoutes {
                 const response: unknown = await handle(...args);
                 if (!(response instanceof Response))
                     throw new Error("MCP handler returned no response");
-                if (response.status === 401 || response.status === 403) {
+                if (
+                    config.authorization &&
+                    (response.status === 401 || response.status === 403)
+                ) {
                     const challenge =
                         response.headers.get("WWW-Authenticate") ?? "Bearer";
                     response.headers.set(
                         "WWW-Authenticate",
-                        `${challenge}${challenge === "Bearer" ? " " : ", "}resource_metadata="${config.metadataUrl}"`,
+                        `${challenge}${challenge === "Bearer" ? " " : ", "}resource_metadata="${config.authorization.metadataUrl}"`,
                     );
                 }
                 return response;
@@ -87,7 +90,7 @@ export class McpRoutes {
             );
     }
 
-    static metadata(config: McpConfiguration) {
+    static metadata(config: NonNullable<McpConfiguration["authorization"]>) {
         return {
             resource: config.resource,
             resource_name: "Photos CMS",

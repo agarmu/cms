@@ -8,10 +8,10 @@ test("derives MCP and discovery URLs from the public base URL", () => {
         testAuthSettings,
     );
     expect(config.url.href).toBe("https://cms.example.com/mcp");
-    expect(config.metadataUrl).toBe(
+    expect(config.authorization?.metadataUrl).toBe(
         "https://cms.example.com/.well-known/oauth-protected-resource/mcp",
     );
-    expect(config.resource).toBe(testAuthSettings.audience);
+    expect(config.authorization?.resource).toBe(testAuthSettings.audience);
     expect(config.allowedOrigins).toEqual(new Set(["https://cms.example.com"]));
 });
 

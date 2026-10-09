@@ -1,3 +1,4 @@
+import { NoAuthenticationProvider } from "../auth/no-auth";
 import { readyUpload } from "../api/test-fixtures";
 import {
     testAuthSettings,
@@ -308,3 +309,69 @@ test("stopping during startup waits for the connection and closes resources once
         await runtime.stop();
     }
 }, 30_000);
+
+test("configured no-auth supports header-free reads and writes with stable upload ownership", async () => {
+    const client = new PGlite();
+    const db = drizzle(client, { schema: schema.definition });
+    const runtime = new ApplicationRuntime(
+        new ApplicationConfig({
+            auth: { kind: "no-auth" },
+            database: { url: databaseUrl },
+            port: 0,
+            storage: { backend: "local", directory: "./data/blobs" },
+        }),
+        { connect: async () => ({ db, close: () => client.close() }) },
+    );
+    try {
+        await migrate(db, {
+            migrationsFolder: fileURLToPath(
+                new URL("../../migrations/", import.meta.url),
+            ),
+        });
+        const uploadId = await readyUpload(
+            db,
+            undefined,
+            await new NoAuthenticationProvider().authenticate(),
+        );
+        await runtime.start();
+        const url = new URL("/api/photos", runtime.url);
+        expect((await fetch(url)).status).toBe(200);
+        const created = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                uploadId,
+                taken: "2026-10-02T12:00:00Z",
+                posted: "2026-10-02T12:00:00Z",
+                alt: "Test",
+                description: "",
+                enabled: true,
+            }),
+        });
+        expect(created.status).toBe(201);
+        const location = new URL(created.headers.get("Location")!, runtime.url);
+        expect(
+            (
+                await fetch(location, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ alt: "Updated" }),
+                })
+            ).status,
+        ).toBe(200);
+        expect(await (await fetch(location)).json()).toMatchObject({
+            alt: "Updated",
+        });
+        expect((await fetch(location, { method: "DELETE" })).status).toBe(204);
+        const document = await (
+            await fetch(new URL("/openapi.json", runtime.url))
+        ).json();
+        expect(document).toMatchObject({
+            security: [],
+            components: { securitySchemes: {} },
+        });
+    } finally {
+        await runtime.stop();
+        if (!client.closed) await client.close();
+    }
+});
