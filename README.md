@@ -7,7 +7,8 @@ It supports
 - S3 and local storage for blobs (currently just photos) with direct upload links
 - Postgres support for structured data
 - HTTP Support
+- MCP Support (so I can get an AI agent to write alt text...)
 
 I am planning to add:
 
-- MCP Support (so I can get an AI agent to write alt text...)
+- Some better documentation
