@@ -37,7 +37,7 @@ export class PhotoUploadRoutes extends Hono<AuthEnvironment> {
                     context.req.valid("json").contentType,
                     context.var.authIdentity,
                 );
-                context.header("Location", `/photo-uploads/${upload.id}`);
+                context.header("Location", `/api/photo-uploads/${upload.id}`);
                 return context.json(upload, 201);
             },
         );
@@ -118,7 +118,7 @@ export class ImageUploadRoutes extends Hono<AuthEnvironment> {
                 );
                 context.header(
                     "Location",
-                    `/photos/${id.toLowerCase()}/uploads/${upload.id}`,
+                    `/api/photos/${id.toLowerCase()}/uploads/${upload.id}`,
                 );
                 return context.json(upload, 201);
             },

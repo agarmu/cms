@@ -90,7 +90,7 @@ export class PhotoRoutes extends Hono<AuthEnvironment> {
                     context.req.valid("json"),
                     context.var.authIdentity,
                 );
-                context.header("Location", `/photos/${photo.id}`);
+                context.header("Location", `/api/photos/${photo.id}`);
                 return context.json(photo, 201);
             },
         );

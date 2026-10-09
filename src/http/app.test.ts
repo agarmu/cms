@@ -66,6 +66,15 @@ test("MCP and its discovery routes are absent when disabled", async () => {
     }
 });
 
+test("HTTP resources are mounted under /api only", async () => {
+    for (const path of ["/photos", "/cameras", "/lenses"]) {
+        expect((await request(path)).status).toBe(404);
+        expect((await request(`/api${path}`)).status).toBe(200);
+    }
+    expect((await request("/photo-uploads", "POST", {})).status).toBe(404);
+    expect((await request("/api/photo-uploads", "POST", {})).status).toBe(400);
+});
+
 test("application instances enforce their configured HTTP body limits independently", async () => {
     const config = new ApplicationConfig({
         auth: testAuthSettings,
@@ -89,10 +98,10 @@ test("application instances enforce their configured HTTP body limits independen
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...metadata, uploadId: await readyUpload(db) }),
     };
-    expect((await requestAsUser(custom.http, "/photos", init)).status).toBe(
+    expect((await requestAsUser(custom.http, "/api/photos", init)).status).toBe(
         413,
     );
-    expect((await requestAsUser(app, "/photos", init)).status).toBe(201);
+    expect((await requestAsUser(app, "/api/photos", init)).status).toBe(201);
 });
 
 const asset = { width: 640, height: 320, filename: "photo.webp" };
@@ -112,7 +121,7 @@ const photoRecord = z.object({
     ),
 });
 async function createPhoto(extra: object = {}) {
-    const response = await request("/photos", "POST", {
+    const response = await request("/api/photos", "POST", {
         ...metadata,
         uploadId: await readyUpload(db),
         ...extra,
@@ -120,11 +129,13 @@ async function createPhoto(extra: object = {}) {
     expect(response.status).toBe(201);
     const created = (await response.json()) as { id: string };
     expect(Object.keys(created)).toEqual(["id"]);
-    const body = (await (await request(`/photos/${created.id}`)).json()) as {
+    const body = (await (
+        await request(`/api/photos/${created.id}`)
+    ).json()) as {
         id: string;
         assets: object[];
     };
-    expect(response.headers.get("Location")).toBe(`/photos/${body.id}`);
+    expect(response.headers.get("Location")).toBe(`/api/photos/${body.id}`);
     expect(body).not.toHaveProperty("cameraId");
     expect(body).not.toHaveProperty("lensId");
     for (const asset of body.assets) {
@@ -142,11 +153,11 @@ test("adds, reads, modifies, and removes a photo with assets and explicit new eq
     expect(photo.camera?.name).toBe("Camera");
     expect(photo.lens?.name).toBe("Lens");
     expect(photo.assets).toMatchObject([
-        { ...asset, url: `/photos/${photo.id}/assets/${asset.filename}` },
+        { ...asset, url: `/api/photos/${photo.id}/assets/${asset.filename}` },
     ]);
-    const loaded = await request(`/photos/${photo.id}`);
+    const loaded = await request(`/api/photos/${photo.id}`);
     expect(await loaded.json()).toMatchObject({ ...metadata, ...photo });
-    const updated = await request(`/photos/${photo.id}`, "PATCH", {
+    const updated = await request(`/api/photos/${photo.id}`, "PATCH", {
         enabled: false,
     });
     expect(updated.status).toBe(200);
@@ -154,15 +165,19 @@ test("adds, reads, modifies, and removes a photo with assets and explicit new eq
         enabled: false,
         assets: [asset],
     });
-    expect((await request(`/photos/${photo.id}`, "DELETE")).status).toBe(204);
-    expect((await request(`/photos/${photo.id}`)).status).toBe(404);
+    expect((await request(`/api/photos/${photo.id}`, "DELETE")).status).toBe(
+        204,
+    );
+    expect((await request(`/api/photos/${photo.id}`)).status).toBe(404);
     expect(
         await db.query.imageAssets.findMany({
             where: (table, { eq }) => eq(table.photoId, photo.id),
         }),
     ).toEqual([]);
-    expect((await request(`/cameras/${photo.camera?.id}`)).status).toBe(200);
-    expect((await request(`/lenses/${photo.lens?.id}`)).status).toBe(200);
+    expect((await request(`/api/cameras/${photo.camera?.id}`)).status).toBe(
+        200,
+    );
+    expect((await request(`/api/lenses/${photo.lens?.id}`)).status).toBe(200);
 });
 
 test("uses existing equipment and refuses to delete it while referenced", async () => {
@@ -180,48 +195,54 @@ test("uses existing equipment and refuses to delete it while referenced", async 
         ["cameras", first.camera?.id],
         ["lenses", first.lens?.id],
     ]) {
-        expect((await request(`/${resource}/${id}`, "DELETE")).status).toBe(
+        expect((await request(`/api/${resource}/${id}`, "DELETE")).status).toBe(
             409,
         );
     }
-    expect((await request(`/photos/${first.id}`, "DELETE")).status).toBe(204);
+    expect((await request(`/api/photos/${first.id}`, "DELETE")).status).toBe(
+        204,
+    );
     expect(
-        (await request(`/cameras/${first.camera?.id}`, "DELETE")).status,
+        (await request(`/api/cameras/${first.camera?.id}`, "DELETE")).status,
     ).toBe(409);
-    expect((await request(`/photos/${second.id}`, "DELETE")).status).toBe(204);
+    expect((await request(`/api/photos/${second.id}`, "DELETE")).status).toBe(
+        204,
+    );
     for (const [resource, id] of [
         ["cameras", first.camera?.id],
         ["lenses", first.lens?.id],
     ]) {
-        expect((await request(`/${resource}/${id}`)).status).toBe(200);
-        expect((await request(`/${resource}/${id}`, "DELETE")).status).toBe(
+        expect((await request(`/api/${resource}/${id}`)).status).toBe(200);
+        expect((await request(`/api/${resource}/${id}`, "DELETE")).status).toBe(
             204,
         );
-        expect((await request(`/${resource}/${id}`)).status).toBe(404);
+        expect((await request(`/api/${resource}/${id}`)).status).toBe(404);
     }
 });
 
 test("creates equipment during photo modification and retains detached equipment", async () => {
     const photo = await createPhoto();
-    const response = await request(`/photos/${photo.id}`, "PATCH", {
+    const response = await request(`/api/photos/${photo.id}`, "PATCH", {
         camera: { create: { name: "Added camera" } },
         lens: { create: { name: "Added lens" } },
     });
     expect(response.status).toBe(200);
     const updated = photoRecord.parse(await response.json());
-    const detached = await request(`/photos/${photo.id}`, "PATCH", {
+    const detached = await request(`/api/photos/${photo.id}`, "PATCH", {
         camera: null,
         lens: null,
     });
     expect(detached.status).toBe(200);
     expect(await detached.json()).toMatchObject({ camera: null, lens: null });
-    expect((await request(`/cameras/${updated.camera?.id}`)).status).toBe(200);
-    expect((await request(`/lenses/${updated.lens?.id}`)).status).toBe(200);
+    expect((await request(`/api/cameras/${updated.camera?.id}`)).status).toBe(
+        200,
+    );
+    expect((await request(`/api/lenses/${updated.lens?.id}`)).status).toBe(200);
 });
 
 test("failed photo creation rolls back new equipment", async () => {
     const before = await db.query.cameras.findMany();
-    const response = await request("/photos", "POST", {
+    const response = await request("/api/photos", "POST", {
         ...metadata,
         uploadId: await readyUpload(db),
         camera: { create: { name: "Should roll back" } },
@@ -234,14 +255,16 @@ test("failed photo creation rolls back new equipment", async () => {
 test("failed modification rolls back equipment and leaves the photo unchanged", async () => {
     const photo = await createPhoto();
     const before = await db.query.cameras.findMany();
-    const response = await request(`/photos/${photo.id}`, "PATCH", {
+    const response = await request(`/api/photos/${photo.id}`, "PATCH", {
         camera: { create: { name: "Should roll back" } },
         lens: { id: crypto.randomUUID() },
     });
     expect(response.status).toBe(409);
     expect(await db.query.cameras.findMany()).toEqual(before);
     expect(
-        photoRecord.parse(await (await request(`/photos/${photo.id}`)).json()),
+        photoRecord.parse(
+            await (await request(`/api/photos/${photo.id}`)).json(),
+        ),
     ).toEqual(photo);
 });
 
@@ -249,14 +272,14 @@ test("missing photos cannot create equipment during modification", async () => {
     const before = await db.query.cameras.findMany();
     expect(
         (
-            await request(`/photos/${crypto.randomUUID()}`, "PATCH", {
+            await request(`/api/photos/${crypto.randomUUID()}`, "PATCH", {
                 camera: { create: { name: "Unused" } },
             })
         ).status,
     ).toBe(404);
     expect(await db.query.cameras.findMany()).toEqual(before);
     expect(
-        (await request(`/photos/${crypto.randomUUID()}`, "DELETE")).status,
+        (await request(`/api/photos/${crypto.randomUUID()}`, "DELETE")).status,
     ).toBe(404);
 });
 
@@ -288,11 +311,11 @@ test("an asset insertion failure rolls back replaced assets, metadata, and new e
         expect(await db.query.cameras.findMany()).toEqual(before);
         expect(
             photoRecord.parse(
-                await (await request(`/photos/${photo.id}`)).json(),
+                await (await request(`/api/photos/${photo.id}`)).json(),
             ),
         ).toEqual(photo);
         expect(
-            await (await request(`/photos/${photo.id}`)).json(),
+            await (await request(`/api/photos/${photo.id}`)).json(),
         ).toMatchObject({ enabled: true });
     } finally {
         await client.exec(
@@ -305,17 +328,21 @@ test.each(["cameras", "lenses"])(
     "does not expose standalone creation or modification for %s",
     async (resource) => {
         expect(
-            (await request(`/${resource}`, "POST", { name: "Standalone" }))
+            (await request(`/api/${resource}`, "POST", { name: "Standalone" }))
                 .status,
         ).toBe(404);
         expect(
             (
-                await request(`/${resource}/${crypto.randomUUID()}`, "PATCH", {
-                    name: "Renamed",
-                })
+                await request(
+                    `/api/${resource}/${crypto.randomUUID()}`,
+                    "PATCH",
+                    {
+                        name: "Renamed",
+                    },
+                )
             ).status,
         ).toBe(404);
-        const list = await request(`/${resource}?limit=1&offset=0`);
+        const list = await request(`/api/${resource}?limit=1&offset=0`);
         expect(list.status).toBe(200);
         expect(await list.json()).toMatchObject({
             items: expect.any(Array),
@@ -336,20 +363,20 @@ test("raw assets cannot be written through the public API", async () => {
     ).toBe(404);
     expect((await request("/image-assets")).status).toBe(404);
     const photo = await createPhoto();
-    const response = await request(`/photos/${photo.id}`, "PATCH", {
+    const response = await request(`/api/photos/${photo.id}`, "PATCH", {
         assets: [],
     });
     expect(response.status).toBe(400);
     expect(
         (
-            (await (await request(`/photos/${photo.id}`)).json()) as {
+            (await (await request(`/api/photos/${photo.id}`)).json()) as {
                 assets: object[];
             }
         ).assets,
     ).toHaveLength(1);
     expect(
         (
-            await request("/photos", "POST", {
+            await request("/api/photos", "POST", {
                 ...metadata,
                 uploadId: await readyUpload(db),
                 assets: [asset],
@@ -359,30 +386,34 @@ test("raw assets cannot be written through the public API", async () => {
 });
 
 const invalidRequests = [
-    ["/photos", "POST", { ...metadata, camera: { name: "Implicit creation" } }],
-    ["/photos", "POST", { ...metadata, camera: { create: { name: " " } } }],
     [
-        "/photos",
+        "/api/photos",
+        "POST",
+        { ...metadata, camera: { name: "Implicit creation" } },
+    ],
+    ["/api/photos", "POST", { ...metadata, camera: { create: { name: " " } } }],
+    [
+        "/api/photos",
         "POST",
         {
             ...metadata,
             camera: { id: crypto.randomUUID(), create: { name: "Ambiguous" } },
         },
     ],
-    ["/photos", "POST", { ...metadata, taken: "yesterday" }],
-    ["/photos", "POST", { ...metadata, enabled: "true" }],
-    ["/photos", "POST", { ...metadata, camera: { id: "invalid" } }],
-    ["/photos", "POST", { ...metadata, cameraId: crypto.randomUUID() }],
-    ["/photos", "POST", { ...metadata, assets: [{ ...asset, width: 0 }] }],
+    ["/api/photos", "POST", { ...metadata, taken: "yesterday" }],
+    ["/api/photos", "POST", { ...metadata, enabled: "true" }],
+    ["/api/photos", "POST", { ...metadata, camera: { id: "invalid" } }],
+    ["/api/photos", "POST", { ...metadata, cameraId: crypto.randomUUID() }],
+    ["/api/photos", "POST", { ...metadata, assets: [{ ...asset, width: 0 }] }],
     [
-        "/photos",
+        "/api/photos",
         "POST",
         { ...metadata, assets: [{ ...asset, filename: "../outside.webp" }] },
     ],
-    [`/photos/${crypto.randomUUID()}`, "PATCH", {}],
-    ["/photos/invalid", "GET", undefined],
-    ["/photos?limit=101", "GET", undefined],
-    ["/photos?offset=-1", "GET", undefined],
+    [`/api/photos/${crypto.randomUUID()}`, "PATCH", {}],
+    ["/api/photos/invalid", "GET", undefined],
+    ["/api/photos?limit=101", "GET", undefined],
+    ["/api/photos?offset=-1", "GET", undefined],
 ] satisfies [string, string, unknown][];
 test.each(invalidRequests)(
     "rejects invalid %s %s requests",
@@ -398,7 +429,7 @@ test.each(invalidRequests)(
 test("rejects malformed JSON, unsupported content types, and oversized bodies", async () => {
     expect(
         (
-            await requestAsUser(app, "/photos", {
+            await requestAsUser(app, "/api/photos", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: "{",
@@ -407,7 +438,7 @@ test("rejects malformed JSON, unsupported content types, and oversized bodies", 
     ).toBe(400);
     expect(
         (
-            await requestAsUser(app, "/photos", {
+            await requestAsUser(app, "/api/photos", {
                 method: "POST",
                 body: "alt=Photo",
             })
@@ -415,7 +446,7 @@ test("rejects malformed JSON, unsupported content types, and oversized bodies", 
     ).toBe(400);
     expect(
         (
-            await request("/photos", "POST", {
+            await request("/api/photos", "POST", {
                 ...metadata,
                 description: "x".repeat(65_536),
             })
@@ -426,7 +457,7 @@ test("rejects malformed JSON, unsupported content types, and oversized bodies", 
 test.each(["application/json; charset=utf-8", "application/vnd.cms+json"])(
     "uses Hono JSON parsing for %s",
     async (contentType) => {
-        const response = await requestAsUser(app, "/photos", {
+        const response = await requestAsUser(app, "/api/photos", {
             method: "POST",
             headers: { "Content-Type": contentType },
             body: JSON.stringify({
@@ -441,8 +472,8 @@ test.each(["application/json; charset=utf-8", "application/vnd.cms+json"])(
 test("missing JSON content type fails validation for both creation and modification", async () => {
     const photo = await createPhoto();
     for (const [path, method, body] of [
-        ["/photos", "POST", metadata],
-        [`/photos/${photo.id}`, "PATCH", { enabled: false }],
+        ["/api/photos", "POST", metadata],
+        [`/api/photos/${photo.id}`, "PATCH", { enabled: false }],
     ] as const) {
         const response = await requestAsUser(app, path, {
             method,
@@ -455,8 +486,8 @@ test("missing JSON content type fails validation for both creation and modificat
 test("paginates photos and returns 404 for unknown routes", async () => {
     await createPhoto();
     await createPhoto();
-    const first = await request("/photos?limit=1&offset=0");
-    const second = await request("/photos?limit=1&offset=1");
+    const first = await request("/api/photos?limit=1&offset=0");
+    const second = await request("/api/photos?limit=1&offset=1");
     expect(await first.json()).toMatchObject({
         items: [expect.any(Object)],
         limit: 1,

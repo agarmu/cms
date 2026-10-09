@@ -187,7 +187,7 @@ export class ImageUploadApi {
                               filename: assetLocation,
                               width,
                               height,
-                              url: `/photo-uploads/${upload.id}/assets/${encodeURIComponent(assetLocation)}`,
+                              url: `/api/photo-uploads/${upload.id}/assets/${encodeURIComponent(assetLocation)}`,
                           }),
                       )
                     : [],

@@ -88,7 +88,7 @@ const incomingTrace = "11111111111111111111111111111111";
 const incomingSpan = "2222222222222222";
 
 test("Bun propagates incoming W3C context through HTTP, transactions, and API spans", async () => {
-    const response = await requestAsUser(app, "/photos", {
+    const response = await requestAsUser(app, "/api/photos", {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -104,7 +104,7 @@ test("Bun propagates incoming W3C context through HTTP, transactions, and API sp
     const spans = await spansFor(incomingTrace);
     const server = spans.find((span) => span.kind === SpanKind.SERVER)!;
     expect(server.parentSpanContext?.spanId).toBe(incomingSpan);
-    expect(server.attributes["http.route"]).toBe("/photos");
+    expect(server.attributes["http.route"]).toBe("/api/photos");
     expect(server.attributes["http.response.status_code"]).toBe(201);
     const create = spans.find((span) => span.name === "photo.create")!;
     const transaction = spans.find(
@@ -133,7 +133,7 @@ test("Bun propagates incoming W3C context through HTTP, transactions, and API sp
 
 test("handled API errors still mark and finish the HTTP and child spans", async () => {
     const traceId = "33333333333333333333333333333333";
-    const response = await requestAsUser(app, "/photos", {
+    const response = await requestAsUser(app, "/api/photos", {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -188,7 +188,7 @@ test("parallel asynchronous operations keep separate active child spans", async 
 
 test("unsampled incoming traces do not export child spans", async () => {
     const traceId = "44444444444444444444444444444444";
-    const response = await requestAsUser(app, "/photos", {
+    const response = await requestAsUser(app, "/api/photos", {
         headers: { traceparent: `00-${traceId}-${incomingSpan}-00` },
     });
     expect(response.status).toBe(200);

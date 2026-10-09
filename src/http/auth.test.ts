@@ -57,26 +57,26 @@ const metadata = {
     enabled: true,
 };
 const routes: [string, string, unknown?][] = [
-    ["GET", "/photos"],
-    ["GET", `/photos/${photoId}`],
-    ["GET", `/photos/${photoId}/image`],
-    ["GET", `/photos/${photoId}/assets/original.webp`],
-    ["POST", "/photos", metadata],
-    ["PATCH", `/photos/${photoId}`, { alt: "changed" }],
-    ["DELETE", `/photos/${photoId}`],
-    ["POST", "/photo-uploads", { contentType: "image/png" }],
-    ["GET", `/photo-uploads/${uploadId}`],
-    ["GET", `/photo-uploads/${uploadId}/assets/original.webp`],
-    ["POST", `/photo-uploads/${uploadId}/complete`],
-    ["POST", `/photo-uploads/${uploadId}/cancel`],
-    ["POST", `/photos/${photoId}/uploads`, { contentType: "image/png" }],
-    ["GET", `/photos/${photoId}/uploads/${uploadId}`],
-    ["POST", `/photos/${photoId}/uploads/${uploadId}/complete`],
-    ["POST", `/photos/${photoId}/uploads/${uploadId}/cancel`],
+    ["GET", "/api/photos"],
+    ["GET", `/api/photos/${photoId}`],
+    ["GET", `/api/photos/${photoId}/image`],
+    ["GET", `/api/photos/${photoId}/assets/original.webp`],
+    ["POST", "/api/photos", metadata],
+    ["PATCH", `/api/photos/${photoId}`, { alt: "changed" }],
+    ["DELETE", `/api/photos/${photoId}`],
+    ["POST", "/api/photo-uploads", { contentType: "image/png" }],
+    ["GET", `/api/photo-uploads/${uploadId}`],
+    ["GET", `/api/photo-uploads/${uploadId}/assets/original.webp`],
+    ["POST", `/api/photo-uploads/${uploadId}/complete`],
+    ["POST", `/api/photo-uploads/${uploadId}/cancel`],
+    ["POST", `/api/photos/${photoId}/uploads`, { contentType: "image/png" }],
+    ["GET", `/api/photos/${photoId}/uploads/${uploadId}`],
+    ["POST", `/api/photos/${photoId}/uploads/${uploadId}/complete`],
+    ["POST", `/api/photos/${photoId}/uploads/${uploadId}/cancel`],
     ...["cameras", "lenses"].flatMap((resource): [string, string][] => [
-        ["GET", `/${resource}`],
-        ["GET", `/${resource}/${photoId}`],
-        ["DELETE", `/${resource}/${photoId}`],
+        ["GET", `/api/${resource}`],
+        ["GET", `/api/${resource}/${photoId}`],
+        ["DELETE", `/api/${resource}/${photoId}`],
     ]),
 ];
 
@@ -129,7 +129,7 @@ test.each([
 ] as const)(
     "handles %s without calling the database",
     async (authorization, status, body) => {
-        const response = await app.request("/photos", {
+        const response = await app.request("/api/photos", {
             headers: { authorization },
         });
         expect(response.status).toBe(status);
@@ -139,7 +139,7 @@ test.each([
 );
 
 test("authenticates before parsing a request body", async () => {
-    const response = await app.request("/photos", {
+    const response = await app.request("/api/photos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: "{",
@@ -256,12 +256,12 @@ test.each(routes.filter(([method]) => method !== "GET"))(
 );
 
 test("reports provider outages with their cause and unexpected bugs as server errors", async () => {
-    const outage = await app.request("/photos", {
+    const outage = await app.request("/api/photos", {
         headers: { Authorization: "Bearer outage" },
     });
     expect(outage.status).toBe(503);
     expect(reportedErrors.at(-1)?.cause).toBe(outageCause);
-    const bug = await app.request("/photos", {
+    const bug = await app.request("/api/photos", {
         headers: { Authorization: "Bearer bug" },
     });
     expect(bug.status).toBe(500);
@@ -277,14 +277,14 @@ test.each([
     "Bearer abc def",
     "Bearer one, Bearer two",
 ])("rejects malformed Authorization headers (%#)", async (authorization) => {
-    const response = await app.request("/photos", {
+    const response = await app.request("/api/photos", {
         headers: authorization ? { authorization } : {},
     });
     expect(response.status).toBe(401);
 });
 
 test("ignores credentials in URLs and cookies", async () => {
-    const response = await app.request("/photos?access_token=reader", {
+    const response = await app.request("/api/photos?access_token=reader", {
         headers: { Cookie: "token=reader" },
     });
     expect(response.status).toBe(401);

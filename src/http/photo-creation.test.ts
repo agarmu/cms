@@ -117,7 +117,7 @@ function request(token: string, path: string, method = "GET", body?: object) {
     });
 }
 async function start(token = "creator") {
-    const response = await request(token, "/photo-uploads", "POST", {
+    const response = await request(token, "/api/photo-uploads", "POST", {
         contentType: "image/png",
     });
     expect(response.status).toBe(201);
@@ -159,7 +159,11 @@ async function prepare() {
     return { ...upload, assets: status.assets };
 }
 const save = (id: UUID, extra: object = {}, token = "creator") =>
-    request(token, "/photos", "POST", { ...metadata, uploadId: id, ...extra });
+    request(token, "/api/photos", "POST", {
+        ...metadata,
+        uploadId: id,
+        ...extra,
+    });
 const expire = (id: UUID) =>
     db
         .update(schema.imageUploads)
@@ -184,7 +188,7 @@ test("a creator prepares an image, previews it, and saves metadata and equipment
     expect(response.status).toBe(201);
     const photo = (await response.json()) as { id: UUID };
     expect(Object.keys(photo)).toEqual(["id"]);
-    expect(response.headers.get("Location")).toBe(`/photos/${photo.id}`);
+    expect(response.headers.get("Location")).toBe(`/api/photos/${photo.id}`);
     const saved = await PhotoApi.read(db, photo.id);
     expect(saved).toMatchObject({
         alt: "Photo",
@@ -193,8 +197,8 @@ test("a creator prepares an image, previews it, and saves metadata and equipment
         assets: [{ width: 200, height: 100 }],
     });
     for (const path of [
-        `/photos/${photo.id}/image`,
-        `/photos/${photo.id}/assets/${saved.assets[0]!.assetLocation}`,
+        `/api/photos/${photo.id}/image`,
+        `/api/photos/${photo.id}/assets/${saved.assets[0]!.assetLocation}`,
     ]) {
         const downloaded = await request("reader", path);
         expect(downloaded.status).toBe(200);
@@ -207,27 +211,34 @@ test("a creator prepares an image, previews it, and saves metadata and equipment
         ).toBe(200);
     }
     expect((await request("creator", upload.assets[0]!.url)).status).toBe(404);
-    expect((await request("creator", `/photos/${photo.id}`)).status).toBe(403);
+    expect((await request("creator", `/api/photos/${photo.id}`)).status).toBe(
+        403,
+    );
     expect(
         (
-            await request("creator", `/photos/${photo.id}`, "PATCH", {
+            await request("creator", `/api/photos/${photo.id}`, "PATCH", {
                 alt: "Changed",
             })
         ).status,
     ).toBe(403);
     expect(
         (
-            await request("creator", `/photos/${photo.id}/uploads`, "POST", {
-                contentType: "image/png",
-            })
+            await request(
+                "creator",
+                `/api/photos/${photo.id}/uploads`,
+                "POST",
+                {
+                    contentType: "image/png",
+                },
+            )
         ).status,
     ).toBe(403);
     expect(
-        (await request("creator", `/cameras/${saved.camera!.id}`, "DELETE"))
+        (await request("creator", `/api/cameras/${saved.camera!.id}`, "DELETE"))
             .status,
     ).toBe(403);
     expect(
-        (await request("creator", `/photos/${photo.id}`, "DELETE")).status,
+        (await request("creator", `/api/photos/${photo.id}`, "DELETE")).status,
     ).toBe(403);
     const next = await prepare();
     const linked = await save(next.id, {
@@ -254,14 +265,14 @@ test("upload ownership includes issuer and subject on every operation", async ()
     expect((await request("reader", upload.path)).status).toBe(403);
     expect(
         (
-            await request("assets", "/photo-uploads", "POST", {
+            await request("assets", "/api/photo-uploads", "POST", {
                 contentType: "image/png",
             })
         ).status,
     ).toBe(403);
     expect(
         (
-            await request("creator", "/photo-uploads", "POST", {
+            await request("creator", "/api/photo-uploads", "POST", {
                 contentType: "image/png",
                 photoId: randomUUID(),
             })
@@ -280,7 +291,7 @@ test("creation and replacement sessions cannot be used interchangeably", async (
     const { id } = (await created.json()) as { id: UUID };
     const replacement = await request(
         "assets",
-        `/photos/${id}/uploads`,
+        `/api/photos/${id}/uploads`,
         "POST",
         { contentType: "image/png" },
     );
@@ -290,14 +301,14 @@ test("creation and replacement sessions cannot be used interchangeably", async (
         upload: { url: string };
     };
     expect(
-        (await request("admin", `/photo-uploads/${receipt.id}`)).status,
+        (await request("admin", `/api/photo-uploads/${receipt.id}`)).status,
     ).toBe(404);
     expect((await save(receipt.id, {}, "admin")).status).toBe(404);
     expect(
         (
             await request(
                 "admin",
-                `/photos/${id}/uploads/${upload.id}/complete`,
+                `/api/photos/${id}/uploads/${upload.id}/complete`,
                 "POST",
             )
         ).status,
@@ -307,7 +318,7 @@ test("creation and replacement sessions cannot be used interchangeably", async (
         (
             await request(
                 "assets",
-                `/photos/${id}/uploads/${receipt.id}/complete`,
+                `/api/photos/${id}/uploads/${receipt.id}/complete`,
                 "POST",
             )
         ).status,
@@ -318,7 +329,7 @@ test("creation and replacement sessions cannot be used interchangeably", async (
         (
             await request(
                 "assets",
-                `/photos/${id}/uploads/${receipt.id}/complete`,
+                `/api/photos/${id}/uploads/${receipt.id}/complete`,
                 "POST",
             )
         ).status,
@@ -329,7 +340,7 @@ test("creation and replacement sessions cannot be used interchangeably", async (
 test("text and metadata scopes are independent and mixed patches cannot partially apply", async () => {
     const response = await save((await prepare()).id);
     const { id } = (await response.json()) as { id: UUID };
-    const path = `/photos/${id}`;
+    const path = `/api/photos/${id}`;
     expect(
         (
             await request("text", path, "PATCH", {

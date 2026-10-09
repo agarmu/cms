@@ -66,7 +66,7 @@ test("runtime uses the configured RFC 9068 provider for real HTTP requests", asy
             ),
         });
         await runtime.start();
-        const url = new URL("/photos", runtime.url);
+        const url = new URL("/api/photos", runtime.url);
         expect((await fetch(url)).status).toBe(401);
         const reader = await accessToken("test-user", "photos:read");
         const response = await fetch(url, {
@@ -177,7 +177,7 @@ test("runtime serves requests on an allocated port, shares lazy storage, and clo
         ).start();
         expect(Number(runtime.url.port)).toBeGreaterThan(0);
         expect(storageInitializations).toBe(0);
-        const created = await fetch(new URL("/photos", runtime.url), {
+        const created = await fetch(new URL("/api/photos", runtime.url), {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -197,7 +197,7 @@ test("runtime serves requests on an allocated port, shares lazy storage, and clo
         expect(storageInitializations).toBe(0);
         for (let attempt = 0; attempt < 2; attempt++) {
             const uploaded = await fetch(
-                new URL(`/photos/${photo.id}/uploads`, runtime.url),
+                new URL(`/api/photos/${photo.id}/uploads`, runtime.url),
                 {
                     method: "POST",
                     headers: {

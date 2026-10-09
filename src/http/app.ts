@@ -80,17 +80,17 @@ export class HttpApplication extends Hono<AuthEnvironment> {
                 this.route("/mcp", new McpRoutes(options, config.maxBodyBytes));
             }
             this.route(
-                "/photos",
+                "/api/photos",
                 new ImageUploadRoutes(access, options.getImageStorage),
             );
             this.route(
-                "/photo-uploads",
+                "/api/photo-uploads",
                 new PhotoUploadRoutes(access, options.getImageStorage),
             );
-            this.route("/cameras", new EquipmentRoutes(CameraApi, access));
-            this.route("/lenses", new EquipmentRoutes(LensApi, access));
+            this.route("/api/cameras", new EquipmentRoutes(CameraApi, access));
+            this.route("/api/lenses", new EquipmentRoutes(LensApi, access));
             this.route(
-                "/photos",
+                "/api/photos",
                 new PhotoRoutes(access, options.getImageStorage),
             );
             this.notFound((context) =>

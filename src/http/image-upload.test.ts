@@ -97,7 +97,7 @@ async function photo() {
     });
 }
 async function initiate(id: string) {
-    const response = await requestAsUser(app, `/photos/${id}/uploads`, {
+    const response = await requestAsUser(app, `/api/photos/${id}/uploads`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: '{"contentType":"image/png"}',
@@ -116,7 +116,9 @@ async function initiate(id: string) {
     expect(receipt.status).toBe("pending");
     expect(receipt).not.toHaveProperty("key");
     const statusUrl = response.headers.get("Location")!;
-    expect(statusUrl).toBe(`/photos/${id.toLowerCase()}/uploads/${receipt.id}`);
+    expect(statusUrl).toBe(
+        `/api/photos/${id.toLowerCase()}/uploads/${receipt.id}`,
+    );
     return {
         ...receipt.upload,
         uploadId: receipt.id,
@@ -246,7 +248,7 @@ test("issues a presigned PUT and automatically processes the original on a sched
     await check();
     expect((await status(upload)).status).toBe("completed");
     const result = (await (
-        await requestAsUser(app, `/photos/${id}`)
+        await requestAsUser(app, `/api/photos/${id}`)
     ).json()) as {
         assets: {
             filename: string;
@@ -262,7 +264,7 @@ test("issues a presigned PUT and automatically processes the original on a sched
     expect(
         [...objects.keys()].filter((key) => key.startsWith(`images/${id}/`)),
     ).toHaveLength(1);
-    const largestDownload = await signedDownload(`/photos/${id}/image`);
+    const largestDownload = await signedDownload(`/api/photos/${id}/image`);
     const download = await signedDownload(result.assets[0]!.url);
     expect(largestDownload.key).toBe(download.key);
     expect(download.key).toBe(`images/${id}/${result.assets[0]!.filename}`);
@@ -289,16 +291,20 @@ test("uppercase photo IDs use canonical keys for scheduled uploads and asset rea
     const { id } = await photo();
     const upload = await initiate(id.toUpperCase());
     expect(upload.key).toBe(`originals/${id}/${upload.uploadId}`);
-    expect(upload.statusUrl).toBe(`/photos/${id}/uploads/${upload.uploadId}`);
+    expect(upload.statusUrl).toBe(
+        `/api/photos/${id}/uploads/${upload.uploadId}`,
+    );
     objects.set(upload.key, png);
     await due(upload.uploadId);
     await check();
     expect((await status(upload)).status).toBe("completed");
 
-    const largest = await signedDownload(`/photos/${id.toUpperCase()}/image`);
+    const largest = await signedDownload(
+        `/api/photos/${id.toUpperCase()}/image`,
+    );
     const filename = largest.key.split("/").at(-1)!;
     const download = await signedDownload(
-        `/photos/${id.toUpperCase()}/assets/${filename}`,
+        `/api/photos/${id.toUpperCase()}/assets/${filename}`,
     );
     expect(download.key).toBe(largest.key);
     expect(download.key.startsWith(`images/${id}/`)).toBe(true);
@@ -307,26 +313,28 @@ test("uppercase photo IDs use canonical keys for scheduled uploads and asset rea
 
 test("only attached assets can receive a download URL and the image endpoint selects the largest", async () => {
     const { id } = await photo();
-    expect((await requestAsUser(app, `/photos/${id}/image`)).status).toBe(404);
+    expect((await requestAsUser(app, `/api/photos/${id}/image`)).status).toBe(
+        404,
+    );
     await PhotoApi.update(db, id, {
         assets: [
             { width: 100, height: 50, assetLocation: "small.webp" },
             { width: 600, height: 300, assetLocation: "large.webp" },
         ],
     });
-    expect((await signedDownload(`/photos/${id}/image`)).key).toBe(
+    expect((await signedDownload(`/api/photos/${id}/image`)).key).toBe(
         `images/${id}/large.webp`,
     );
-    expect((await signedDownload(`/photos/${id}/assets/small.webp`)).key).toBe(
-        `images/${id}/small.webp`,
-    );
     expect(
-        (await requestAsUser(app, `/photos/${id}/assets/unattached.webp`))
+        (await signedDownload(`/api/photos/${id}/assets/small.webp`)).key,
+    ).toBe(`images/${id}/small.webp`);
+    expect(
+        (await requestAsUser(app, `/api/photos/${id}/assets/unattached.webp`))
             .status,
     ).toBe(404);
     const other = await photo();
     expect(
-        (await requestAsUser(app, `/photos/${other.id}/assets/large.webp`))
+        (await requestAsUser(app, `/api/photos/${other.id}/assets/large.webp`))
             .status,
     ).toBe(404);
 });
@@ -361,7 +369,7 @@ test("upload previews return signed URL JSON bounded by the session expiry", asy
         (
             await requestAsUser(
                 app,
-                `/photo-uploads/${upload.id}/assets/unattached.webp`,
+                `/api/photo-uploads/${upload.id}/assets/unattached.webp`,
             )
         ).status,
     ).toBe(404);
@@ -377,7 +385,7 @@ test("uppercase photo and upload IDs can complete an upload immediately", async 
     const upload = await initiate(id);
     objects.set(upload.key, png);
     const response = await control(
-        `/photos/${id.toUpperCase()}/uploads/${upload.uploadId.toUpperCase()}/complete`,
+        `/api/photos/${id.toUpperCase()}/uploads/${upload.uploadId.toUpperCase()}/complete`,
         "POST",
         {},
     );
@@ -444,7 +452,7 @@ test("photo deletion preserves queued object keys for GC", async () => {
     const saved = await uploadedPhoto(id);
     expect(
         (
-            await requestAsUser(app, `/photos/${id.toUpperCase()}`, {
+            await requestAsUser(app, `/api/photos/${id.toUpperCase()}`, {
                 method: "DELETE",
             })
         ).status,
@@ -675,7 +683,7 @@ test("rejects multipart uploads, invalid content types, and status requests for 
         (
             await requestAsUser(
                 app,
-                `/photos/${second.id}/uploads/${upload.uploadId}`,
+                `/api/photos/${second.id}/uploads/${upload.uploadId}`,
             )
         ).status,
     ).toBe(404);
@@ -683,19 +691,19 @@ test("rejects multipart uploads, invalid content types, and status requests for 
         (
             await requestAsUser(
                 app,
-                `/photos/${first.id}/uploads/${crypto.randomUUID()}`,
+                `/api/photos/${first.id}/uploads/${crypto.randomUUID()}`,
             )
         ).status,
     ).toBe(404);
     expect(
-        (await requestAsUser(app, `/photos/${first.id}/uploads/invalid`))
+        (await requestAsUser(app, `/api/photos/${first.id}/uploads/invalid`))
             .status,
     ).toBe(400);
     const form = new FormData();
     form.set("file", new File([png], "photo.png"));
     expect(
         (
-            await requestAsUser(app, `/photos/${first.id}/uploads`, {
+            await requestAsUser(app, `/api/photos/${first.id}/uploads`, {
                 method: "POST",
                 body: form,
             })
@@ -703,7 +711,7 @@ test("rejects multipart uploads, invalid content types, and status requests for 
     ).toBe(400);
     expect(
         (
-            await requestAsUser(app, `/photos/${first.id}/uploads`, {
+            await requestAsUser(app, `/api/photos/${first.id}/uploads`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: '{"contentType":"text/plain"}',
