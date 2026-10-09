@@ -1,3 +1,4 @@
+import { requestApp } from "../auth/test-fixtures";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { UUID } from "node:crypto";
@@ -107,7 +108,7 @@ afterAll(async () => {
 });
 
 function request(token: string, path: string, method = "GET", body?: object) {
-    return app.request(path, {
+    return requestApp(app, path, {
         method,
         headers: {
             Authorization: `Bearer ${token}`,

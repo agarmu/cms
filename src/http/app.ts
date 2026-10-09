@@ -1,25 +1,27 @@
-import { httpInstrumentationMiddleware } from "@hono/otel";
-import { Hono } from "hono";
-import { bodyLimit } from "hono/body-limit";
+import { Elysia } from "elysia";
+import { HttpOpenApi } from "./openapi";
+import { HttpTelemetry } from "./telemetry";
 import { CameraApi } from "../api/resources/cameras";
 import { LensApi } from "../api/resources/lenses";
 import type { Database } from "../api/database";
 import { PhotoRoutes } from "./photos";
 import { EquipmentRoutes } from "./equipment";
 import { HttpErrorHandler } from "./errors";
-import { ScopeMiddleware } from "./scope";
+import { HttpAccess } from "./scope";
 import { ImageUploadRoutes, PhotoUploadRoutes } from "./image-upload";
 import { HttpConfiguration } from "./config";
+import { HttpBodyLimit } from "./body";
 import type { ImageStorage } from "../services/image-storage";
 import { Tracing } from "../telemetry/tracing";
 import type { AuthenticationProvider } from "../auth/provider";
-import { AuthenticationMiddleware } from "./auth";
-import type { AuthEnvironment } from "./auth";
-import { cors } from "hono/cors";
+import { HttpAuthentication } from "./auth";
 import { McpRoutes } from "../mcp/routes";
 import type { McpConfiguration } from "../mcp/config";
 
-export class HttpApplication extends Hono<AuthEnvironment> {
+export class HttpApplication {
+    readonly app;
+    readonly fetch = (request: Request) => this.app.handle(request);
+
     constructor(
         options: {
             db: Database;
@@ -31,72 +33,75 @@ export class HttpApplication extends Hono<AuthEnvironment> {
         },
         config = new HttpConfiguration(),
     ) {
-        super();
-        Tracing.withSyncSpan("http.app.initialize", () => {
-            const access = new ScopeMiddleware(options.db);
-            this.use("*", httpInstrumentationMiddleware());
-            if (options.mcp) {
-                const mcp = options.mcp;
+        this.app = Tracing.withSyncSpan("http.app.initialize", () => {
+            const publicPaths = new Set(["/openapi.json"]);
+            if (options.mcp)
                 for (const path of [
+                    "/mcp",
                     "/.well-known/oauth-protected-resource",
                     "/.well-known/oauth-protected-resource/mcp",
-                ]) {
-                    this.get(path, (context) => {
-                        context.header("Access-Control-Allow-Origin", "*");
-                        return context.json(McpRoutes.metadata(mcp));
-                    });
-                }
-                this.use("/mcp", McpRoutes.protect(mcp));
-                this.use(
+                ])
+                    publicPaths.add(path);
+            const protectedRequest = (request: Request) =>
+                !publicPaths.has(
+                    new URL(request.url).pathname.replace(/\/$/, ""),
+                );
+            const auth = new HttpAuthentication(
+                options.authentication,
+                options.allowedSubjects,
+                protectedRequest,
+            );
+            const access = new HttpAccess(options.db, auth);
+            const body = new HttpBodyLimit(
+                config.maxBodyBytes,
+                protectedRequest,
+            );
+            const routes = new Elysia()
+                .use(auth.plugin)
+                .use(body.plugin)
+                .use(new ImageUploadRoutes(access, options.getImageStorage).app)
+                .use(new PhotoUploadRoutes(access, options.getImageStorage).app)
+                .use(new EquipmentRoutes("/api/cameras", CameraApi, access).app)
+                .use(new EquipmentRoutes("/api/lenses", LensApi, access).app)
+                .use(new PhotoRoutes(access, options.getImageStorage).app);
+            const app = new Elysia()
+                .use(new HttpTelemetry().plugin)
+                .use(new HttpErrorHandler(options.reportError).plugin)
+                .get("/openapi.json", () => HttpOpenApi.document(routes))
+                .use(routes);
+            if (options.mcp) {
+                const mcp = options.mcp;
+                app.get(
+                    "/.well-known/oauth-protected-resource",
+                    ({ set }) => {
+                        set.headers["Access-Control-Allow-Origin"] = "*";
+                        return McpRoutes.metadata(mcp);
+                    },
+                    { detail: { hide: true } },
+                );
+                app.get(
+                    "/.well-known/oauth-protected-resource/mcp",
+                    ({ set }) => {
+                        set.headers["Access-Control-Allow-Origin"] = "*";
+                        return McpRoutes.metadata(mcp);
+                    },
+                    { detail: { hide: true } },
+                );
+                app.mount(
                     "/mcp",
-                    cors({
-                        origin: (origin) =>
-                            mcp.allowedOrigins.has(origin) ? origin : undefined,
-                        allowMethods: ["POST", "GET", "DELETE", "OPTIONS"],
-                        allowHeaders: [
-                            "Authorization",
-                            "Content-Type",
-                            "MCP-Protocol-Version",
-                            "MCP-Session-Id",
-                            "Mcp-Method",
-                            "Mcp-Name",
-                        ],
-                        exposeHeaders: [
-                            "WWW-Authenticate",
-                            "MCP-Protocol-Version",
-                        ],
-                    }),
+                    new McpRoutes(
+                        options,
+                        mcp,
+                        new HttpAuthentication(
+                            options.authentication,
+                            options.allowedSubjects,
+                        ),
+                        new HttpBodyLimit(config.maxBodyBytes),
+                        config.maxBodyBytes,
+                    ).app,
                 );
             }
-            this.use(
-                "*",
-                new AuthenticationMiddleware(
-                    options.authentication,
-                    options.allowedSubjects,
-                ).handle,
-            );
-            this.use("*", bodyLimit({ maxSize: config.maxBodyBytes }));
-            if (options.mcp) {
-                this.route("/mcp", new McpRoutes(options, config.maxBodyBytes));
-            }
-            this.route(
-                "/api/photos",
-                new ImageUploadRoutes(access, options.getImageStorage),
-            );
-            this.route(
-                "/api/photo-uploads",
-                new PhotoUploadRoutes(access, options.getImageStorage),
-            );
-            this.route("/api/cameras", new EquipmentRoutes(CameraApi, access));
-            this.route("/api/lenses", new EquipmentRoutes(LensApi, access));
-            this.route(
-                "/api/photos",
-                new PhotoRoutes(access, options.getImageStorage),
-            );
-            this.notFound((context) =>
-                context.json({ error: "Route not found" }, 404),
-            );
-            this.onError(new HttpErrorHandler(options.reportError).handle);
+            return app;
         });
     }
 }

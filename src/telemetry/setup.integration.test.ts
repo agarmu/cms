@@ -1,3 +1,4 @@
+import { requestApp } from "../auth/test-fixtures";
 import { testAuthDependencies, testAuthToml } from "../auth/test-fixtures";
 import { afterAll, afterEach, expect, test } from "bun:test";
 import { context, metrics, propagation, trace } from "@opentelemetry/api";
@@ -127,10 +128,11 @@ test.each([
                     throw new Error("unused");
                 },
             });
-            const response = await app.request("/missing", {
+            const response = await requestApp(app, "/missing", {
                 headers: { Authorization: "Bearer test-token" },
             });
             expect(response.status).toBe(404);
+            expect((await requestApp(app, "/openapi.json")).status).toBe(200);
             trace
                 .getTracer("telemetry-integration")
                 .startSpan("file-config-span")
@@ -161,6 +163,8 @@ test.each([
                 expect(JSON.stringify(received)).toContain(
                     "http.server.request.duration",
                 );
+            if (enabled.metrics && !enabled.disabled)
+                expect(JSON.stringify(received)).toContain("/openapi.json");
             if (enabled.logs && !enabled.disabled)
                 expect(JSON.stringify(received)).toContain("file-config-log");
             if (enabled.logs && !enabled.disabled)

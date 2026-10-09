@@ -1,16 +1,14 @@
+import { requestApp } from "../auth/test-fixtures";
 import { expect, test } from "bun:test";
-import { Hono } from "hono";
-import { HTTPException } from "hono/http-exception";
+import { Elysia, status } from "elysia";
 import { z } from "zod";
 import { ConflictError } from "../lib/errors";
 import { HttpErrorHandler } from "./errors";
 
 function failingApp(error: Error) {
     const reported: Error[] = [];
-    const app = new Hono();
-    app.onError(
-        new HttpErrorHandler((failure) => reported.push(failure)).handle,
-    );
+    const app = new Elysia();
+    app.use(new HttpErrorHandler((failure) => reported.push(failure)).plugin);
     app.get("/", () => {
         throw error;
     });
@@ -22,7 +20,7 @@ test("unexpected errors are reported without exposing their message or cause", a
         cause: new Error("Private cause"),
     });
     const { app, reported } = failingApp(error);
-    const response = await app.request("/");
+    const response = await requestApp(app, "/");
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: "Internal server error" });
     expect(reported).toEqual([error]);
@@ -34,7 +32,7 @@ test("API conflicts expose the intended message but keep the cause private", asy
             cause: new Error("Private cause"),
         }),
     );
-    const response = await app.request("/");
+    const response = await requestApp(app, "/");
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({
         error: "Image is still referenced",
@@ -48,7 +46,7 @@ test.each(["23503", "23505", "23514", "23502"])(
         const { app, reported } = failingApp(
             new Error("Private query", { cause: { code } }),
         );
-        const response = await app.request("/");
+        const response = await requestApp(app, "/");
         expect(response.status).toBe(
             code === "23503" || code === "23505" ? 409 : 400,
         );
@@ -61,7 +59,7 @@ test("validation errors expose issues with a 400 response", async () => {
     const result = z.object({ name: z.string() }).safeParse({ name: null });
     if (result.success) throw new Error("Expected invalid input");
     const { app, reported } = failingApp(result.error);
-    const response = await app.request("/");
+    const response = await requestApp(app, "/");
     expect(response.status).toBe(400);
     expect(await response.json()).toMatchObject({
         error: "Invalid request",
@@ -70,16 +68,18 @@ test("validation errors expose issues with a 400 response", async () => {
     expect(reported).toEqual([]);
 });
 
-test("HTTP exceptions preserve custom responses and headers", async () => {
-    const { app } = failingApp(
-        new HTTPException(429, {
-            res: new Response("Try later", {
-                status: 429,
-                headers: { "Retry-After": "30" },
-            }),
-        }),
-    );
-    const response = await app.request("/");
+test("explicit HTTP statuses preserve response headers", async () => {
+    const app = new Elysia()
+        .use(
+            new HttpErrorHandler(() => {
+                throw new Error("Unexpected error");
+            }).plugin,
+        )
+        .get("/", ({ set }) => {
+            set.headers["Retry-After"] = "30";
+            return status(429, "Try later");
+        });
+    const response = await requestApp(app, "/");
     expect(response.status).toBe(429);
     expect(response.headers.get("Retry-After")).toBe("30");
     expect(await response.text()).toBe("Try later");

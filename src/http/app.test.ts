@@ -454,20 +454,22 @@ test("rejects malformed JSON, unsupported content types, and oversized bodies", 
     ).toBe(413);
 });
 
-test.each(["application/json; charset=utf-8", "application/vnd.cms+json"])(
-    "uses Hono JSON parsing for %s",
-    async (contentType) => {
-        const response = await requestAsUser(app, "/api/photos", {
-            method: "POST",
-            headers: { "Content-Type": contentType },
-            body: JSON.stringify({
-                ...metadata,
-                uploadId: await readyUpload(db),
-            }),
-        });
-        expect(response.status).toBe(201);
-    },
-);
+test.each([
+    "application/json; charset=utf-8",
+    "application/vnd.cms+json",
+    "APPLICATION/JSON",
+    "Application/Vnd.Cms+Json; charset=utf-8",
+])("parses JSON media type %s", async (contentType) => {
+    const response = await requestAsUser(app, "/api/photos", {
+        method: "POST",
+        headers: { "Content-Type": contentType },
+        body: JSON.stringify({
+            ...metadata,
+            uploadId: await readyUpload(db),
+        }),
+    });
+    expect(response.status).toBe(201);
+});
 
 test("missing JSON content type fails validation for both creation and modification", async () => {
     const photo = await createPhoto();

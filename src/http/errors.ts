@@ -1,73 +1,98 @@
 import {
+    Elysia,
+    ParseError,
+    ValidationError,
+    NotFoundError,
+    status,
+} from "elysia";
+import {
     InvalidImageError,
     ImageTooLargeError,
 } from "../services/image-storage";
-import type { ErrorHandler } from "hono";
-import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { DatabaseErrors } from "../db/errors";
 import { AppError } from "../lib/errors";
-import type { ErrorCode } from "../lib/errors";
 import {
     AuthenticationError,
     AuthenticationUnavailableError,
 } from "../auth/provider";
+import { InsufficientScopeError } from "./scope";
 
 export class HttpErrorHandler {
-    private static readonly applicationStatus = {
-        conflict: 409,
-        not_found: 404,
-        forbidden: 403,
-    } as const satisfies Record<ErrorCode, number>;
+    readonly plugin;
 
-    constructor(private readonly reportError: (error: Error) => void) {}
-
-    readonly handle: ErrorHandler = (error, context) => {
-        if (error instanceof AuthenticationError) {
-            context.header(
-                "WWW-Authenticate",
-                context.req.header("Authorization")
-                    ? 'Bearer error="invalid_token"'
-                    : "Bearer",
-            );
-            return context.json({ error: error.message }, 401);
-        }
-        if (error instanceof AuthenticationUnavailableError) {
-            this.reportError(error);
-            return context.json({ error: error.message }, 503);
-        }
-        if (error instanceof InvalidImageError)
-            return context.json({ error: error.message }, 400);
-        if (error instanceof ImageTooLargeError)
-            return context.json({ error: error.message }, 413);
-        if (error instanceof HTTPException) {
-            if (error.res) return error.getResponse();
-            return context.json({ error: error.message }, error.status);
-        }
-        if (error instanceof z.ZodError) {
-            return context.json(
-                { error: "Invalid request", issues: error.issues },
-                400,
-            );
-        }
-        if (error instanceof AppError) {
-            return context.json(
-                { error: error.message },
-                HttpErrorHandler.applicationStatus[error.code],
-            );
-        }
-        const status = DatabaseErrors.constraintStatus(error);
-        if (status === 409)
-            return context.json(
-                { error: "Record conflicts with existing data" },
-                status,
-            );
-        if (status === 400)
-            return context.json(
-                { error: "Record violates a database constraint" },
-                status,
-            );
-        this.reportError(error);
-        return context.json({ error: "Internal server error" }, 500);
-    };
+    constructor(reportError: (error: Error) => void) {
+        this.plugin = new Elysia({ name: "errors" })
+            .onError(({ error: caught, request, set }) => {
+                const error =
+                    caught instanceof ParseError &&
+                    caught.cause instanceof Error
+                        ? caught.cause
+                        : caught;
+                if (error instanceof AuthenticationError) {
+                    set.headers["WWW-Authenticate"] = request.headers.has(
+                        "Authorization",
+                    )
+                        ? 'Bearer error="invalid_token"'
+                        : "Bearer";
+                    return status(401, { error: error.message });
+                }
+                if (error instanceof AuthenticationUnavailableError) {
+                    reportError(error);
+                    return status(503, { error: error.message });
+                }
+                if (error instanceof InsufficientScopeError) {
+                    set.headers["WWW-Authenticate"] =
+                        error.scopes.length === 1
+                            ? `Bearer error="insufficient_scope", scope="${error.scopes[0]}"`
+                            : 'Bearer error="insufficient_scope"';
+                }
+                if (error instanceof InvalidImageError)
+                    return status(400, { error: error.message });
+                if (error instanceof ImageTooLargeError)
+                    return status(413, { error: error.message });
+                if (error instanceof z.ZodError)
+                    return status(400, {
+                        error: "Invalid request",
+                        issues: error.issues,
+                    });
+                if (
+                    error instanceof ValidationError &&
+                    error.type !== "response"
+                )
+                    return status(400, {
+                        error: "Invalid request",
+                        issues: error.all,
+                    });
+                if (error instanceof AppError) {
+                    const code = {
+                        conflict: 409,
+                        not_found: 404,
+                        forbidden: 403,
+                    } as const;
+                    return status(code[error.code], { error: error.message });
+                }
+                if (caught instanceof ParseError)
+                    return status(400, { error: "Invalid request body" });
+                if (error instanceof NotFoundError)
+                    return status(404, { error: "Route not found" });
+                const constraint =
+                    error instanceof Error
+                        ? DatabaseErrors.constraintStatus(error)
+                        : undefined;
+                if (constraint === 409)
+                    return status(409, {
+                        error: "Record conflicts with existing data",
+                    });
+                if (constraint === 400)
+                    return status(400, {
+                        error: "Record violates a database constraint",
+                    });
+                reportError(
+                    error instanceof Error ? error : new Error(String(error)),
+                );
+                return status(500, { error: "Internal server error" });
+            })
+            .as("global");
+    }
 }

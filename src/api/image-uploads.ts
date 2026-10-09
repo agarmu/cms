@@ -87,7 +87,7 @@ export class ImageUploadApi {
             cancelledAt: upload.cancelled,
             expiresAt: upload.expires,
             error: upload.failed,
-        };
+        } as const;
     }
 
     private static async start(

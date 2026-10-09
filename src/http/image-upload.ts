@@ -1,13 +1,11 @@
-import { Hono } from "hono";
-import { validator } from "hono/validator";
-import type { AuthEnvironment } from "./auth";
+import { Elysia, status } from "elysia";
 import { z } from "zod";
 import { ImageUploadApi } from "../api/image-uploads";
 import { ApiValidation } from "../api/validation";
 import { Scope } from "../api/scope";
 import type { ImageStorage } from "../services/image-storage";
-import type { ScopeMiddleware } from "./scope";
-import { downloadResponse } from "./response";
+import type { HttpAccess } from "./scope";
+import { downloadResponse, downloadSchema } from "./response";
 
 export class UploadValidation {
     static readonly uploadRequest = z.strictObject({
@@ -21,162 +19,196 @@ export class UploadValidation {
     });
 }
 
-export class PhotoUploadRoutes extends Hono<AuthEnvironment> {
-    constructor(access: ScopeMiddleware, getStorage: () => ImageStorage) {
-        super();
-        this.post(
-            "/",
-            access.write(ImageUploadApi.create),
-            validator("json", (value) =>
-                UploadValidation.uploadRequest.parse(value),
-            ),
-            async (context) => {
-                const upload = await ImageUploadApi.create(
-                    context.var.db,
-                    getStorage(),
-                    context.req.valid("json").contentType,
-                    context.var.authIdentity,
-                );
-                context.header("Location", `/api/photo-uploads/${upload.id}`);
-                return context.json(upload, 201);
-            },
-        );
-        this.get(
-            "/:uploadId",
-            access.require(Scope.PhotosCreate),
-            async (context) => {
-                return context.json(
-                    await ImageUploadApi.read(
-                        context.var.db,
-                        ApiValidation.uuid.parse(context.req.param("uploadId")),
-                        context.var.authIdentity,
-                    ),
-                );
-            },
-        );
-        this.get(
-            "/:uploadId/assets/:filename",
-            access.require(Scope.PhotosCreate),
-            async (context) => {
-                const stored = await ImageUploadApi.readAsset(
-                    context.var.db,
-                    getStorage(),
-                    ApiValidation.uuid.parse(context.req.param("uploadId")),
-                    context.req.param("filename"),
-                    context.var.authIdentity,
-                );
-                return downloadResponse(stored);
-            },
-        );
-        this.post(
-            "/:uploadId/complete",
-            access.require(Scope.PhotosCreate),
-            async (context) => {
-                return context.json(
-                    await ImageUploadApi.finish(
-                        context.var.db,
+const uploadStatus = z.object({
+    id: ApiValidation.uuid,
+    status: z.enum([
+        "pending",
+        "ready",
+        "completed",
+        "cancelled",
+        "failed",
+        "expired",
+    ]),
+    processedAt: z.date().nullable(),
+    completedAt: z.date().nullable(),
+    cancelledAt: z.date().nullable(),
+    expiresAt: z.date(),
+    error: z.string().nullable(),
+});
+const createdUpload = uploadStatus.extend({
+    upload: z.object({
+        url: z.url(),
+        method: z.literal("PUT"),
+        headers: z.record(z.string(), z.string()),
+        expiresIn: z.number().int().positive(),
+    }),
+});
+const uploadResponse = uploadStatus.extend({
+    assets: z.array(
+        z.object({
+            filename: z.string(),
+            width: z.number().int().positive(),
+            height: z.number().int().positive(),
+            url: z.string(),
+        }),
+    ),
+});
+
+export class PhotoUploadRoutes {
+    readonly app;
+
+    constructor(access: HttpAccess, getStorage: () => ImageStorage) {
+        const params = z.object({ uploadId: ApiValidation.uuid });
+        this.app = new Elysia({ prefix: "/api/photo-uploads" })
+            .use(access.plugin)
+            .post(
+                "",
+                async ({ db, body, authIdentity, set }) => {
+                    const upload = await ImageUploadApi.create(
+                        db,
                         getStorage(),
-                        ApiValidation.uuid.parse(context.req.param("uploadId")),
-                        context.var.authIdentity,
+                        body.contentType,
+                        authIdentity,
+                    );
+                    set.headers["Location"] = `/api/photo-uploads/${upload.id}`;
+                    return status(201, upload);
+                },
+                {
+                    write: Scope.PhotosCreate,
+                    body: UploadValidation.uploadRequest,
+                    response: { 201: createdUpload },
+                },
+            )
+            .get(
+                "/:uploadId",
+                ({ db, params, authIdentity }) =>
+                    ImageUploadApi.read(db, params.uploadId, authIdentity),
+                {
+                    write: Scope.PhotosCreate,
+                    params,
+                    response: uploadResponse,
+                },
+            )
+            .get(
+                "/:uploadId/assets/:filename",
+                async ({ db, params, authIdentity }) =>
+                    downloadResponse(
+                        await ImageUploadApi.readAsset(
+                            db,
+                            getStorage(),
+                            params.uploadId,
+                            params.filename,
+                            authIdentity,
+                        ),
                     ),
-                );
-            },
-        );
-        this.post(
-            "/:uploadId/cancel",
-            access.require(Scope.PhotosCreate),
-            async (context) => {
-                return context.json(
-                    await ImageUploadApi.cancel(
-                        context.var.db,
-                        ApiValidation.uuid.parse(context.req.param("uploadId")),
-                        context.var.authIdentity,
+                {
+                    write: Scope.PhotosCreate,
+                    params: params.extend({ filename: z.string() }),
+                    response: downloadSchema,
+                },
+            )
+            .post(
+                "/:uploadId/complete",
+                ({ db, params, authIdentity }) =>
+                    ImageUploadApi.finish(
+                        db,
+                        getStorage(),
+                        params.uploadId,
+                        authIdentity,
                     ),
-                );
-            },
-        );
+                {
+                    write: Scope.PhotosCreate,
+                    params,
+                    response: uploadResponse,
+                },
+            )
+            .post(
+                "/:uploadId/cancel",
+                ({ db, params, authIdentity }) =>
+                    ImageUploadApi.cancel(db, params.uploadId, authIdentity),
+                {
+                    write: Scope.PhotosCreate,
+                    params,
+                    response: uploadResponse,
+                },
+            );
     }
 }
 
-export class ImageUploadRoutes extends Hono<AuthEnvironment> {
-    constructor(access: ScopeMiddleware, getStorage: () => ImageStorage) {
-        super();
-        this.post(
-            "/:id/uploads",
-            access.write(ImageUploadApi.replace),
-            validator("json", (value) =>
-                UploadValidation.uploadRequest.parse(value),
-            ),
-            async (context) => {
-                const id = ApiValidation.uuid.parse(context.req.param("id"));
-                const upload = await ImageUploadApi.replace(
-                    context.var.db,
-                    getStorage(),
-                    id,
-                    context.req.valid("json").contentType,
-                    context.var.authIdentity,
-                );
-                context.header(
-                    "Location",
-                    `/api/photos/${id.toLowerCase()}/uploads/${upload.id}`,
-                );
-                return context.json(upload, 201);
-            },
-        );
-        this.get(
-            "/:id/uploads/:uploadId",
-            access.require(Scope.PhotosAssetsWrite),
-            async (context) => {
-                const id = ApiValidation.uuid.parse(context.req.param("id"));
-                const uploadId = ApiValidation.uuid.parse(
-                    context.req.param("uploadId"),
-                );
-                return context.json(
-                    await ImageUploadApi.read(
-                        context.var.db,
-                        uploadId,
-                        context.var.authIdentity,
-                        id,
-                    ),
-                );
-            },
-        );
-        this.post(
-            "/:id/uploads/:uploadId/complete",
-            access.require(Scope.PhotosAssetsWrite),
-            async (context) => {
-                const id = ApiValidation.uuid.parse(context.req.param("id"));
-                const uploadId = ApiValidation.uuid.parse(
-                    context.req.param("uploadId"),
-                );
-                return context.json(
-                    await ImageUploadApi.finish(
-                        context.var.db,
+export class ImageUploadRoutes {
+    readonly app;
+
+    constructor(access: HttpAccess, getStorage: () => ImageStorage) {
+        const photo = z.object({ id: ApiValidation.uuid });
+        const params = photo.extend({ uploadId: ApiValidation.uuid });
+        this.app = new Elysia({ prefix: "/api/photos" })
+            .use(access.plugin)
+            .post(
+                "/:id/uploads",
+                async ({ db, params, body, authIdentity, set }) => {
+                    const upload = await ImageUploadApi.replace(
+                        db,
                         getStorage(),
-                        uploadId,
-                        context.var.authIdentity,
-                        id,
+                        params.id,
+                        body.contentType,
+                        authIdentity,
+                    );
+                    set.headers["Location"] =
+                        `/api/photos/${params.id.toLowerCase()}/uploads/${upload.id}`;
+                    return status(201, upload);
+                },
+                {
+                    write: Scope.PhotosAssetsWrite,
+                    params: photo,
+                    body: UploadValidation.uploadRequest,
+                    response: { 201: createdUpload },
+                },
+            )
+            .get(
+                "/:id/uploads/:uploadId",
+                ({ db, params, authIdentity }) =>
+                    ImageUploadApi.read(
+                        db,
+                        params.uploadId,
+                        authIdentity,
+                        params.id,
                     ),
-                );
-            },
-        );
-        this.post(
-            "/:id/uploads/:uploadId/cancel",
-            access.require(Scope.PhotosAssetsWrite),
-            async (context) => {
-                const id = ApiValidation.uuid.parse(context.req.param("id"));
-                const uploadId = ApiValidation.uuid.parse(
-                    context.req.param("uploadId"),
-                );
-                return context.json(
-                    await ImageUploadApi.cancel(
-                        context.var.db,
-                        uploadId,
-                        context.var.authIdentity,
-                        id,
+                {
+                    write: Scope.PhotosAssetsWrite,
+                    params,
+                    response: uploadResponse,
+                },
+            )
+            .post(
+                "/:id/uploads/:uploadId/complete",
+                ({ db, params, authIdentity }) =>
+                    ImageUploadApi.finish(
+                        db,
+                        getStorage(),
+                        params.uploadId,
+                        authIdentity,
+                        params.id,
                     ),
-                );
-            },
-        );
+                {
+                    write: Scope.PhotosAssetsWrite,
+                    params,
+                    response: uploadResponse,
+                },
+            )
+            .post(
+                "/:id/uploads/:uploadId/cancel",
+                ({ db, params, authIdentity }) =>
+                    ImageUploadApi.cancel(
+                        db,
+                        params.uploadId,
+                        authIdentity,
+                        params.id,
+                    ),
+                {
+                    write: Scope.PhotosAssetsWrite,
+                    params,
+                    response: uploadResponse,
+                },
+            );
     }
 }

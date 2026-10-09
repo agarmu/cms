@@ -1,120 +1,141 @@
+import { Elysia, status } from "elysia";
+import { z } from "zod";
 import { PhotoAccess } from "../api/photo-access";
 import { Scope } from "../api/scope";
-import { Hono } from "hono";
-import { HTTPException } from "hono/http-exception";
-import { validator } from "hono/validator";
-import type { AuthEnvironment } from "./auth";
 import { PhotoApi } from "../api/photos";
 import { ImageUploadApi } from "../api/image-uploads";
-import type { ScopeMiddleware } from "./scope";
+import { ApiValidation } from "../api/validation";
+import { NotFoundError } from "../lib/errors";
+import type { HttpAccess } from "./scope";
 import { HttpValidation as validation } from "./validation";
 import type { ImageStorage } from "../services/image-storage";
-import { downloadResponse, photoResponse } from "./response";
+import {
+    downloadResponse,
+    downloadSchema,
+    photoResponse,
+    photoSchema,
+} from "./response";
 
-export class PhotoRoutes extends Hono<AuthEnvironment> {
-    constructor(access: ScopeMiddleware, getStorage: () => ImageStorage) {
-        super();
-        this.get("/", access.read(PhotoApi.list), async (context) => {
-            const db = context.var.db;
-            const page = validation.pagination.parse(context.req.query());
-            const items = await PhotoApi.list(db, page);
-            return context.json({ items: items.map(photoResponse), ...page });
-        });
-        this.get("/:id", access.read(PhotoApi.read), async (context) => {
-            const db = context.var.db;
-            return context.json(
-                photoResponse(
-                    await PhotoApi.read(
-                        db,
-                        validation.uuid.parse(context.req.param("id")),
-                    ),
-                ),
-            );
-        });
-        this.get("/:id/image", access.read(PhotoApi.read), async (context) => {
-            const db = context.var.db;
-            const id = validation.uuid.parse(context.req.param("id"));
-            const photo = await PhotoApi.read(db, id);
-            const asset = photo.assets.toSorted(
-                (left, right) =>
-                    right.width * right.height - left.width * left.height,
-            )[0];
-            if (!asset)
-                throw new HTTPException(404, {
-                    message: "Photo has no image assets",
-                });
-            const stored = await getStorage().read(
-                photo.id,
-                asset.assetLocation,
-            );
-            if (!stored)
-                throw new HTTPException(404, {
-                    message: "Image asset not found",
-                });
-            return downloadResponse(stored);
-        });
-        this.get(
-            "/:id/assets/:filename",
-            access.read(PhotoApi.read),
-            async (context) => {
-                const db = context.var.db;
-                const id = validation.uuid.parse(context.req.param("id"));
-                const filename = context.req.param("filename");
-                const photo = await PhotoApi.read(db, id);
-                if (
-                    !filename ||
-                    !photo.assets.some(
-                        (asset) => asset.assetLocation === filename,
+export class PhotoRoutes {
+    readonly app;
+
+    constructor(access: HttpAccess, getStorage: () => ImageStorage) {
+        const params = z.object({ id: validation.uuid });
+        this.app = new Elysia({ prefix: "/api/photos" })
+            .use(access.plugin)
+            .get(
+                "",
+                async ({ db, query }) => ({
+                    items: (await PhotoApi.list(db, query)).map(photoResponse),
+                    ...query,
+                }),
+                {
+                    read: Scope.PhotosRead,
+                    query: validation.pagination,
+                    response: z.object({
+                        items: z.array(photoSchema),
+                        ...ApiValidation.pagination.shape,
+                    }),
+                },
+            )
+            .get(
+                "/:id",
+                async ({ db, params }) =>
+                    photoResponse(await PhotoApi.read(db, params.id)),
+                {
+                    read: Scope.PhotosRead,
+                    params,
+                    response: photoSchema,
+                },
+            )
+            .get(
+                "/:id/image",
+                async ({ db, params }) => {
+                    const photo = await PhotoApi.read(db, params.id);
+                    const asset = photo.assets.toSorted(
+                        (left, right) =>
+                            right.width * right.height -
+                            left.width * left.height,
+                    )[0];
+                    if (!asset)
+                        throw new NotFoundError("Photo has no image assets");
+                    const stored = await getStorage().read(
+                        photo.id,
+                        asset.assetLocation,
+                    );
+                    if (!stored)
+                        throw new NotFoundError("Image asset not found");
+                    return downloadResponse(stored);
+                },
+                { read: Scope.PhotosRead, params, response: downloadSchema },
+            )
+            .get(
+                "/:id/assets/:filename",
+                async ({ db, params }) => {
+                    const photo = await PhotoApi.read(db, params.id);
+                    if (
+                        !photo.assets.some(
+                            (asset) => asset.assetLocation === params.filename,
+                        )
                     )
-                ) {
-                    throw new HTTPException(404, {
-                        message: "Image asset not found",
-                    });
-                }
-                const stored = await getStorage().read(photo.id, filename);
-                if (!stored)
-                    throw new HTTPException(404, {
-                        message: "Image asset not found",
-                    });
-                return downloadResponse(stored);
-            },
-        );
-        this.post(
-            "/",
-            access.write(ImageUploadApi.createPhoto),
-            validator("json", (value) => validation.photo.parse(value)),
-            async (context) => {
-                const db = context.var.db;
-                const photo = await ImageUploadApi.createPhoto(
-                    db,
-                    context.req.valid("json"),
-                    context.var.authIdentity,
-                );
-                context.header("Location", `/api/photos/${photo.id}`);
-                return context.json(photo, 201);
-            },
-        );
-        this.patch(
-            "/:id",
-            access.write(PhotoApi.update, Scope.PhotosTextUpdate),
-            validator("json", (value) => validation.photoChanges.parse(value)),
-            async (context) => {
-                const db = context.var.db;
-                const id = validation.uuid.parse(context.req.param("id"));
-                const changes = context.req.valid("json");
-                PhotoAccess.requireChanges(context.var.authIdentity, changes);
-                return context.json(
-                    photoResponse(await PhotoApi.update(db, id, changes)),
-                );
-            },
-        );
-        this.delete("/:id", access.write(PhotoApi.remove), async (context) => {
-            const db = context.var.db;
-            await PhotoApi.remove(
-                db,
-                validation.uuid.parse(context.req.param("id")),
+                        throw new NotFoundError("Image asset not found");
+                    const stored = await getStorage().read(
+                        photo.id,
+                        params.filename,
+                    );
+                    if (!stored)
+                        throw new NotFoundError("Image asset not found");
+                    return downloadResponse(stored);
+                },
+                {
+                    read: Scope.PhotosRead,
+                    params: params.extend({ filename: z.string() }),
+                    response: downloadSchema,
+                },
+            )
+            .post(
+                "",
+                async ({ db, body, authIdentity, set }) => {
+                    const photo = await ImageUploadApi.createPhoto(
+                        db,
+                        body,
+                        authIdentity,
+                    );
+                    set.headers["Location"] = `/api/photos/${photo.id}`;
+                    return status(201, photo);
+                },
+                {
+                    write: Scope.PhotosCreate,
+                    body: validation.photo,
+                    response: { 201: z.object({ id: validation.uuid }) },
+                },
+            )
+            .patch(
+                "/:id",
+                async ({ db, params, body, authIdentity }) => {
+                    PhotoAccess.requireChanges(authIdentity, body);
+                    return photoResponse(
+                        await PhotoApi.update(db, params.id, body),
+                    );
+                },
+                {
+                    write: [Scope.PhotosMetadataUpdate, Scope.PhotosTextUpdate],
+                    params,
+                    body: validation.photoChanges,
+                    response: photoSchema,
+                },
+            )
+            .delete(
+                "/:id",
+                async ({ db, params }) => {
+                    await PhotoApi.remove(db, params.id);
+                    return status(204, undefined);
+                },
+                {
+                    write: Scope.PhotosDelete,
+                    params,
+                    response: { 204: z.undefined() },
+                },
             );
-            return context.body(null, 204);
-        });
     }
 }

@@ -1,65 +1,101 @@
-import type { MiddlewareHandler } from "hono";
-import { ApiScope } from "../api/call";
-import type { Database, DatabaseFor, ReadDatabase } from "../api/database";
-import { Scopes } from "../api/scope";
-import type { Scope, WriteScope } from "../api/scope";
-import { AuthenticationError } from "../auth/provider";
-import type { AuthEnvironment } from "./auth";
+import { Elysia, ParseError } from "elysia";
+import { z } from "zod";
+import type { Database, ReadDatabase } from "../api/database";
+import type { ReadScope, WriteScope, Scope } from "../api/scope";
+import { ForbiddenError } from "../lib/errors";
+import type { HttpAuthentication } from "./auth";
 
-type DatabaseEnvironment<D extends ReadDatabase> = AuthEnvironment & {
-    Variables: { db: D };
-};
+export class InsufficientScopeError extends ForbiddenError {
+    constructor(readonly scopes: readonly Scope[]) {
+        super("Insufficient scope");
+    }
+}
 
-export class ScopeMiddleware {
-    private readonly readDb: ReadDatabase;
+export class HttpAccess {
+    readonly plugin;
 
-    constructor(private readonly db: Database) {
-        this.readDb = Object.freeze({
+    constructor(db: Database, auth: HttpAuthentication) {
+        const readDb: ReadDatabase = Object.freeze({
             select: db.select.bind(db),
             query: db.query,
         });
-    }
-
-    read(method: object) {
-        return this.require(ApiScope.getScope(method, "read"));
-    }
-    write(method: object, ...alternatives: WriteScope[]) {
-        return this.check(
-            [ApiScope.getScope(method, "write"), ...alternatives],
-            this.db,
-        );
-    }
-
-    require<S extends Scope>(
-        scope: S,
-    ): MiddlewareHandler<DatabaseEnvironment<DatabaseFor<S>>> {
-        return this.check(
-            [scope],
-            (Scopes.isReadScope(scope)
-                ? this.readDb
-                : this.db) as DatabaseFor<S>,
-        );
-    }
-
-    private check<D extends ReadDatabase>(
-        scopes: readonly Scope[],
-        db: D,
-    ): MiddlewareHandler<DatabaseEnvironment<D>> {
-        return async (context, next) => {
-            const identity = context.get("authIdentity");
-            if (!identity) throw new AuthenticationError();
-            if (!scopes.some((scope) => identity.scopes.has(scope))) {
-                context.header(
-                    "WWW-Authenticate",
-                    scopes.length === 1
-                        ? `Bearer error="insufficient_scope", scope="${scopes[0]}"`
-                        : 'Bearer error="insufficient_scope"',
-                );
-                return context.json({ error: "Insufficient scope" }, 403);
-            }
-            context.set("db", db);
-            await next();
-            return;
+        const check = (request: Request, scopes: readonly Scope[]) => {
+            const authIdentity = auth.identity(request);
+            if (!scopes.some((scope) => authIdentity.scopes.has(scope)))
+                throw new InsufficientScopeError(scopes);
+            return authIdentity;
         };
+        const error = z.object({
+            error: z.string(),
+            issues: z.array(z.unknown()).optional(),
+        });
+        this.plugin = new Elysia({ name: "scope" })
+            .guard({
+                as: "scoped",
+                response: {
+                    400: error,
+                    401: error,
+                    403: error,
+                    404: error,
+                    409: error,
+                    413: error,
+                    500: error,
+                    503: error,
+                },
+            })
+            .macro({
+                read: (scope: ReadScope) => ({
+                    detail: {
+                        description: `Requires ${scope}.`,
+                        "x-scopes": [scope],
+                    },
+                    resolve: ({ request }) => ({
+                        authIdentity: check(request, [scope]),
+                        db: readDb,
+                    }),
+                }),
+                write: (scope: WriteScope | readonly WriteScope[]) => {
+                    const scopes = typeof scope === "string" ? [scope] : scope;
+                    return {
+                        detail: {
+                            description: `Requires ${scopes.join(" or ")}.`,
+                            "x-scopes": [...scopes],
+                        },
+                        parse: ({ request, contentType }) => {
+                            check(request, scopes);
+                            contentType = contentType.trim().toLowerCase();
+                            if (
+                                request.body &&
+                                contentType !== "application/json" &&
+                                !(
+                                    contentType.startsWith("application/") &&
+                                    contentType.endsWith("+json")
+                                )
+                            )
+                                throw new ParseError();
+                            if (
+                                contentType.startsWith("application/") &&
+                                contentType.endsWith("+json")
+                            )
+                                return request.json();
+                            return;
+                        },
+                        introspect: (options) => {
+                            if (options.body && "parse" in options) {
+                                options.parse = [
+                                    ...(Array.isArray(options.parse)
+                                        ? options.parse
+                                        : [options.parse]),
+                                    "json",
+                                ];
+                            }
+                        },
+                        resolve: ({ request }) => ({
+                            authIdentity: check(request, scopes),
+                            db,
+                        }),
+                    };
+                },
+            });
     }
 }

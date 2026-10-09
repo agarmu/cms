@@ -1,39 +1,42 @@
-import type { MiddlewareHandler } from "hono";
-import { HTTPException } from "hono/http-exception";
+import { Elysia } from "elysia";
 import { AuthenticationError } from "../auth/provider";
 import type { AuthenticationProvider, AuthIdentity } from "../auth/provider";
+import { ForbiddenError } from "../lib/errors";
 
-export type AuthEnvironment = { Variables: { authIdentity: AuthIdentity } };
-
-export class AuthenticationMiddleware {
-    private readonly allowedSubjects: ReadonlySet<string>;
+export class HttpAuthentication {
+    private readonly identities = new WeakMap<Request, AuthIdentity>();
+    readonly plugin;
 
     constructor(
-        private readonly provider: AuthenticationProvider,
+        provider: AuthenticationProvider,
         allowedSubjects: readonly string[],
+        applies: (request: Request) => boolean = () => true,
     ) {
-        this.allowedSubjects = new Set(allowedSubjects);
+        const allowed = new Set(allowedSubjects);
+        this.plugin = new Elysia({ name: "authentication" })
+            .onRequest(async ({ request, set }) => {
+                if (!applies(request)) return;
+                set.headers["Cache-Control"] = "private, no-store";
+                const token = /^Bearer +([^\s,]+)$/i.exec(
+                    request.headers.get("Authorization") ?? "",
+                )?.[1];
+                if (!token) throw new AuthenticationError();
+                const identity = await provider.authenticate(token);
+                if (!allowed.has(identity.subject))
+                    throw new ForbiddenError("Account is not authorized");
+                this.identities.set(request, identity);
+            })
+            .onAfterHandle(({ response, set }) => {
+                set.headers["Cache-Control"] = "private, no-store";
+                if (response instanceof Response)
+                    response.headers.set("Cache-Control", "private, no-store");
+            })
+            .as("scoped");
     }
 
-    readonly handle: MiddlewareHandler<AuthEnvironment> = async (
-        context,
-        next,
-    ) => {
-        try {
-            const token = /^Bearer +([^\s,]+)$/i.exec(
-                context.req.header("Authorization") ?? "",
-            )?.[1];
-            if (!token) throw new AuthenticationError();
-            const identity = await this.provider.authenticate(token);
-            if (!this.allowedSubjects.has(identity.subject)) {
-                throw new HTTPException(403, {
-                    message: "Account is not authorized",
-                });
-            }
-            context.set("authIdentity", identity);
-            await next();
-        } finally {
-            context.header("Cache-Control", "private, no-store");
-        }
-    };
+    identity(request: Request) {
+        const identity = this.identities.get(request);
+        if (!identity) throw new AuthenticationError();
+        return identity;
+    }
 }

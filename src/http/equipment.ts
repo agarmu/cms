@@ -1,40 +1,68 @@
-import { Hono } from "hono";
+import { Elysia, status } from "elysia";
+import { z } from "zod";
+import { ApiScope } from "../api/call";
+import { ApiValidation } from "../api/validation";
 import { CameraApi } from "../api/resources/cameras";
 import { LensApi } from "../api/resources/lenses";
 import { NotFoundError } from "../lib/errors";
-import type { ScopeMiddleware } from "./scope";
+import type { HttpAccess } from "./scope";
 import { HttpValidation } from "./validation";
-import type { AuthEnvironment } from "./auth";
 
-// Equipment can be browsed and explicitly removed, but only created through photos.
-export class EquipmentRoutes extends Hono<AuthEnvironment> {
+export const equipmentResponse = z.object({
+    id: ApiValidation.uuid,
+    name: z.string(),
+});
+
+export class EquipmentRoutes {
+    readonly app;
+
     constructor(
+        prefix: "/api/cameras" | "/api/lenses",
         calls: typeof CameraApi | typeof LensApi,
-        access: ScopeMiddleware,
+        access: HttpAccess,
     ) {
-        super();
-        this.get("/", access.read(calls.list), async (context) => {
-            const db = context.var.db;
-            const page = HttpValidation.pagination.parse(context.req.query());
-            return context.json({ items: await calls.list(db, page), ...page });
-        });
-        this.get("/:id", access.read(calls.read), async (context) => {
-            const db = context.var.db;
-            const [row] = await calls.read(
-                db,
-                HttpValidation.uuid.parse(context.req.param("id")),
+        this.app = new Elysia({ prefix })
+            .use(access.plugin)
+            .get(
+                "",
+                async ({ db, query }) => ({
+                    items: await calls.list(db, query),
+                    ...query,
+                }),
+                {
+                    read: ApiScope.getScope(calls.list, "read"),
+                    query: HttpValidation.pagination,
+                    response: z.object({
+                        items: z.array(equipmentResponse),
+                        ...ApiValidation.pagination.shape,
+                    }),
+                },
+            )
+            .get(
+                "/:id",
+                async ({ db, params }) => {
+                    const [row] = await calls.read(db, params.id);
+                    if (!row) throw new NotFoundError("Equipment not found");
+                    return row;
+                },
+                {
+                    read: ApiScope.getScope(calls.read, "read"),
+                    params: z.object({ id: ApiValidation.uuid }),
+                    response: equipmentResponse,
+                },
+            )
+            .delete(
+                "/:id",
+                async ({ db, params }) => {
+                    const [row] = await calls.remove(db, params.id);
+                    if (!row) throw new NotFoundError("Equipment not found");
+                    return status(204, undefined);
+                },
+                {
+                    write: ApiScope.getScope(calls.remove, "write"),
+                    params: z.object({ id: ApiValidation.uuid }),
+                    response: { 204: z.undefined() },
+                },
             );
-            if (!row) throw new NotFoundError("Equipment not found");
-            return context.json(row);
-        });
-        this.delete("/:id", access.write(calls.remove), async (context) => {
-            const db = context.var.db;
-            const [row] = await calls.remove(
-                db,
-                HttpValidation.uuid.parse(context.req.param("id")),
-            );
-            if (!row) throw new NotFoundError("Equipment not found");
-            return context.body(null, 204);
-        });
     }
 }

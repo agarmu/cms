@@ -25,10 +25,12 @@ export class HttpValidation {
         limit: z.coerce
             .number()
             .pipe(ApiValidation.pagination.shape.limit)
+            .meta(z.toJSONSchema(ApiValidation.pagination.shape.limit))
             .default(50),
         offset: z.coerce
             .number()
             .pipe(ApiValidation.pagination.shape.offset)
+            .meta(z.toJSONSchema(ApiValidation.pagination.shape.offset))
             .default(0),
     });
 }

@@ -24,7 +24,8 @@
     "type": "module",
     "dependencies": {
         "@8monkey/opentelemetry-instrumentation-bun-sql": "^0.2.0",
-        "@hono/otel": "^1.2.0",
+        "@elysiajs/cors": "^1.4.2",
+        "@elysiajs/openapi": "^1.4.16",
         "@modelcontextprotocol/server": "^2.3.1",
         "@opentelemetry/api": "^1.9.1",
         "@opentelemetry/api-logs": "^0.222.0",
@@ -38,7 +39,7 @@
         "@opentelemetry/sdk-trace-base": "^2.11.0",
         "@opentelemetry/sdk-trace-node": "^2.11.0",
         "drizzle-orm": "^0.45.3",
-        "hono": "^4.13.13",
+        "elysia": "^1.4.30",
         "jose": "^6.2.12",
         "sharp": "^0.35.5",
         "zod": "^4.6.5"

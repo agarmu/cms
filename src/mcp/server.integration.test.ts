@@ -1,3 +1,4 @@
+import { requestApp } from "../auth/test-fixtures";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import {
     Client,
@@ -130,7 +131,7 @@ async function connect(
         new StreamableHTTPClientTransport(config.url, {
             authProvider: { token: async () => token },
             fetch: async (input, init) => {
-                const response = await app.request(input.toString(), init);
+                const response = await requestApp(app, input.toString(), init);
                 responses.push(response);
                 return response;
             },
@@ -156,7 +157,7 @@ function request(
     headers: Record<string, string> = {},
     body = '{"jsonrpc":"2.0","id":1,"method":"tools/list"}',
 ) {
-    return app.request(config.url.href, {
+    return requestApp(app, config.url.href, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -227,7 +228,7 @@ test("authentication errors advertise public OAuth discovery without exposing to
         expect(response.headers.get("Cache-Control")).toBe("private, no-store");
     }
     expect((await request("outsider")).status).toBe(403);
-    const response = await app.request(config.metadataUrl);
+    const response = await requestApp(app, config.metadataUrl);
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
         resource: testAuthSettings.audience,
@@ -250,7 +251,7 @@ test("an allowed browser origin can send the modern SDK's actual headers", async
             fetch: async (input, init) => {
                 const headers = new Headers(init?.headers);
                 const requested = [...headers.keys()];
-                const preflight = await app.request(input.toString(), {
+                const preflight = await requestApp(app, input.toString(), {
                     method: "OPTIONS",
                     headers: {
                         Origin: origin,
@@ -265,13 +266,14 @@ test("an allowed browser origin can send the modern SDK's actual headers", async
                 const allowed = preflight.headers
                     .get("Access-Control-Allow-Headers")!
                     .toLowerCase()
-                    .split(",");
+                    .split(",")
+                    .map((header) => header.trim());
                 for (const header of requested) {
                     sent.add(header);
                     if (header !== "accept") expect(allowed).toContain(header);
                 }
                 headers.set("Origin", origin);
-                const response = await app.request(input.toString(), {
+                const response = await requestApp(app, input.toString(), {
                     ...init,
                     headers,
                 });
@@ -293,12 +295,12 @@ test("MCP validates hosts, browser origins, preflight, and body limits", async (
         (await request("admin", { Origin: "https://evil.example" })).status,
     ).toBe(403);
     expect((await request("admin", { Origin: "null" })).status).toBe(403);
-    const wrongHost = await app.request("https://evil.example/mcp", {
+    const wrongHost = await requestApp(app, "https://evil.example/mcp", {
         method: "POST",
         headers: { Authorization: "Bearer admin" },
     });
     expect(wrongHost.status).toBe(403);
-    const preflight = await app.request(config.url.href, {
+    const preflight = await requestApp(app, config.url.href, {
         method: "OPTIONS",
         headers: {
             Origin: "https://editor.example.com",
@@ -311,7 +313,8 @@ test("MCP validates hosts, browser origins, preflight, and body limits", async (
     const allowed = preflight.headers
         .get("Access-Control-Allow-Headers")!
         .toLowerCase()
-        .split(",");
+        .split(",")
+        .map((header) => header.trim());
     for (const header of [
         "authorization",
         "content-type",
@@ -615,7 +618,7 @@ test.each(["legacy", "auto"] as const)(
         expect((await PhotoApi.read(db, saved.id)).assets).toMatchObject([
             { assetLocation: "photo.webp" },
         ]);
-        const discovery = await app.request(config.metadataUrl);
+        const discovery = await requestApp(app, config.metadataUrl);
         const body = (await discovery.json()) as { scopes_supported: string[] };
         expect(body.scopes_supported).not.toContain(Scope.PhotosDelete);
         expect(body.scopes_supported).not.toContain(Scope.PhotosAssetsWrite);

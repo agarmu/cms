@@ -1,4 +1,3 @@
-import type { Hono } from "hono";
 import { Scope } from "../api/scope";
 import type { AuthenticationProvider, AuthIdentity } from "./provider";
 
@@ -31,11 +30,21 @@ allowedSubjects = ["test-user"]
 `;
 
 export function requestAsUser(
-    app: Pick<Hono, "request">,
+    app: { fetch: (request: Request) => Response | Promise<Response> },
     path: string,
     init: RequestInit = {},
 ) {
     const headers = new Headers(init.headers);
     headers.set("Authorization", "Bearer test-token");
-    return app.request(path, { ...init, headers });
+    return requestApp(app, path, { ...init, headers });
+}
+
+export function requestApp(
+    app: { fetch: (request: Request) => Response | Promise<Response> },
+    path: string,
+    init?: RequestInit,
+) {
+    return app.fetch(
+        new Request(new URL(path, "http://localhost").href, init ?? {}),
+    );
 }
