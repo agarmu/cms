@@ -48,6 +48,9 @@ export class HttpOpenApi {
                     schema.anyOf = schema.anyOf.filter(
                         (part) => part !== binary,
                     );
+                    if (schema.anyOf.length === 1)
+                        response.content!["application/json"]!.schema =
+                            schema.anyOf[0]!;
                 }
             }
         }
@@ -55,6 +58,7 @@ export class HttpOpenApi {
             openapi: "3.1.2",
             info: { title: "Photos CMS", version: "1.0.0" },
             ...generated,
+            servers: [{ url: "/" }],
             components: {
                 ...generated.components,
                 securitySchemes:

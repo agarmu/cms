@@ -74,6 +74,7 @@ export class PhotoUploadRoutes {
                     return status(201, upload);
                 },
                 {
+                    detail: { summary: "Start a new-photo upload" },
                     write: Scope.PhotosCreate,
                     body: UploadValidation.uploadRequest,
                     response: { 201: createdUpload },
@@ -84,6 +85,7 @@ export class PhotoUploadRoutes {
                 ({ db, params, authIdentity }) =>
                     ImageUploadApi.read(db, params.uploadId, authIdentity),
                 {
+                    detail: { summary: "Read new-photo upload status" },
                     write: Scope.PhotosCreate,
                     params,
                     response: uploadResponse,
@@ -102,6 +104,7 @@ export class PhotoUploadRoutes {
                         ),
                     ),
                 {
+                    detail: { summary: "Preview a processed upload asset" },
                     write: Scope.PhotosCreate,
                     params: params.extend({ filename: z.string() }),
                     response: downloadSchema,
@@ -117,6 +120,7 @@ export class PhotoUploadRoutes {
                         authIdentity,
                     ),
                 {
+                    detail: { summary: "Process a new-photo upload" },
                     write: Scope.PhotosCreate,
                     params,
                     response: uploadResponse,
@@ -127,6 +131,7 @@ export class PhotoUploadRoutes {
                 ({ db, params, authIdentity }) =>
                     ImageUploadApi.cancel(db, params.uploadId, authIdentity),
                 {
+                    detail: { summary: "Cancel a new-photo upload" },
                     write: Scope.PhotosCreate,
                     params,
                     response: uploadResponse,
@@ -158,6 +163,7 @@ export class ImageUploadRoutes {
                     return status(201, upload);
                 },
                 {
+                    detail: { summary: "Start a photo image replacement" },
                     write: Scope.PhotosAssetsWrite,
                     params: photo,
                     body: UploadValidation.uploadRequest,
@@ -174,6 +180,7 @@ export class ImageUploadRoutes {
                         params.id,
                     ),
                 {
+                    detail: { summary: "Read image replacement status" },
                     write: Scope.PhotosAssetsWrite,
                     params,
                     response: uploadResponse,
@@ -190,6 +197,9 @@ export class ImageUploadRoutes {
                         params.id,
                     ),
                 {
+                    detail: {
+                        summary: "Process and attach replacement assets",
+                    },
                     write: Scope.PhotosAssetsWrite,
                     params,
                     response: uploadResponse,
@@ -205,6 +215,7 @@ export class ImageUploadRoutes {
                         params.id,
                     ),
                 {
+                    detail: { summary: "Cancel a photo image replacement" },
                     write: Scope.PhotosAssetsWrite,
                     params,
                     response: uploadResponse,

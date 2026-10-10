@@ -32,6 +32,7 @@ export class PhotoRoutes {
                     ...query,
                 }),
                 {
+                    detail: { summary: "List photos" },
                     read: Scope.PhotosRead,
                     query: validation.pagination,
                     response: z.object({
@@ -47,6 +48,7 @@ export class PhotoRoutes {
                         await PhotoApi.read(db, params.id, authIdentity),
                     ),
                 {
+                    detail: { summary: "Read a photo" },
                     read: Scope.PhotosRead,
                     params,
                     response: photoSchema,
@@ -75,7 +77,12 @@ export class PhotoRoutes {
                         throw new NotFoundError("Image asset not found");
                     return downloadResponse(stored);
                 },
-                { read: Scope.PhotosRead, params, response: downloadSchema },
+                {
+                    detail: { summary: "Download the largest photo asset" },
+                    read: Scope.PhotosRead,
+                    params,
+                    response: downloadSchema,
+                },
             )
             .get(
                 "/:id/assets/:filename",
@@ -100,6 +107,7 @@ export class PhotoRoutes {
                     return downloadResponse(stored);
                 },
                 {
+                    detail: { summary: "Download a photo asset" },
                     read: Scope.PhotosRead,
                     params: params.extend({ filename: z.string() }),
                     response: downloadSchema,
@@ -117,6 +125,7 @@ export class PhotoRoutes {
                     return status(201, photo);
                 },
                 {
+                    detail: { summary: "Create a photo from a ready upload" },
                     write: Scope.PhotosCreate,
                     body: validation.photo,
                     response: { 201: z.object({ id: validation.uuid }) },
@@ -131,6 +140,7 @@ export class PhotoRoutes {
                     );
                 },
                 {
+                    detail: { summary: "Update a photo" },
                     write: [Scope.PhotosMetadataUpdate, Scope.PhotosTextUpdate],
                     params,
                     body: validation.photoChanges,
@@ -144,6 +154,7 @@ export class PhotoRoutes {
                     return status(204, undefined);
                 },
                 {
+                    detail: { summary: "Delete a photo" },
                     write: Scope.PhotosDelete,
                     params,
                     response: { 204: z.undefined() },

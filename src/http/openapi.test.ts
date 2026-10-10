@@ -113,14 +113,10 @@ test("empty and binary responses have their actual wire formats", () => {
                 "image/*": { schema: { type: "string", format: "binary" } },
                 "application/json": {
                     schema: {
-                        anyOf: [
-                            {
-                                properties: {
-                                    url: { format: "uri" },
-                                    expiresAt: { format: "date-time" },
-                                },
-                            },
-                        ],
+                        properties: {
+                            url: { format: "uri" },
+                            expiresAt: { format: "date-time" },
+                        },
                     },
                 },
             },

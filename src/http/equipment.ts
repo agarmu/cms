@@ -21,6 +21,8 @@ export class EquipmentRoutes {
         calls: typeof CameraApi | typeof LensApi,
         access: HttpAccess,
     ) {
+        const singular = prefix === "/api/cameras" ? "camera" : "lens";
+        const plural = prefix === "/api/cameras" ? "cameras" : "lenses";
         this.app = new Elysia({ prefix })
             .use(access.plugin)
             .get(
@@ -30,6 +32,7 @@ export class EquipmentRoutes {
                     ...query,
                 }),
                 {
+                    detail: { summary: `List ${plural}` },
                     read: ApiScope.getScope(calls.list, "read"),
                     query: HttpValidation.pagination,
                     response: z.object({
@@ -46,6 +49,7 @@ export class EquipmentRoutes {
                     return row;
                 },
                 {
+                    detail: { summary: `Read a ${singular}` },
                     read: ApiScope.getScope(calls.read, "read"),
                     params: z.object({ id: ApiValidation.uuid }),
                     response: equipmentResponse,
@@ -59,6 +63,7 @@ export class EquipmentRoutes {
                     return status(204, undefined);
                 },
                 {
+                    detail: { summary: `Delete a ${singular}` },
                     write: ApiScope.getScope(calls.remove, "write"),
                     params: z.object({ id: ApiValidation.uuid }),
                     response: { 204: z.undefined() },
