@@ -97,6 +97,7 @@ export class McpRoutes {
             authorization_servers: [config.issuer],
             scopes_supported: [
                 Scope.PhotosRead,
+                Scope.PhotosReadHidden,
                 Scope.PhotosCreate,
                 Scope.PhotosTextUpdate,
                 Scope.PhotosMetadataUpdate,

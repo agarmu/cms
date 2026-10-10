@@ -1,6 +1,6 @@
 import { Tracing } from "../telemetry/tracing";
 import type { UUID } from "node:crypto";
-import { asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { DatabaseSchema } from "../db/schema";
 import { NotFoundError } from "../lib/errors";
@@ -13,6 +13,7 @@ import { ApiValidation as validation } from "./validation";
 import type { Page } from "./types";
 import { ApiScope } from "./call";
 import { Scope } from "./scope";
+import type { AuthIdentity } from "../auth/provider";
 
 export class PhotoValidation {
     static readonly equipmentLink = z.union([
@@ -126,9 +127,13 @@ export class PhotoApi {
 
     @ApiScope.scoped(Scope.PhotosRead)
     @Tracing.traced("photo.list")
-    static async list(db: ReadDatabase, page: Page) {
+    static async list(db: ReadDatabase, page: Page, identity?: AuthIdentity) {
         const { limit, offset } = validation.pagination.parse(page);
         return db.query.images.findMany({
+            where:
+                identity && !identity.scopes.has(Scope.PhotosReadHidden)
+                    ? eq(DatabaseSchema.images.enabled, true)
+                    : undefined,
             limit,
             offset,
             orderBy: [
@@ -141,10 +146,15 @@ export class PhotoApi {
 
     @ApiScope.scoped(Scope.PhotosRead)
     @Tracing.traced("photo.read")
-    static async read(db: ReadDatabase, id: UUID) {
+    static async read(db: ReadDatabase, id: UUID, identity?: AuthIdentity) {
         id = validation.uuid.parse(id);
         const row = await db.query.images.findFirst({
-            where: eq(DatabaseSchema.images.id, id),
+            where: and(
+                eq(DatabaseSchema.images.id, id),
+                identity && !identity.scopes.has(Scope.PhotosReadHidden)
+                    ? eq(DatabaseSchema.images.enabled, true)
+                    : undefined,
+            ),
             with: { camera: true, lens: true, assets: true },
         });
         if (!row) throw new NotFoundError("Photo not found");

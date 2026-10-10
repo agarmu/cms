@@ -25,8 +25,10 @@ export class PhotoRoutes {
             .use(access.plugin)
             .get(
                 "",
-                async ({ db, query }) => ({
-                    items: (await PhotoApi.list(db, query)).map(photoResponse),
+                async ({ db, query, authIdentity }) => ({
+                    items: (await PhotoApi.list(db, query, authIdentity)).map(
+                        photoResponse,
+                    ),
                     ...query,
                 }),
                 {
@@ -40,8 +42,10 @@ export class PhotoRoutes {
             )
             .get(
                 "/:id",
-                async ({ db, params }) =>
-                    photoResponse(await PhotoApi.read(db, params.id)),
+                async ({ db, params, authIdentity }) =>
+                    photoResponse(
+                        await PhotoApi.read(db, params.id, authIdentity),
+                    ),
                 {
                     read: Scope.PhotosRead,
                     params,
@@ -50,8 +54,12 @@ export class PhotoRoutes {
             )
             .get(
                 "/:id/image",
-                async ({ db, params }) => {
-                    const photo = await PhotoApi.read(db, params.id);
+                async ({ db, params, authIdentity }) => {
+                    const photo = await PhotoApi.read(
+                        db,
+                        params.id,
+                        authIdentity,
+                    );
                     const asset = photo.assets.toSorted(
                         (left, right) =>
                             right.width * right.height -
@@ -71,8 +79,12 @@ export class PhotoRoutes {
             )
             .get(
                 "/:id/assets/:filename",
-                async ({ db, params }) => {
-                    const photo = await PhotoApi.read(db, params.id);
+                async ({ db, params, authIdentity }) => {
+                    const photo = await PhotoApi.read(
+                        db,
+                        params.id,
+                        authIdentity,
+                    );
                     if (
                         !photo.assets.some(
                             (asset) => asset.assetLocation === params.filename,

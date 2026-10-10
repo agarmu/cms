@@ -8,6 +8,7 @@ export enum Scope {
     LensesUpdate = "lenses:update",
     LensesDelete = "lenses:delete",
     PhotosRead = "photos:read",
+    PhotosReadHidden = "photos:read:hidden",
     PhotosCreate = "photos:create",
     PhotosTextUpdate = "photos:text:update",
     PhotosMetadataUpdate = "photos:metadata:update",
@@ -21,6 +22,7 @@ export type ReadScope =
     | Scope.CamerasRead
     | Scope.LensesRead
     | Scope.PhotosRead
+    | Scope.PhotosReadHidden
     | Scope.ImageAssetsRead;
 export type WriteScope = Exclude<Scope, ReadScope>;
 
@@ -30,6 +32,7 @@ export class Scopes {
         Scope.CamerasRead,
         Scope.LensesRead,
         Scope.PhotosRead,
+        Scope.PhotosReadHidden,
         Scope.ImageAssetsRead,
     ]);
 

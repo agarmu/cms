@@ -74,7 +74,7 @@ export class PhotoMcpServer extends McpServer {
             "list_photos",
             {
                 description:
-                    "List photos with metadata, equipment, and asset paths. Requires photos:read.",
+                    "List enabled photos with metadata, equipment, and asset paths. Requires photos:read; include hidden photos with photos:read:hidden as well.",
                 inputSchema: pageInput,
                 scopeChallenge: () =>
                     this.scopeChallenge(
@@ -84,9 +84,9 @@ export class PhotoMcpServer extends McpServer {
             },
             (page) =>
                 this.run(async () => ({
-                    items: (await PhotoApi.list(this.readDb, page)).map(
-                        photoResponse,
-                    ),
+                    items: (
+                        await PhotoApi.list(this.readDb, page, this.identity)
+                    ).map(photoResponse),
                     ...page,
                 })),
         );
@@ -94,7 +94,7 @@ export class PhotoMcpServer extends McpServer {
             "get_photo",
             {
                 description:
-                    "Read a photo and its assets. Requires photos:read.",
+                    "Read an enabled photo and its assets. Requires photos:read; hidden photos also require photos:read:hidden.",
                 inputSchema: idInput,
                 scopeChallenge: () =>
                     this.scopeChallenge(
@@ -104,7 +104,9 @@ export class PhotoMcpServer extends McpServer {
             },
             ({ id }) =>
                 this.run(async () =>
-                    photoResponse(await PhotoApi.read(this.readDb, id)),
+                    photoResponse(
+                        await PhotoApi.read(this.readDb, id, this.identity),
+                    ),
                 ),
         );
         this.registerTool(
@@ -151,7 +153,7 @@ export class PhotoMcpServer extends McpServer {
             "get_photo_image",
             {
                 description:
-                    "Get a 15-minute signed image URL, or embedded image with local storage. Omit filename for the largest asset. Requires photos:read.",
+                    "Get a 15-minute signed image URL, or embedded image with local storage. Omit filename for the largest asset. Requires photos:read; hidden photos also require photos:read:hidden.",
                 inputSchema: idInput.extend({
                     filename: z.string().min(1).optional(),
                 }),
@@ -160,7 +162,11 @@ export class PhotoMcpServer extends McpServer {
             },
             ({ id, filename }) =>
                 this.run(async () => {
-                    const photo = await PhotoApi.read(this.readDb, id);
+                    const photo = await PhotoApi.read(
+                        this.readDb,
+                        id,
+                        this.identity,
+                    );
                     const asset = filename
                         ? photo.assets.find(
                               (asset) => asset.assetLocation === filename,

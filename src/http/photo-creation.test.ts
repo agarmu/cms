@@ -65,6 +65,10 @@ const identities: Record<string, AuthIdentity> = {
     },
     assets: { ...testAuthIdentity, scopes: new Set([Scope.PhotosAssetsWrite]) },
     reader: { ...testAuthIdentity, scopes: new Set([Scope.PhotosRead]) },
+    hiddenReader: {
+        ...testAuthIdentity,
+        scopes: new Set([Scope.PhotosReadHidden]),
+    },
 };
 const errors: Error[] = [];
 const options = {
@@ -251,6 +255,73 @@ test("a creator prepares an image, previews it, and saves metadata and equipment
     });
     expect(linked.status).toBe(201);
     expect(await db.query.cameras.findMany()).toHaveLength(1);
+});
+
+test("photo reads exclude hidden photos before pagination unless both read scopes are granted", async () => {
+    const photos: { id: UUID; enabled: boolean }[] = [];
+    for (const [posted, enabled] of [
+        ["2099-01-04T00:00:00Z", false],
+        ["2099-01-03T00:00:00Z", true],
+        ["2099-01-02T00:00:00Z", false],
+        ["2099-01-01T00:00:00Z", true],
+    ] as const) {
+        const photo = await PhotoApi.create(db, {
+            ...metadata,
+            taken: new Date(metadata.taken),
+            posted: new Date(posted),
+            enabled,
+            assets: [{ assetLocation: "photo.png", width: 200, height: 100 }],
+        });
+        objects.set(`images/${photo.id}/photo.png`, png);
+        photos.push({ id: photo.id, enabled });
+    }
+    const enabledIds = photos
+        .filter((photo) => photo.enabled)
+        .map((photo) => photo.id);
+    const hiddenIds = photos
+        .filter((photo) => !photo.enabled)
+        .map((photo) => photo.id);
+    const list = async (token: string, limit: number, offset = 0) => {
+        const response = await request(
+            token,
+            `/api/photos?limit=${limit}&offset=${offset}`,
+        );
+        expect(response.status).toBe(200);
+        return (await response.json()) as {
+            items: { id: UUID; enabled: boolean }[];
+            limit: number;
+            offset: number;
+        };
+    };
+    const readerPage = await list("reader", 2);
+    expect(readerPage).toMatchObject({ limit: 2, offset: 0 });
+    expect(readerPage.items.map((photo) => photo.id)).toEqual(enabledIds);
+    expect((await list("reader", 1, 1)).items.map((photo) => photo.id)).toEqual(
+        [enabledIds[1]!],
+    );
+    expect((await list("admin", 4)).items.map((photo) => photo.id)).toEqual(
+        photos.map((photo) => photo.id),
+    );
+    for (const id of hiddenIds) {
+        const photo = await PhotoApi.read(db, id);
+        const paths = [
+            `/api/photos/${id}`,
+            `/api/photos/${id}/image`,
+            ...photo.assets.map(
+                (asset) => `/api/photos/${id}/assets/${asset.assetLocation}`,
+            ),
+        ];
+        for (const path of paths) {
+            expect((await request("reader", path)).status).toBe(404);
+            expect((await request("hiddenReader", path)).status).toBe(403);
+            expect((await request("admin", path)).status).toBe(200);
+        }
+        const response = await request("admin", `/api/photos/${id}`);
+        expect(await response.json()).toMatchObject({ id, enabled: false });
+    }
+    expect((await request("hiddenReader", "/api/photos")).status).toBe(403);
+    for (const id of enabledIds)
+        expect((await request("reader", `/api/photos/${id}`)).status).toBe(200);
 });
 
 test("upload ownership includes issuer and subject on every operation", async () => {

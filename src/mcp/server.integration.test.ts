@@ -66,6 +66,10 @@ const blobs: BlobStorage = {
 const identities: Record<string, AuthIdentity> = {
     admin: testAuthIdentity,
     reader: { ...testAuthIdentity, scopes: new Set([Scope.PhotosRead]) },
+    hiddenReader: {
+        ...testAuthIdentity,
+        scopes: new Set([Scope.PhotosReadHidden]),
+    },
     text: { ...testAuthIdentity, scopes: new Set([Scope.PhotosTextUpdate]) },
     metadata: {
         ...testAuthIdentity,
@@ -148,11 +152,12 @@ function output(result: CallToolResult) {
     expect(result.structuredContent).toBeDefined();
     return z.record(z.string(), z.unknown()).parse(result.structuredContent);
 }
-async function photo() {
+async function photo(enabled = true, posted = metadata.posted) {
     return PhotoApi.create(db, {
         ...metadata,
         taken: new Date(metadata.taken),
-        posted: new Date(metadata.posted),
+        posted: new Date(posted),
+        enabled,
         assets: [{ assetLocation: "photo.webp", width: 640, height: 320 }],
     });
 }
@@ -217,6 +222,89 @@ test.each(["legacy", "auto"] as const)(
     },
 );
 
+test.each(["legacy", "auto"] as const)(
+    "hidden photos require additive read privilege for lists, metadata, and images (%s)",
+    async (mode) => {
+        const year = mode === "legacy" ? 2098 : 2099;
+        const hidden = await photo(false, `${year}-10-03T12:00:00Z`);
+        const first = await photo(true, `${year}-10-02T12:00:00Z`);
+        const second = await photo(true, `${year}-10-01T12:00:00Z`);
+        const image = new Blob(["hidden-image"], { type: "image/webp" });
+        objects.set(`images/${hidden.id}/photo.webp`, image);
+        const reader = await connect("reader", mode);
+        const admin = await connect("admin", mode);
+
+        for (const [offset, expected] of [
+            [0, first.id],
+            [1, second.id],
+        ] as const) {
+            const page = output(
+                await reader.callTool({
+                    name: "list_photos",
+                    arguments: { limit: 1, offset },
+                }),
+            );
+            expect(page).toMatchObject({ limit: 1, offset });
+            expect(page["items"]).toEqual([
+                expect.objectContaining({ id: expected, enabled: true }),
+            ]);
+        }
+        const adminPage = output(
+            await admin.callTool({
+                name: "list_photos",
+                arguments: { limit: 3 },
+            }),
+        );
+        expect(adminPage["items"]).toEqual([
+            expect.objectContaining({ id: hidden.id, enabled: false }),
+            expect.objectContaining({ id: first.id }),
+            expect.objectContaining({ id: second.id }),
+        ]);
+
+        for (const name of ["get_photo", "get_photo_image"]) {
+            const denied = await reader.callTool({
+                name,
+                arguments: { id: hidden.id },
+            });
+            expect(denied).toMatchObject({
+                isError: true,
+                content: [{ type: "text", text: "Photo not found" }],
+            });
+        }
+        expect(
+            output(
+                await admin.callTool({
+                    name: "get_photo",
+                    arguments: { id: hidden.id },
+                }),
+            ),
+        ).toMatchObject({ id: hidden.id, enabled: false });
+        const downloaded = await admin.callTool({
+            name: "get_photo_image",
+            arguments: { id: hidden.id },
+        });
+        expect(downloaded.isError).not.toBe(true);
+        expect(downloaded.content).toEqual([
+            {
+                type: "image",
+                mimeType: "image/webp",
+                data: Buffer.from(await image.arrayBuffer()).toString("base64"),
+            },
+        ]);
+
+        const hiddenReader = await connect("hiddenReader", mode);
+        for (const [name, args] of [
+            ["list_photos", {}],
+            ["get_photo", { id: hidden.id }],
+            ["get_photo_image", { id: hidden.id }],
+        ] as const) {
+            await expect(
+                hiddenReader.callTool({ name, arguments: args }),
+            ).rejects.toThrow();
+        }
+    },
+);
+
 test("authentication errors advertise public OAuth discovery without exposing tools", async () => {
     for (const token of [undefined, "invalid"]) {
         const response = await request(token);
@@ -238,6 +326,10 @@ test("authentication errors advertise public OAuth discovery without exposing to
         resource: testAuthSettings.audience,
         authorization_servers: [testAuthSettings.issuer],
         bearer_methods_supported: ["header"],
+        scopes_supported: expect.arrayContaining([
+            Scope.PhotosRead,
+            Scope.PhotosReadHidden,
+        ]),
     });
 });
 
