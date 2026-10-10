@@ -28,8 +28,11 @@ export class ApplicationProcess {
             process.once("SIGINT", stop);
             process.once("SIGTERM", stop);
             try {
-                console.info("Listening on " + runtime.url);
-                telemetry.log("Listening on " + runtime.url);
+                const address = config.unix
+                    ? "unix:" + config.unix
+                    : runtime.url.toString();
+                console.info("Listening on " + address);
+                telemetry.log("Listening on " + address);
                 await shutdown.promise;
             } finally {
                 process.off("SIGINT", stop);

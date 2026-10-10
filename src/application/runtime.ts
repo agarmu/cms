@@ -8,6 +8,7 @@ import { StorageFactory } from "./storage";
 import type { AuthenticationProvider } from "../auth/provider";
 import { Rfc9068AuthenticationProvider } from "../auth/rfc-9068";
 import { NoAuthenticationProvider } from "../auth/no-auth";
+import { removeStaleSocket } from "./unix-socket";
 
 export type RuntimeDependencies = {
     authentication?: AuthenticationProvider;
@@ -72,12 +73,31 @@ export class ApplicationRuntime {
                 });
                 this.server = await Tracing.withSpan(
                     "http.server.start",
-                    async () =>
-                        Bun.serve({
-                            port: this.config.port,
-                            hostname: this.config.hostname,
-                            fetch: this.application!.http.fetch,
-                        }),
+                    async () => {
+                        const serve = () =>
+                            Bun.serve({
+                                ...(this.config.unix
+                                    ? { unix: this.config.unix }
+                                    : {
+                                          port: this.config.port,
+                                          hostname: this.config.hostname,
+                                      }),
+                                fetch: this.application!.http.fetch,
+                            });
+                        try {
+                            return serve();
+                        } catch (error) {
+                            if (
+                                !this.config.unix ||
+                                !(error instanceof Error) ||
+                                !("code" in error) ||
+                                error.code !== "EADDRINUSE" ||
+                                !(await removeStaleSocket(this.config.unix))
+                            )
+                                throw error;
+                            return serve();
+                        }
+                    },
                 );
                 this.application.start();
             });

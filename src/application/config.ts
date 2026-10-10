@@ -23,6 +23,11 @@ export class ApplicationConfig {
                 .strictObject({
                     port: z.int().min(0).max(65535).default(3000),
                     bindLocal: z.boolean().default(false),
+                    unix: z
+                        .string()
+                        .min(1)
+                        .refine((value) => !value.includes("\0"))
+                        .optional(),
                     baseUrl: publicUrl
                         .refine(
                             (value) =>
@@ -57,6 +62,7 @@ export class ApplicationConfig {
     readonly mcp: McpConfiguration | undefined;
     readonly port: number;
     readonly hostname: string;
+    readonly unix: string | undefined;
     readonly storage: StorageConfiguration;
     readonly images: ImageConfiguration;
     readonly workers: WorkerConfiguration;
@@ -88,6 +94,7 @@ export class ApplicationConfig {
                 ? new McpConfiguration(this.baseUrl, this.auth, settings.mcp)
                 : undefined;
         this.port = settings.serve.port;
+        this.unix = settings.serve.unix;
         this.hostname =
             settings.auth.kind === "no-auth" || settings.serve.bindLocal
                 ? "127.0.0.1"

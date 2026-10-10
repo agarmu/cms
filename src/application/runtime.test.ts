@@ -7,6 +7,9 @@ import {
 } from "../auth/test-fixtures";
 import { expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
@@ -17,6 +20,83 @@ import { ApplicationRuntime } from "./runtime";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 
 const databaseUrl = "postgres://localhost/cms_test";
+
+test.each([false, true])(
+    "runtime serves and releases a Unix socket after crash=%s",
+    async (crashed) => {
+        const directory = await mkdtemp(join(tmpdir(), "cms-"));
+        const unix = join(directory, "http.sock");
+        const client = new PGlite();
+        const db = drizzle(client, { schema: schema.definition });
+        const config = new ApplicationConfig({
+            auth: { kind: "no-auth" },
+            database: { url: databaseUrl },
+            storage: { backend: "local", directory: "./data/blobs" },
+            serve: { unix },
+        });
+        let closes = 0;
+        const runtime = new ApplicationRuntime(config, {
+            connect: async () => ({
+                db,
+                close: async () => {
+                    closes++;
+                    await client.close();
+                },
+            }),
+        });
+        try {
+            await migrate(db, {
+                migrationsFolder: fileURLToPath(
+                    new URL("../../migrations/", import.meta.url),
+                ),
+            });
+            if (crashed) {
+                const child = Bun.spawn(
+                    [
+                        process.execPath,
+                        "-e",
+                        `Bun.serve({ unix: ${JSON.stringify(unix)}, fetch: () => new Response("old") }); console.log("ready");`,
+                    ],
+                    { stdout: "pipe", stderr: "pipe" },
+                );
+                try {
+                    const reader = child.stdout.getReader();
+                    const { value } = await reader.read();
+                    reader.releaseLock();
+                    expect(new TextDecoder().decode(value)).toContain("ready");
+                } finally {
+                    child.kill(9);
+                    await child.exited;
+                }
+            }
+            await runtime.start();
+            const response = await fetch("http://localhost/openapi.json", {
+                unix,
+            });
+            expect(response.status).toBe(200);
+            expect(await response.json()).toHaveProperty("openapi");
+            await runtime.stop();
+            expect(closes).toBe(1);
+            await expect(
+                fetch("http://localhost/openapi.json", { unix }),
+            ).rejects.toThrow();
+            const rebound = Bun.serve({
+                unix,
+                fetch: () => new Response("rebound"),
+            });
+            try {
+                expect(
+                    await (await fetch("http://localhost", { unix })).text(),
+                ).toBe("rebound");
+            } finally {
+                await rebound.stop(true);
+            }
+        } finally {
+            await runtime.stop();
+            await rm(directory, { recursive: true, force: true });
+        }
+    },
+);
 
 test("runtime uses the configured RFC 9068 provider for real HTTP requests", async () => {
     const key = await generateKeyPair("RS256");

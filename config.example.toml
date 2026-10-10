@@ -3,8 +3,8 @@
 [serve]
 baseUrl = "https://photos.example.com"
 port = 3000
-# Bind to loopback even with authentication enabled. no-auth always uses loopback.
 bindLocal = false
+# unix = "./data/cms.sock"
 
 [mcp]
 enabled = false
