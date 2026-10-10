@@ -12,6 +12,7 @@ import { migrate } from "drizzle-orm/pglite/migrator";
 import { fileURLToPath } from "node:url";
 import { ImageUploadApi } from "../api/image-uploads";
 import sharp from "sharp";
+import { ImageConfiguration } from "../services/image-config";
 import { z } from "zod";
 import { DatabaseSchema as schema } from "../db/schema";
 import { Scope } from "../api/scope";
@@ -82,6 +83,7 @@ const app = new HttpApplication(
     {
         db,
         mcp: config,
+        imageConfig: new ImageConfiguration({ maxBytes: 30_000 }),
         getImageStorage: () => new ImageStorage(blobs),
         reportError: (error) => errors.push(error),
         authentication: {
@@ -180,7 +182,7 @@ test.each(["legacy", "auto"] as const)(
             mode === "auto" ? "2026-07-28" : "2025-11-25",
         );
         const { tools } = await client.listTools();
-        expect(tools).toHaveLength(14);
+        expect(tools).toHaveLength(15);
         expect(
             tools.find((tool) => tool.name === "list_photos")?.annotations
                 ?.readOnlyHint,
@@ -333,7 +335,7 @@ test("MCP validates hosts, browser origins, preflight, and body limits", async (
             await request(
                 "admin",
                 {},
-                JSON.stringify({ padding: "x".repeat(65_536) }),
+                JSON.stringify({ padding: "x".repeat(110_000) }),
             )
         ).status,
     ).toBe(413);
@@ -468,24 +470,33 @@ test("upload tools preserve ownership through processing, preview, and creation"
         }),
     );
     const uploadId = receipt["id"] as string;
-    const upload = receipt["upload"] as {
-        url: string;
-        method: string;
-        headers: Record<string, string>;
-    };
-    expect(upload).toMatchObject({
-        method: "PUT",
-        headers: { "Content-Type": "image/png" },
-    });
+    expect(receipt).not.toHaveProperty("upload");
     const bytes = await sharp({
         create: { width: 32, height: 16, channels: 3, background: "red" },
     })
         .png()
         .toBuffer();
-    objects.set(
-        new URL(upload.url).pathname.slice(1),
-        new Blob([bytes], { type: "image/png" }),
-    );
+    const uploaded = await creator.callTool({
+        name: "upload_photo_image",
+        arguments: {
+            uploadId,
+            contentType: "image/png",
+            dataBase64: bytes.toString("base64"),
+        },
+    });
+    expect(uploaded.isError).not.toBe(true);
+    expect(
+        (
+            await other.callTool({
+                name: "upload_photo_image",
+                arguments: {
+                    uploadId,
+                    contentType: "image/png",
+                    dataBase64: bytes.toString("base64"),
+                },
+            })
+        ).isError,
+    ).toBe(true);
     for (const name of [
         "get_photo_upload",
         "complete_photo_upload",

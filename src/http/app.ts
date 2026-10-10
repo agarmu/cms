@@ -20,6 +20,7 @@ import type { McpConfiguration } from "../mcp/config";
 import type { LocalUploadStorage } from "../services/local-upload-storage";
 import { ImageUploadApi } from "../api/image-uploads";
 import { NotFoundError } from "../lib/errors";
+import { ImageConfiguration } from "../services/image-config";
 
 export class HttpApplication {
     readonly app;
@@ -31,6 +32,7 @@ export class HttpApplication {
             reportError: (error: Error) => void;
             getImageStorage: () => ImageStorage;
             getLocalUploads?: () => LocalUploadStorage | undefined;
+            imageConfig?: ImageConfiguration | undefined;
             authentication: AuthenticationProvider;
             allowedSubjects: readonly string[];
             mcp?: McpConfiguration | undefined;
@@ -100,6 +102,11 @@ export class HttpApplication {
                 .use(routes);
             if (options.mcp) {
                 const mcp = options.mcp;
+                const maxMcpBytes = Math.max(
+                    config.maxBodyBytes,
+                    (options.imageConfig ?? new ImageConfiguration())
+                        .mcpMaxBodyBytes,
+                );
                 const authorization = mcp.authorization;
                 if (authorization)
                     for (const path of [
@@ -125,8 +132,8 @@ export class HttpApplication {
                             options.authentication,
                             options.allowedSubjects,
                         ),
-                        new HttpBodyLimit(config.maxBodyBytes),
-                        config.maxBodyBytes,
+                        new HttpBodyLimit(maxMcpBytes),
+                        maxMcpBytes,
                     ).app,
                 );
             }

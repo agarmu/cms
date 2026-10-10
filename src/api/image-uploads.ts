@@ -18,6 +18,56 @@ type Upload = typeof uploads.$inferSelect;
 export class UploadExpiredError extends ConflictError {}
 
 export class ImageUploadApi {
+    @ApiScope.scoped(Scope.PhotosCreate)
+    static async createForMcp(db: Database, identity: AuthIdentity) {
+        if (!identity.scopes.has(Scope.PhotosCreate))
+            throw new ForbiddenError(`Upload requires ${Scope.PhotosCreate}`);
+        const [upload] = await db
+            .insert(uploads)
+            .values({
+                id: randomUUID(),
+                photoId: randomUUID(),
+                kind: "creation",
+                ownerIssuer: identity.issuer,
+                ownerSubject: identity.subject,
+            })
+            .returning()
+            .execute();
+        if (!upload) throw new Error("Upload insert returned no record");
+        return ImageUploadApi.status(upload);
+    }
+
+    @ApiScope.scoped(Scope.PhotosCreate)
+    static async uploadOriginal(
+        db: Database,
+        storage: ImageStorage,
+        uploadId: UUID,
+        contentType: string,
+        dataBase64: string,
+        identity: AuthIdentity,
+    ) {
+        await db.transaction(async (tx) => {
+            const [upload] = await tx
+                .select()
+                .from(uploads)
+                .where(eq(uploads.id, uploadId))
+                .for("update")
+                .execute();
+            if (!upload) throw new NotFoundError("Upload not found");
+            ImageUploadApi.requireAccess(upload, identity);
+            ImageUploadApi.requireActive(upload);
+            if (upload.completed || upload.consumed)
+                throw new ConflictError("Upload is already complete");
+            await storage.uploadOriginal(
+                upload.photoId,
+                upload.id,
+                contentType,
+                dataBase64,
+            );
+        });
+        return ImageUploadApi.read(db, uploadId, identity);
+    }
+
     static async requirePendingOriginal(db: ReadDatabase, key: string) {
         const [, photoId, uploadId] = key.split("/");
         const upload = await ImageUploadApi.receipt(db, uploadId as UUID);

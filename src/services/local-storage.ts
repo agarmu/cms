@@ -1,4 +1,5 @@
-import { mkdir, unlink, writeFile } from "node:fs/promises";
+import { mkdir, rename, unlink, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import type { BlobDownload, BlobStorage, StoredBlob } from "./blob-storage";
 import { Tracing } from "../telemetry/tracing";
@@ -58,7 +59,15 @@ export class LocalStorage implements BlobStorage {
         });
         const path = this.path(key);
         await mkdir(dirname(path), { recursive: true });
-        await writeFile(path, data);
+        const temporary = path + "." + randomUUID() + ".tmp";
+        try {
+            await writeFile(temporary, data);
+            await rename(temporary, path);
+        } finally {
+            await unlink(temporary).catch((error: NodeJS.ErrnoException) => {
+                if (error.code !== "ENOENT") throw error;
+            });
+        }
     }
 
     @Tracing.traced("storage.local.delete")

@@ -56,6 +56,7 @@ export class Application {
                         {
                             db: options.db,
                             getImageStorage: this.getImageStorage,
+                            imageConfig: options.imageConfig,
                             getLocalUploads: () => {
                                 const storage = this.getBlobStorage();
                                 return storage instanceof LocalUploadStorage

@@ -8,6 +8,9 @@ export type ImageSettings = {
 };
 
 export class ImageConfiguration {
+    get mcpMaxBodyBytes() {
+        return Math.ceil(this.maxBytes / 3) * 4 + 65_536;
+    }
     static readonly schema = z.strictObject({
         maxBytes: z
             .int()

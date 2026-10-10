@@ -73,6 +73,26 @@ export class ImageStorage {
         return `originals/${photoId}/${uploadId}`;
     }
 
+    async uploadOriginal(
+        photoId: string,
+        uploadId: string,
+        contentType: string,
+        dataBase64: string,
+    ) {
+        if (dataBase64.length > Math.ceil(this.config.maxBytes / 3) * 4)
+            throw new ImageTooLargeError("Image is too large");
+        const bytes = Buffer.from(dataBase64, "base64");
+        if (!bytes.length || bytes.toString("base64") !== dataBase64)
+            throw new InvalidImageError("Image data must be valid base64");
+        if (bytes.length > this.config.maxBytes)
+            throw new ImageTooLargeError("Image is too large");
+        await this.storage.write(
+            this.originalKey(photoId, uploadId),
+            bytes,
+            contentType,
+        );
+    }
+
     async deleteOriginal(photoId: string, uploadId: string) {
         await this.storage.delete(this.originalKey(photoId, uploadId));
     }

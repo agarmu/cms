@@ -85,7 +85,7 @@ export class ApplicationRuntime {
                         const serve = () =>
                             Bun.serve({
                                 maxRequestBodySize: Math.max(
-                                    this.config.images.maxBytes,
+                                    this.config.images.mcpMaxBodyBytes,
                                     this.config.http.maxBodyBytes,
                                 ),
                                 ...(this.config.unix

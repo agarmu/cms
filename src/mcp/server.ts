@@ -223,17 +223,34 @@ export class PhotoMcpServer extends McpServer {
             "start_photo_upload",
             {
                 description:
-                    "Start an upload for a new photo. Upload bytes to the returned URL using its method and headers, then complete the upload and call create_photo. Requires photos:create.",
+                    "Start an upload for a new photo and return its upload ID. Send base64 image bytes with upload_photo_image, then complete_photo_upload and create_photo. Requires photos:create.",
                 inputSchema: UploadValidation.uploadRequest,
                 scopeChallenge: () => this.scopeChallenge(Scope.PhotosCreate),
                 annotations: write,
             },
-            ({ contentType }) =>
+            () => this.run(() => ImageUploadApi.createForMcp(db, identity)),
+        );
+        this.registerTool(
+            "upload_photo_image",
+            {
+                description:
+                    "Upload image bytes directly through MCP for your pending upload. dataBase64 must be standard base64 without a data URL prefix. Next call complete_photo_upload. Requires photos:create.",
+                inputSchema: uploadInput.extend({
+                    contentType:
+                        UploadValidation.uploadRequest.shape.contentType,
+                    dataBase64: z.string().min(1),
+                }),
+                scopeChallenge: () => this.scopeChallenge(Scope.PhotosCreate),
+                annotations: destructive,
+            },
+            ({ uploadId, contentType, dataBase64 }) =>
                 this.run(() =>
-                    ImageUploadApi.create(
+                    ImageUploadApi.uploadOriginal(
                         db,
                         options.getImageStorage(),
+                        uploadId,
                         contentType,
+                        dataBase64,
                         identity,
                     ),
                 ),
