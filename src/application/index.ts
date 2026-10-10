@@ -11,6 +11,7 @@ import { WorkerConfiguration } from "../services/worker-config";
 import { Tracing } from "../telemetry/tracing";
 import type { AuthenticationProvider } from "../auth/provider";
 import type { McpConfiguration } from "../mcp/config";
+import { LocalUploadStorage } from "../services/local-upload-storage";
 
 export type ApplicationDependencies = {
     authentication: AuthenticationProvider;
@@ -27,6 +28,7 @@ export type ApplicationDependencies = {
 export class Application {
     readonly http: HttpApplication;
     private storage: ImageStorage | undefined;
+    private blobs: BlobStorage | undefined;
     private readonly worker: BackgroundWorker;
     private stopped = false;
 
@@ -54,6 +56,12 @@ export class Application {
                         {
                             db: options.db,
                             getImageStorage: this.getImageStorage,
+                            getLocalUploads: () => {
+                                const storage = this.getBlobStorage();
+                                return storage instanceof LocalUploadStorage
+                                    ? storage
+                                    : undefined;
+                            },
                             reportError: options.reportError,
                             authentication: options.authentication,
                             allowedSubjects: options.allowedSubjects,
@@ -83,10 +91,13 @@ export class Application {
             "image.storage.initialize",
             () =>
                 new ImageStorage(
-                    this.options.getBlobStorage(),
+                    this.getBlobStorage(),
                     this.options.imageConfig,
                 ),
         ));
+
+    private readonly getBlobStorage = () =>
+        (this.blobs ??= this.options.getBlobStorage());
 
     start() {
         return Tracing.withSyncSpan("application.start", () => {

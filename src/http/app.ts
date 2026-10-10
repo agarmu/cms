@@ -17,6 +17,9 @@ import type { AuthenticationProvider } from "../auth/provider";
 import { HttpAuthentication } from "./auth";
 import { McpRoutes } from "../mcp/routes";
 import type { McpConfiguration } from "../mcp/config";
+import type { LocalUploadStorage } from "../services/local-upload-storage";
+import { ImageUploadApi } from "../api/image-uploads";
+import { NotFoundError } from "../lib/errors";
 
 export class HttpApplication {
     readonly app;
@@ -27,6 +30,7 @@ export class HttpApplication {
             db: Database;
             reportError: (error: Error) => void;
             getImageStorage: () => ImageStorage;
+            getLocalUploads?: () => LocalUploadStorage | undefined;
             authentication: AuthenticationProvider;
             allowedSubjects: readonly string[];
             mcp?: McpConfiguration | undefined;
@@ -42,10 +46,15 @@ export class HttpApplication {
                     "/.well-known/oauth-protected-resource/mcp",
                 ])
                     publicPaths.add(path);
-            const protectedRequest = (request: Request) =>
-                !publicPaths.has(
-                    new URL(request.url).pathname.replace(/\/$/, ""),
-                );
+            const protectedRequest = (request: Request) => {
+                const path = new URL(request.url).pathname.replace(/\/$/, "");
+                if (
+                    request.method === "PUT" &&
+                    /^\/api\/local-uploads\/[^/]+$/.test(path)
+                )
+                    return false;
+                return !publicPaths.has(path);
+            };
             const auth = new HttpAuthentication(
                 options.authentication,
                 options.allowedSubjects,
@@ -67,6 +76,24 @@ export class HttpApplication {
             const app = new Elysia()
                 .use(new HttpTelemetry().plugin)
                 .use(new HttpErrorHandler(options.reportError).plugin)
+                .put(
+                    "/api/local-uploads/:token",
+                    async ({ params, request }) => {
+                        const storage = options.getLocalUploads?.();
+                        if (!storage)
+                            throw new NotFoundError(
+                                "Local uploads are unavailable",
+                            );
+                        await storage.receive(params.token, request, (key) =>
+                            ImageUploadApi.requirePendingOriginal(
+                                options.db,
+                                key,
+                            ),
+                        );
+                        return new Response(null, { status: 204 });
+                    },
+                    { parse: "none", detail: { hide: true } },
+                )
                 .get("/openapi.json", () =>
                     HttpOpenApi.document(routes, options.authentication.scheme),
                 )

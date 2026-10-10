@@ -42,7 +42,6 @@ endpoint = "https://example-photo-bucket.s3.us-east-1.amazonaws.com"
 # For local storage, replace the settings above with:
 # backend = "local"
 # directory = "./data/blobs"
-# Local storage supports reads and writes, but does not issue direct-upload URLs.
 
 [images]
 maxBytes = 26_214_400

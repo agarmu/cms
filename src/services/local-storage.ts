@@ -10,7 +10,7 @@ export class LocalStorage implements BlobStorage {
         this.directory = resolve(directory);
     }
 
-    private path(key: string) {
+    protected path(key: string) {
         const path = resolve(this.directory, key);
         const name = relative(this.directory, path);
         if (

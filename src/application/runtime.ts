@@ -47,7 +47,15 @@ export class ApplicationRuntime {
                 this.connection = await (
                     this.options.connect ?? DatabaseConnection.open
                 )(this.config.database.clientOptions());
-                const factory = new StorageFactory(this.config.storage);
+                const factory = new StorageFactory(
+                    this.config.storage,
+                    this.config.baseUrl
+                        ? {
+                              baseUrl: this.config.baseUrl,
+                              maxBytes: this.config.images.maxBytes,
+                          }
+                        : undefined,
+                );
                 this.application = new Application({
                     authentication:
                         this.options.authentication ??
@@ -76,6 +84,10 @@ export class ApplicationRuntime {
                     async () => {
                         const serve = () =>
                             Bun.serve({
+                                maxRequestBodySize: Math.max(
+                                    this.config.images.maxBytes,
+                                    this.config.http.maxBodyBytes,
+                                ),
                                 ...(this.config.unix
                                     ? { unix: this.config.unix }
                                     : {

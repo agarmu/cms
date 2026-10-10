@@ -25,8 +25,8 @@ const document = (await (
 ).json()) as ReturnType<typeof HttpOpenApi.document>;
 
 test("OpenAPI is public and describes every HTTP resource, without MCP or discovery routes", () => {
-    const resources = app.app.routes.filter((route) =>
-        route.path.startsWith("/api/"),
+    const resources = app.app.routes.filter(
+        (route) => route.path.startsWith("/api/") && !route.hooks.detail?.hide,
     );
     const operations = new Set<string>();
     for (const [path, item] of Object.entries(document.paths)) {

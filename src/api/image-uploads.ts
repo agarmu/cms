@@ -18,6 +18,16 @@ type Upload = typeof uploads.$inferSelect;
 export class UploadExpiredError extends ConflictError {}
 
 export class ImageUploadApi {
+    static async requirePendingOriginal(db: ReadDatabase, key: string) {
+        const [, photoId, uploadId] = key.split("/");
+        const upload = await ImageUploadApi.receipt(db, uploadId as UUID);
+        if (upload.photoId !== photoId)
+            throw new NotFoundError("Upload not found");
+        ImageUploadApi.requireActive(upload);
+        if (upload.completed || upload.consumed)
+            throw new ConflictError("Upload is already complete");
+    }
+
     private static async receipt(db: ReadDatabase, uploadId: UUID) {
         const [upload] = await db
             .select()
