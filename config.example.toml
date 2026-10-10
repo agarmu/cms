@@ -1,5 +1,5 @@
 # Example config file
-# All times in ms
+# All durations are in milliseconds.
 [serve]
 baseUrl = "https://photos.example.com"
 port = 3000
@@ -23,12 +23,11 @@ allowedSubjects = ["auth0|replace-with-your-user-id"]
 # Public connection details
 # keep the password in secrets.toml.
 url = "postgres://example-user@localhost:5432/photos_cms"
-# all times in ms
 connectTimeout = 10_000
 
 [database.pool]
 maxConnections = 10
-idleTimeout = 30_000 # Milliseconds.
+idleTimeout = 30_000
 
 [database.tls]
 mode = "disable"
@@ -66,9 +65,9 @@ interval = 5_000
 batchSize = 10
 
 [workers.backoff]
-# exp backoff in case of errors
-maxRetries = 5 # how long to keep going
-multiplier = 2 # factor to multiply delay by (after each failure)
+# Exponential backoff after failed attempts.
+maxRetries = 5 # Retries after the initial attempt.
+multiplier = 2 # Retry-delay multiplier.
 
 [workers.upload]
 waitTime = 3_600_000
