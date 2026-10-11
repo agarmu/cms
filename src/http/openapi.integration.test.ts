@@ -43,7 +43,9 @@ test.each(["bearer", "none"] as const)(
         );
         const problems = await lintFromString({
             source: await response.text(),
-            config: await createConfig({ extends: ["minimal"] }),
+            config: await createConfig({
+                extends: ["recommended-strict"],
+            }),
         });
         expect(problems).toEqual([]);
         expect(errors).toEqual([]);

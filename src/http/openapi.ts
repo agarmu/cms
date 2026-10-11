@@ -69,7 +69,14 @@ export class HttpOpenApi {
         }
         return {
             openapi: "3.1.2",
-            info: { title: "Photos CMS", version: "1.0.0" },
+            info: {
+                title: "Photos CMS",
+                version: "1.0.0",
+                license: {
+                    name: "GNU General Public License v3.0 or later",
+                    identifier: "GPL-3.0-or-later",
+                },
+            },
             ...generated,
             servers: [{ url: "/" }],
             components: {
