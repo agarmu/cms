@@ -1,0 +1,10 @@
+*
+!Dockerfile
+!package.json
+!bun.lock
+!src/
+!src/**
+!migrations/
+!migrations/**
+!COPYING
+src/**/*.test.ts
