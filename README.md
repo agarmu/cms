@@ -23,6 +23,19 @@ MCP tools for uploading photos and editing metadata.
 Follow the [quickstart guide](docs/quickstart.md) to run the CMS locally with
 PostgreSQL, local image storage, and no authentication.
 
+## Docker image
+
+Images are published on [GHCR](https://github.com/agarmu/cms/pkgs/container/cms)
+for x86-64 Linux. Replace `<tag>` with a published release tag:
+
+```sh
+docker pull ghcr.io/agarmu/cms:<tag>
+```
+
+The image also works with Podman. Mount your configuration files at
+`/app/config.toml` and `/app/secrets.toml`; see the
+[configuration reference](docs/configuration.md) for settings.
+
 ## Documentation
 
 - [Quickstart](docs/quickstart.md)
