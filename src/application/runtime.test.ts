@@ -112,13 +112,13 @@ test.each([false, true])(
 );
 
 test("runtime uses the configured RFC 9068 provider for real HTTP requests", async () => {
-    const key = await generateKeyPair("RS256");
+    const key = await generateKeyPair("ES256");
     const jwks = {
         keys: [
             {
                 ...(await exportJWK(key.publicKey)),
                 kid: "runtime",
-                alg: "RS256",
+                alg: "ES256",
                 use: "sig",
             },
         ],
@@ -145,7 +145,7 @@ test("runtime uses the configured RFC 9068 provider for real HTTP requests", asy
     });
     const accessToken = (sub: string, scope: string) =>
         new SignJWT({ scope, client_id: "runtime-client" })
-            .setProtectedHeader({ alg: "RS256", kid: "runtime", typ: "at+jwt" })
+            .setProtectedHeader({ alg: "ES256", kid: "runtime", typ: "at+jwt" })
             .setIssuer(issuer.url.href)
             .setAudience(testAuthSettings.audience)
             .setSubject(sub)

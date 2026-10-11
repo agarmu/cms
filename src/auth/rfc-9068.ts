@@ -38,7 +38,7 @@ export class Rfc9068AuthenticationProvider implements AuthenticationProvider {
     constructor(
         private readonly config: Pick<
             Rfc9068Settings,
-            "issuer" | "audience" | "jwksUrl"
+            "issuer" | "audience" | "jwksUrl" | "algorithm"
         >,
     ) {
         this.keys = createRemoteJWKSet(new URL(config.jwksUrl), {
@@ -59,7 +59,7 @@ export class Rfc9068AuthenticationProvider implements AuthenticationProvider {
             const { payload } = await jwtVerify(token, this.keys, {
                 issuer: this.config.issuer,
                 audience: this.config.audience,
-                algorithms: ["RS256"],
+                algorithms: [this.config.algorithm],
                 typ: "at+jwt",
                 requiredClaims: ["sub", "exp", "iat", "client_id", "jti"],
             });

@@ -16,6 +16,7 @@ import type { AuthenticationProvider, AuthIdentity } from "./provider";
 
 export const testAuthSettings = {
     kind: "rfc-9068" as const,
+    algorithm: "ES256" as const,
     issuer: "https://issuer.example.com/",
     audience: "https://cms.example.com/",
     jwksUrl: "https://issuer.example.com/.well-known/jwks.json",
@@ -37,6 +38,7 @@ export const testAuthDependencies = {
 export const testAuthToml = `
 [auth]
 kind = "rfc-9068"
+algorithm = "${testAuthSettings.algorithm}"
 issuer = "${testAuthSettings.issuer}"
 audience = "${testAuthSettings.audience}"
 jwksUrl = "${testAuthSettings.jwksUrl}"

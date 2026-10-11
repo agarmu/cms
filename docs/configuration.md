@@ -79,14 +79,29 @@ Settings in `[auth]`:
 | Key               | Requirement                               |
 | ----------------- | ----------------------------------------- |
 | `kind`            | `"rfc-9068"`                              |
+| `algorithm`       | `"ES256"` (default) or `"RS256"`          |
 | `issuer`          | Token issuer                              |
 | `audience`        | Expected token audience                   |
 | `jwksUrl`         | Signing-key endpoint                      |
 | `allowedSubjects` | Nonempty list of permitted token subjects |
 
-Tokens must use RS256, have type `at+jwt`, and include `sub`, `exp`, `iat`,
-`client_id`, and `jti`. The `sub` claim must be in `allowedSubjects`. Permissions
-are taken from the space-separated `scope` claim.
+Tokens must use the configured `algorithm`, have type `at+jwt`, and include
+`sub`, `exp`, `iat`, `client_id`, and `jti`. The `sub` claim must be in
+`allowedSubjects`. Permissions are taken from the space-separated `scope` claim.
+
+Configure the authorization server to issue access tokens using the selected
+algorithm and publish the corresponding signing keys at `jwksUrl`. ES256 uses
+ECDSA with P-256 and SHA-256; RS256 uses RSA with SHA-256. Only the configured
+algorithm is accepted, even if JWKS publishes keys for both.
+
+For Logto using ES256:
+
+```toml
+[auth]
+kind = "rfc-9068"
+algorithm = "ES256"
+# Set issuer, audience, jwksUrl, and allowedSubjects for your deployment.
+```
 
 When MCP is enabled, `audience` must be a URL on the same origin as `serve.baseUrl`,
 with either the root path or `/mcp`.

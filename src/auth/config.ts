@@ -26,6 +26,7 @@ const endpoint = z.url().refine((value) => {
 export class AuthenticationConfiguration {
     static readonly rfc9068 = z.strictObject({
         kind: z.literal("rfc-9068"),
+        algorithm: z.enum(["ES256", "RS256"]).default("ES256"),
         issuer: endpoint.refine(
             (value) => !value.includes("?"),
             "Issuer cannot contain a query",

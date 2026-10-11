@@ -27,10 +27,11 @@ enabled = false
 # kind = "no-auth"
 [auth]
 kind = "rfc-9068"
-issuer = "https://your-tenant.us.auth0.com/"
+algorithm = "ES256"
+issuer = "https://auth.example.com/"
 audience = "https://photos.example.com/"
-jwksUrl = "https://your-tenant.us.auth0.com/.well-known/jwks.json"
-allowedSubjects = ["auth0|replace-with-your-user-id"]
+jwksUrl = "https://auth.example.com/.well-known/jwks.json"
+allowedSubjects = ["replace-with-your-user-id"]
 
 [database]
 # Public connection details

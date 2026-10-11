@@ -22,11 +22,11 @@ import {
 } from "./provider";
 import { testAuthSettings } from "./test-fixtures";
 
-const key = await generateKeyPair("RS256");
+const key = await generateKeyPair("ES256");
 const jwk = {
     ...(await exportJWK(key.publicKey)),
     kid: "test",
-    alg: "RS256",
+    alg: "ES256",
     use: "sig",
 };
 let server: ReturnType<typeof Bun.serve>;
@@ -54,7 +54,7 @@ afterAll(() => server?.stop(true));
 function token(
     claims: Record<string, unknown> = {},
     signingKey = key.privateKey,
-    header = { alg: "RS256", kid: "test", typ: "at+jwt" },
+    header = { alg: "ES256", kid: "test", typ: "at+jwt" },
 ) {
     const now = Math.floor(Date.now() / 1000);
     return new SignJWT({
@@ -123,16 +123,69 @@ test("accepts audience arrays and grants no scopes when the claim is absent", as
     expect(identity.scopes.size).toBe(0);
 });
 
+test("accepts only the configured algorithm even when JWKS publishes both key types", async () => {
+    const rsaKey = await generateKeyPair("RS256");
+    const jwks = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch: () => Response.json({ keys: [jwk, rsaJwk] }),
+    });
+    const rsaJwk = {
+        ...(await exportJWK(rsaKey.publicKey)),
+        kid: "rsa",
+        alg: "RS256",
+        use: "sig",
+    };
+    try {
+        const tokens = {
+            ES256: await token(),
+            RS256: await token({}, rsaKey.privateKey, {
+                alg: "RS256",
+                kid: "rsa",
+                typ: "at+jwt",
+            }),
+        };
+        for (const algorithm of ["ES256", "RS256"] as const) {
+            const auth = new Rfc9068AuthenticationProvider({
+                ...testAuthSettings,
+                algorithm,
+                jwksUrl: jwks.url.href,
+            });
+            expect(await auth.authenticate(tokens[algorithm])).toEqual({
+                subject: "test-user",
+                issuer: testAuthSettings.issuer,
+                scopes: new Set([Scope.PhotosRead]),
+            });
+            const other = algorithm === "ES256" ? "RS256" : "ES256";
+            await expect(
+                auth.authenticate(tokens[other]),
+            ).rejects.toBeInstanceOf(AuthenticationError);
+        }
+    } finally {
+        jwks.stop(true);
+    }
+});
+
 test("rejects forged signatures, unknown keys, and disallowed algorithms", async () => {
-    const wrongKey = await generateKeyPair("RS256");
+    const wrongKey = await generateKeyPair("ES256");
     await expect(
         provider.authenticate(await token({}, wrongKey.privateKey)),
     ).rejects.toBeInstanceOf(AuthenticationError);
     await expect(
         provider.authenticate(
             await token({}, key.privateKey, {
-                alg: "RS256",
+                alg: "ES256",
                 kid: "unknown",
+                typ: "at+jwt",
+            }),
+        ),
+    ).rejects.toBeInstanceOf(AuthenticationError);
+    const rsaKey = await generateKeyPair("RS256");
+    await expect(
+        provider.authenticate(
+            await token({}, rsaKey.privateKey, {
+                alg: "RS256",
+                kid: "test",
                 typ: "at+jwt",
             }),
         ),
@@ -150,7 +203,7 @@ test("requires the access-token type and accepts its full media type", async () 
         await expect(
             provider.authenticate(
                 await token({}, key.privateKey, {
-                    alg: "RS256",
+                    alg: "ES256",
                     kid: "test",
                     typ,
                 }),
@@ -159,7 +212,7 @@ test("requires the access-token type and accepts its full media type", async () 
     }
     const identity = await provider.authenticate(
         await token({}, key.privateKey, {
-            alg: "RS256",
+            alg: "ES256",
             kid: "test",
             typ: "application/at+jwt",
         }),
@@ -207,6 +260,8 @@ test("rejects unsupported or insecure settings", () => {
         { ...testAuthSettings, issuer: "not a url" },
         { ...testAuthSettings, jwksUrl: "not a url" },
         { ...testAuthSettings, kind: "none" },
+        { ...testAuthSettings, algorithm: "HS256" },
+        { ...testAuthSettings, algorithm: "ES384" },
         { ...testAuthSettings, issuer: "http://issuer.example.com/" },
         {
             ...testAuthSettings,
