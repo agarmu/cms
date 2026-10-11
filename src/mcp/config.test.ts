@@ -24,28 +24,14 @@ test("derives MCP and discovery URLs from the public base URL", () => {
     expect(config.authorization?.metadataUrl).toBe(
         "https://cms.example.com/.well-known/oauth-protected-resource/mcp",
     );
-    expect(config.authorization?.resource).toBe(testAuthSettings.audience);
+    expect(config.authorization?.resource).toBe("https://cms.example.com/");
     expect(config.allowedOrigins).toEqual(new Set(["https://cms.example.com"]));
 });
 
-test("requires an audience for the same CMS and allows loopback development", () => {
-    for (const audience of [
-        "cms",
-        "https://another.example.com/",
-        "https://cms.example.com/unrelated",
-    ]) {
-        expect(
-            () =>
-                new McpConfiguration(new URL("https://cms.example.com"), {
-                    ...testAuthSettings,
-                    audience,
-                }),
-        ).toThrow("MCP requires");
-    }
-    expect(
-        new McpConfiguration(new URL("http://localhost:3000"), {
-            ...testAuthSettings,
-            audience: "http://localhost:3000/mcp",
-        }).url.href,
-    ).toBe("http://localhost:3000/mcp");
+test("derives the loopback OAuth resource from the base URL", () => {
+    const config = new McpConfiguration(
+        new URL("http://localhost:3000"),
+        testAuthSettings,
+    );
+    expect(config.authorization?.resource).toBe("http://localhost:3000/");
 });

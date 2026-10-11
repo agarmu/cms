@@ -29,7 +29,6 @@ enabled = false
 kind = "rfc-9068"
 algorithm = "ES256"
 issuer = "https://auth.example.com/"
-audience = "https://photos.example.com/"
 jwksUrl = "https://auth.example.com/.well-known/jwks.json"
 allowedSubjects = ["replace-with-your-user-id"]
 

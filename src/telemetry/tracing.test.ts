@@ -505,7 +505,7 @@ test("application configuration, assembly, startup, and shutdown emit spans", as
         const config = new ApplicationConfig({
             auth: testAuthSettings,
             database: { url: "postgres://localhost/test" },
-            serve: { port: 0 },
+            serve: { port: 0, baseUrl: "https://cms.example.com" },
             storage: { backend: "local", directory: "./data/blobs" },
         });
         const application = await new ApplicationRuntime(config, {

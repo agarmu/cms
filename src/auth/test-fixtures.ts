@@ -14,11 +14,11 @@
 import { Scope } from "../api/scope";
 import type { AuthenticationProvider, AuthIdentity } from "./provider";
 
+export const testBaseUrl = "https://cms.example.com/";
 export const testAuthSettings = {
     kind: "rfc-9068" as const,
     algorithm: "ES256" as const,
     issuer: "https://issuer.example.com/",
-    audience: "https://cms.example.com/",
     jwksUrl: "https://issuer.example.com/.well-known/jwks.json",
     allowedSubjects: ["test-user"],
 };
@@ -36,11 +36,12 @@ export const testAuthDependencies = {
     allowedSubjects: testAuthSettings.allowedSubjects,
 };
 export const testAuthToml = `
+[serve]
+baseUrl = "${testBaseUrl}"
 [auth]
 kind = "rfc-9068"
 algorithm = "${testAuthSettings.algorithm}"
 issuer = "${testAuthSettings.issuer}"
-audience = "${testAuthSettings.audience}"
 jwksUrl = "${testAuthSettings.jwksUrl}"
 allowedSubjects = ["test-user"]
 `;

@@ -76,6 +76,7 @@ export class ApplicationRuntime {
                             ? new NoAuthenticationProvider()
                             : new Rfc9068AuthenticationProvider(
                                   this.config.auth,
+                                  this.config.baseUrl!,
                               )),
                     allowedSubjects:
                         this.config.auth.kind === "no-auth"

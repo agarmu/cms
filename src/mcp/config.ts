@@ -50,23 +50,8 @@ export class McpConfiguration {
             ...settings.allowedOrigins,
         ]);
         if (auth.kind === "no-auth") return;
-        const resource = publicUrl.safeParse(auth.audience);
-        if (
-            !resource.success ||
-            new URL(resource.data).origin !== this.url.origin
-        ) {
-            throw new Error(
-                "MCP requires an auth audience URL on its public origin",
-            );
-        }
-        const resourcePath = new URL(resource.data).pathname.replace(/\/$/, "");
-        if (resourcePath !== "" && resourcePath !== "/mcp") {
-            throw new Error(
-                "MCP requires an auth audience identifying the CMS or /mcp",
-            );
-        }
         this.authorization = {
-            resource: resource.data,
+            resource: baseUrl.href,
             issuer: auth.issuer,
             metadataUrl: new URL(
                 "/.well-known/oauth-protected-resource/mcp",

@@ -31,7 +31,6 @@ export class AuthenticationConfiguration {
             (value) => !value.includes("?"),
             "Issuer cannot contain a query",
         ),
-        audience: z.string().trim().min(1),
         jwksUrl: endpoint,
         allowedSubjects: z.array(z.string().trim().min(1)).min(1).readonly(),
     });

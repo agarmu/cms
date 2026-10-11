@@ -18,6 +18,7 @@ import { testAuthSettings } from "../../auth/test-fixtures";
 const config = new ApplicationConfig(
     {
         auth: testAuthSettings,
+        serve: { baseUrl: "https://cms.example.com" },
         database: { url: "postgres://localhost/cms" },
         storage: {
             backend: "s3",

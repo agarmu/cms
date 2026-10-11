@@ -47,6 +47,7 @@ beforeAll(() => {
             ...testAuthSettings,
             jwksUrl: server.url.href,
         }),
+        new URL("https://cms.example.com/"),
     );
 });
 afterAll(() => server?.stop(true));
@@ -59,7 +60,7 @@ function token(
     const now = Math.floor(Date.now() / 1000);
     return new SignJWT({
         iss: testAuthSettings.issuer,
-        aud: testAuthSettings.audience,
+        aud: "https://cms.example.com/",
         sub: "test-user",
         iat: now,
         exp: now + 300,
@@ -93,7 +94,7 @@ test.each([
     { iss: "https://other.example.com/" },
     { iss: testAuthSettings.issuer.slice(0, -1) },
     { aud: "some-browser-client-id" },
-    { aud: [testAuthSettings.audience, 123] },
+    { aud: ["https://cms.example.com/", 123] },
     { exp: 1 },
     { nbf: Math.floor(Date.now() / 1000) + 3600 },
     { sub: "" },
@@ -116,7 +117,7 @@ test.each([
 test("accepts audience arrays and grants no scopes when the claim is absent", async () => {
     const identity = await provider.authenticate(
         await token({
-            aud: ["https://other.example.com", testAuthSettings.audience],
+            aud: ["https://other.example.com", "https://cms.example.com/"],
             scope: undefined,
         }),
     );
@@ -146,11 +147,14 @@ test("accepts only the configured algorithm even when JWKS publishes both key ty
             }),
         };
         for (const algorithm of ["ES256", "RS256"] as const) {
-            const auth = new Rfc9068AuthenticationProvider({
-                ...testAuthSettings,
-                algorithm,
-                jwksUrl: jwks.url.href,
-            });
+            const auth = new Rfc9068AuthenticationProvider(
+                {
+                    ...testAuthSettings,
+                    algorithm,
+                    jwksUrl: jwks.url.href,
+                },
+                new URL("https://cms.example.com/"),
+            );
             expect(await auth.authenticate(tokens[algorithm])).toEqual({
                 subject: "test-user",
                 issuer: testAuthSettings.issuer,
@@ -245,6 +249,7 @@ test.each(["unavailable", "invalid-json", "invalid-jwks"])(
                     ...testAuthSettings,
                     jwksUrl: failing.url.href,
                 }),
+                new URL("https://cms.example.com/"),
             );
             await expect(
                 auth.authenticate(await token()),

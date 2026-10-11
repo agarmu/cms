@@ -61,7 +61,8 @@ export class ApplicationConfig {
         })
         .refine(
             (settings) =>
-                !settings.mcp?.enabled || settings.serve.baseUrl !== undefined,
+                !(settings.mcp?.enabled || settings.auth.kind === "rfc-9068") ||
+                settings.serve.baseUrl !== undefined,
         );
     static readonly secretsSchema = z.strictObject({
         database: DatabaseConfiguration.secretsSchema.prefault({}),

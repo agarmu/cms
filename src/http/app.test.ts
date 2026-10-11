@@ -91,6 +91,7 @@ test("HTTP resources are mounted under /api only", async () => {
 test("application instances enforce their configured HTTP body limits independently", async () => {
     const config = new ApplicationConfig({
         auth: testAuthSettings,
+        serve: { baseUrl: "https://cms.example.com" },
         database: { url: "postgres://localhost/test" },
         storage: { backend: "local", directory: "./data/blobs" },
         http: { maxBodyBytes: 32 },

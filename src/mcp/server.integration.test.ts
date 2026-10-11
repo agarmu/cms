@@ -336,7 +336,7 @@ test("authentication errors advertise public OAuth discovery without exposing to
     const response = await requestApp(app, config.authorization!.metadataUrl);
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
-        resource: testAuthSettings.audience,
+        resource: "https://cms.example.com/",
         authorization_servers: [testAuthSettings.issuer],
         bearer_methods_supported: ["header"],
         scopes_supported: expect.arrayContaining([

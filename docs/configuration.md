@@ -32,7 +32,7 @@ Settings in `[serve]`:
 | Key         | Default | Description                                                                                          |
 | ----------- | ------- | ---------------------------------------------------------------------------------------------------- |
 | `port`      | `3000`  | TCP port. `0` requests an allocated port.                                                            |
-| `baseUrl`   | Unset   | Public HTTP(S) origin. Required when MCP is enabled or local HTTP upload URLs are used.              |
+| `baseUrl`   | Unset   | Public HTTP(S) origin. Required for bearer authentication, MCP, or local HTTP upload URLs.           |
 | `bindLocal` | `false` | Bind TCP to `127.0.0.1` instead of `0.0.0.0`. No-auth mode always binds to `127.0.0.1`.              |
 | `unix`      | Unset   | Unix socket path. Replaces TCP; `port` and `bindLocal` are ignored. The parent directory must exist. |
 
@@ -81,7 +81,6 @@ Settings in `[auth]`:
 | `kind`            | `"rfc-9068"`                              |
 | `algorithm`       | `"ES256"` (default) or `"RS256"`          |
 | `issuer`          | Token issuer                              |
-| `audience`        | Expected token audience                   |
 | `jwksUrl`         | Signing-key endpoint                      |
 | `allowedSubjects` | Nonempty list of permitted token subjects |
 
@@ -100,11 +99,13 @@ For Logto using ES256:
 [auth]
 kind = "rfc-9068"
 algorithm = "ES256"
-# Set issuer, audience, jwksUrl, and allowedSubjects for your deployment.
+# Set issuer, jwksUrl, and allowedSubjects for your deployment.
 ```
 
-When MCP is enabled, `audience` must be a URL on the same origin as `serve.baseUrl`,
-with either the root path or `/mcp`.
+The token audience and MCP resource identifier are derived from `serve.baseUrl`,
+normalized with a trailing `/`. Register that exact URL as the API identifier
+with your authorization server (for example, `https://photos.example.com/`).
+There is no separate `auth.audience` setting.
 
 ## Database
 
