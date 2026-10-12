@@ -16,6 +16,7 @@
     "scripts": {
         "dev": "bun --watch src/main.ts",
         "start": "bun src/main.ts",
+        "scopes:dump": "bun scripts/dump-scopes.ts",
         "check": "tsc --noEmit",
         "format": "prettier . --write",
         "format:check": "prettier . --check",

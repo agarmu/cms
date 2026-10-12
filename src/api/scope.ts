@@ -31,6 +31,30 @@ export enum Scope {
     ImageAssetsWrite = "image-assets:write",
 }
 
+export const scopeDescriptions: Record<Scope, string> = {
+    [Scope.CamerasRead]: "List and read camera records.",
+    [Scope.CamerasCreate]: "Create camera records.",
+    [Scope.CamerasUpdate]: "Update camera records.",
+    [Scope.CamerasDelete]: "Delete camera records.",
+    [Scope.LensesRead]: "List and read lens records.",
+    [Scope.LensesCreate]: "Create lens records.",
+    [Scope.LensesUpdate]: "Update lens records.",
+    [Scope.LensesDelete]: "Delete lens records.",
+    [Scope.PhotosRead]:
+        "List and read enabled photos and download their images.",
+    [Scope.PhotosReadHidden]:
+        "Include hidden photos and their images when reading with photos:read.",
+    [Scope.PhotosCreate]: "Create photos and manage new-photo uploads.",
+    [Scope.PhotosTextUpdate]: "Update photo alt text and descriptions.",
+    [Scope.PhotosMetadataUpdate]:
+        "Update non-text photo fields, including dates, visibility, and equipment.",
+    [Scope.PhotosAssetsWrite]:
+        "Replace existing photo images and manage image replacement uploads.",
+    [Scope.PhotosDelete]: "Delete photos and their associated asset records.",
+    [Scope.ImageAssetsRead]: "List and read image asset records.",
+    [Scope.ImageAssetsWrite]: "Create, update, and delete image asset records.",
+};
+
 export type ReadScope =
     | Scope.CamerasRead
     | Scope.LensesRead
