@@ -78,7 +78,7 @@ beforeAll(async () => {
     provider = telemetry.start(exporter)!;
     await migrate(db, {
         migrationsFolder: fileURLToPath(
-            new URL("../../migrations/", import.meta.url),
+            new URL("../../../migrations/", import.meta.url),
         ),
     });
 }, 30_000);

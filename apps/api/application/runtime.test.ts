@@ -60,7 +60,7 @@ test.each([false, true])(
         try {
             await migrate(db, {
                 migrationsFolder: fileURLToPath(
-                    new URL("../../migrations/", import.meta.url),
+                    new URL("../../../migrations/", import.meta.url),
                 ),
             });
             if (crashed) {
@@ -156,7 +156,7 @@ test("runtime uses the configured RFC 9068 provider for real HTTP requests", asy
     try {
         await migrate(db, {
             migrationsFolder: fileURLToPath(
-                new URL("../../migrations/", import.meta.url),
+                new URL("../../../migrations/", import.meta.url),
             ),
         });
         await runtime.start();
@@ -226,7 +226,7 @@ test("runtime serves requests on an allocated port, shares lazy storage, and clo
     try {
         await migrate(db, {
             migrationsFolder: fileURLToPath(
-                new URL("../../migrations/", import.meta.url),
+                new URL("../../../migrations/", import.meta.url),
             ),
         });
         runtime = await new ApplicationRuntime(
@@ -421,7 +421,7 @@ test("configured no-auth supports header-free reads and writes with stable uploa
     try {
         await migrate(db, {
             migrationsFolder: fileURLToPath(
-                new URL("../../migrations/", import.meta.url),
+                new URL("../../../migrations/", import.meta.url),
             ),
         });
         const uploadId = await readyUpload(

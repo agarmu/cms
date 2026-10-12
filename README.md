@@ -18,6 +18,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 A photo CMS with PostgreSQL metadata, local or S3 image storage, an HTTP API, and
 MCP tools for uploading photos and editing metadata.
 
+The Bun workspaces are `apps/api` for the backend and `apps/web` for the Astro
+frontend.
+
 ## Quickstart
 
 Follow the [quickstart guide](docs/quickstart.md) to run the CMS locally with

@@ -1,0 +1,20 @@
+{
+    "name": "@photos-cms/web",
+    "version": "0.0.0",
+    "private": true,
+    "type": "module",
+    "license": "GPL-3.0-or-later",
+    "scripts": {
+        "dev": "bun --bun astro dev",
+        "build": "bun --bun astro build",
+        "preview": "bun --bun astro preview",
+        "check": "bun --bun astro check"
+    },
+    "dependencies": {
+        "astro": "^7.3.8"
+    },
+    "devDependencies": {
+        "@astrojs/check": "^0.9.10",
+        "typescript": "~6.0.3"
+    }
+}

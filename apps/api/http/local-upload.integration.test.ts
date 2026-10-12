@@ -67,7 +67,7 @@ test.each(["http", "mcp"] as const)(
         try {
             await migrate(db, {
                 migrationsFolder: fileURLToPath(
-                    new URL("../../migrations/", import.meta.url),
+                    new URL("../../../migrations/", import.meta.url),
                 ),
             });
             await client.connect(

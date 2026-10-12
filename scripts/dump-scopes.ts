@@ -3,7 +3,7 @@
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-import { Scope, scopeDescriptions } from "../src/api/scope";
+import { Scope, scopeDescriptions } from "../apps/api/api/scope";
 
 console.log(
     JSON.stringify(

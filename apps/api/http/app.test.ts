@@ -41,7 +41,7 @@ beforeAll(
     () =>
         migrate(db, {
             migrationsFolder: fileURLToPath(
-                new URL("../../migrations/", import.meta.url),
+                new URL("../../../migrations/", import.meta.url),
             ),
         }),
     30_000,

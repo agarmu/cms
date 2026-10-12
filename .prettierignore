@@ -13,3 +13,5 @@
 
 /migrations/
 bun.lock
+apps/web/.astro/
+apps/web/dist/

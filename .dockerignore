@@ -2,9 +2,14 @@
 !Dockerfile
 !package.json
 !bun.lock
-!src/
-!src/**
+!apps/
+!apps/api/
+!apps/api/**
+!apps/web/
+apps/web/**
+!apps/web/package.json
 !migrations/
 !migrations/**
 !COPYING
-src/**/*.test.ts
+apps/api/**/*.test.ts
+apps/api/node_modules/

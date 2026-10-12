@@ -69,6 +69,11 @@ The CMS applies migrations automatically and listens at `http://localhost:3000`.
 This configuration uses local image storage and no authentication, and binds to
 loopback. Stop the app with Ctrl-C.
 
+For backend watch mode, run `bun run dev`. The separate Astro workspace runs with
+`bun run dev:web` at `http://localhost:4321`; its initial page does not call the
+CMS API. Build it with `bun run build:web` and serve that build with
+`bun run preview:web`.
+
 ## API documentation
 
 Open [http://localhost:3000/openapi.json](http://localhost:3000/openapi.json) for

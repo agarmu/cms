@@ -1,0 +1,41 @@
+{
+    "name": "@photos-cms/api",
+    "version": "0.0.0",
+    "license": "GPL-3.0-or-later",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev": "cd ../.. && bun --watch apps/api/main.ts",
+        "start": "cd ../.. && bun apps/api/main.ts",
+        "test": "cd ../.. && bun test --isolate apps/api",
+        "test:integration": "cd ../.. && bun test --isolate .integration.test.ts",
+        "check": "cd ../.. && tsc -p apps/api/tsconfig.json"
+    },
+    "dependencies": {
+        "@8monkey/opentelemetry-instrumentation-bun-sql": "^0.2.0",
+        "@elysiajs/cors": "^1.4.2",
+        "@elysiajs/openapi": "^1.4.16",
+        "@modelcontextprotocol/server": "^2.3.1",
+        "@opentelemetry/api": "^1.9.1",
+        "@opentelemetry/api-logs": "^0.222.0",
+        "@opentelemetry/exporter-logs-otlp-http": "^0.222.0",
+        "@opentelemetry/exporter-metrics-otlp-http": "^0.222.0",
+        "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
+        "@opentelemetry/instrumentation": "^0.214.0",
+        "@opentelemetry/resources": "^2.11.0",
+        "@opentelemetry/sdk-logs": "^0.222.0",
+        "@opentelemetry/sdk-metrics": "^2.11.0",
+        "@opentelemetry/sdk-trace-base": "^2.11.0",
+        "@opentelemetry/sdk-trace-node": "^2.11.0",
+        "drizzle-orm": "^0.45.3",
+        "elysia": "^1.4.30",
+        "jose": "^6.2.12",
+        "sharp": "^0.35.5",
+        "zod": "^4.6.5"
+    },
+    "devDependencies": {
+        "@electric-sql/pglite": "^0.5.8",
+        "@modelcontextprotocol/client": "^2.3.1",
+        "@redocly/openapi-core": "2.62.1"
+    }
+}

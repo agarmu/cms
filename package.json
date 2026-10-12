@@ -2,49 +2,32 @@
     "name": "photos-cms",
     "version": "0.0.0",
     "license": "GPL-3.0-or-later",
+    "workspaces": [
+        "apps/api",
+        "apps/web"
+    ],
     "devDependencies": {
-        "@electric-sql/pglite": "^0.5.8",
-        "@modelcontextprotocol/client": "^2.3.1",
-        "@redocly/openapi-core": "2.62.1",
         "@tsconfig/strictest": "^2.0.8",
         "@types/bun": "^1.4.2",
         "drizzle-kit": "^0.31.11",
         "prettier": "3.9.10",
+        "prettier-plugin-astro": "^0.14.1",
         "typescript": "^7.0.2"
     },
     "private": true,
     "scripts": {
-        "dev": "bun --watch src/main.ts",
-        "start": "bun src/main.ts",
+        "dev": "bun run --filter @photos-cms/api dev",
+        "start": "bun run --filter @photos-cms/api start",
+        "dev:web": "bun run --filter @photos-cms/web dev",
+        "build:web": "bun run --filter @photos-cms/web build",
+        "preview:web": "bun run --filter @photos-cms/web preview",
         "scopes:dump": "bun scripts/dump-scopes.ts",
-        "check": "tsc --noEmit",
+        "check": "tsc -p tsconfig.tools.json && bun run --filter '*' check",
         "format": "prettier . --write",
         "format:check": "prettier . --check",
-        "test": "bun test --isolate",
-        "test:integration": "bun test --isolate .integration.test.ts",
+        "test": "bun run --filter @photos-cms/api test",
+        "test:integration": "bun run --filter @photos-cms/api test:integration",
         "db:generate": "bunx --bun drizzle-kit generate"
     },
-    "type": "module",
-    "dependencies": {
-        "@8monkey/opentelemetry-instrumentation-bun-sql": "^0.2.0",
-        "@elysiajs/cors": "^1.4.2",
-        "@elysiajs/openapi": "^1.4.16",
-        "@modelcontextprotocol/server": "^2.3.1",
-        "@opentelemetry/api": "^1.9.1",
-        "@opentelemetry/api-logs": "^0.222.0",
-        "@opentelemetry/exporter-logs-otlp-http": "^0.222.0",
-        "@opentelemetry/exporter-metrics-otlp-http": "^0.222.0",
-        "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
-        "@opentelemetry/instrumentation": "^0.214.0",
-        "@opentelemetry/resources": "^2.11.0",
-        "@opentelemetry/sdk-logs": "^0.222.0",
-        "@opentelemetry/sdk-metrics": "^2.11.0",
-        "@opentelemetry/sdk-trace-base": "^2.11.0",
-        "@opentelemetry/sdk-trace-node": "^2.11.0",
-        "drizzle-orm": "^0.45.3",
-        "elysia": "^1.4.30",
-        "jose": "^6.2.12",
-        "sharp": "^0.35.5",
-        "zod": "^4.6.5"
-    }
+    "type": "module"
 }

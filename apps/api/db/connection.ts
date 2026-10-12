@@ -34,7 +34,7 @@ export class DatabaseConnection implements DatabaseSession {
     static async open(
         options: Bun.SQL.Options,
         migrationsFolder = fileURLToPath(
-            new URL("../../migrations/", import.meta.url),
+            new URL("../../../migrations/", import.meta.url),
         ),
     ) {
         // Resolve the constructor only after telemetry patches Bun SQL.
