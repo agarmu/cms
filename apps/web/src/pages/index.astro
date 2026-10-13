@@ -9,7 +9,9 @@ import ThemeToggle from "@/components/ThemeToggle.astro";
 >
     <main>
         <div class="page-header">
-            <p class="eyebrow">Photos CMS</p>
+            <h1 class="eyebrow">
+                <a href="/">Photos CMS</a>
+            </h1>
             <ThemeToggle />
         </div>
     </main>
@@ -27,6 +29,17 @@ import ThemeToggle from "@/components/ThemeToggle.astro";
     }
 
     .eyebrow {
-        @apply text-sm font-bold uppercase tracking-[0.12em];
+        @apply font-bold;
+        font-size: clamp(
+            theme(--text-base),
+            calc(
+                theme(--text-base) + (theme(--text-lg) - theme(--text-base)) *
+                    (
+                        (100vw - theme(--breakpoint-sm)) /
+                            (theme(--breakpoint-lg) - theme(--breakpoint-sm))
+                    )
+            ),
+            theme(--text-lg)
+        );
     }
 </style>
