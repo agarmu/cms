@@ -1,0 +1,27 @@
+---
+import { Icon } from "astro-icon/components";
+import IconButton from "./IconButton.astro";
+---
+
+<footer>
+    <span class="repository-link">
+        <IconButton
+            href="https://github.com/agarmu/cms"
+            label="View agarmu/cms on GitHub"
+        >
+            <Icon name="lucide:github" aria-hidden="true" />
+        </IconButton>
+    </span>
+</footer>
+
+<style>
+    @reference "../styles/theme.css";
+
+    footer {
+        @apply mx-auto mt-auto flex w-full max-w-2xl px-6 py-6;
+    }
+
+    .repository-link {
+        @apply -ml-3 inline-flex text-muted-foreground;
+    }
+</style>

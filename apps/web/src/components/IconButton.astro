@@ -1,0 +1,34 @@
+---
+import type { HTMLAttributes } from "astro/types";
+
+type Props = (HTMLAttributes<"button"> | HTMLAttributes<"a">) & {
+    label: string;
+    href?: string;
+};
+const { label, href, class: className, ...attributes } = Astro.props;
+const Tag = href ? "a" : "button";
+---
+
+<Tag
+    {...attributes}
+    href={href}
+    type={href ? undefined : "button"}
+    aria-label={label}
+    class:list={["icon-button", className]}
+>
+    <slot />
+</Tag>
+
+<style>
+    @reference "../styles/theme.css";
+
+    .icon-button {
+        @apply inline-flex size-11 cursor-pointer items-center justify-center rounded-md transition-colors;
+        @apply hover:bg-neutral-100 hover:text-foreground dark:hover:bg-neutral-800;
+        @apply focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary;
+    }
+
+    .icon-button :global(svg) {
+        @apply size-5;
+    }
+</style>

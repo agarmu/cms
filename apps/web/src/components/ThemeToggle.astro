@@ -1,0 +1,33 @@
+---
+import { Icon } from "astro-icon/components";
+import IconButton from "./IconButton.astro";
+---
+
+<IconButton label="Toggle color theme" aria-pressed="false" data-sw-theme-toggle>
+    <span class="theme-icons">
+        <Icon name="lucide:sun" class="sun" aria-hidden="true" />
+        <Icon name="lucide:moon" class="moon" aria-hidden="true" />
+    </span>
+</IconButton>
+
+<script>
+    import { initThemeController } from "@starwind-ui/astro/theme";
+    initThemeController();
+</script>
+
+<style>
+    @reference "../styles/theme.css";
+
+    .theme-icons {
+        @apply inline-flex;
+    }
+
+    .theme-icons :global(.moon),
+    :global(.dark) .theme-icons :global(.sun) {
+        @apply hidden;
+    }
+
+    :global(.dark) .theme-icons :global(.moon) {
+        @apply block;
+    }
+</style>
