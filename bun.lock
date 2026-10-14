@@ -52,6 +52,7 @@
         "@tailwindcss/vite": "^4",
         "astro": "^7.3.8",
         "astro-icon": "^1.2.0",
+        "fluid-tailwindcss": "^1.1.8",
         "tailwindcss": "^4",
       },
       "devDependencies": {
@@ -685,6 +686,8 @@
     "find-proc": ["find-proc@0.2.0", "", {}, "sha512-a6h2nTrgB3g5Wrn4au9Ux4kMk7IJtyF6oA8uGn+mk3weLZssUtc1cp6meHIzzuW2o1srrBAxzkmXLbqjRkgB6w=="],
 
     "flattie": ["flattie@1.1.1", "", {}, "sha512-9UbaD6XdAL97+k/n+N7JwX46K/M6Zc6KcFYskrYL8wbBV/Uyk0CTAMY0VT+qiK5PM7AIc9aTWYtq65U7T+aCNQ=="],
+
+    "fluid-tailwindcss": ["fluid-tailwindcss@1.1.8", "", { "peerDependencies": { "tailwindcss": "^4.0.0" } }, "sha512-mQbbpxFJ04OTiZEt6WJUuFxEI0hwyX6/PM2Pmyk/HjV2cgbyRWr2LUQhz+do57pJO4/aT0PmCoRDAsSkYHi7Ow=="],
 
     "fontace": ["fontace@0.4.1", "", { "dependencies": { "fontkitten": "^1.0.2" } }, "sha512-lDMvbAzSnHmbYMTEld5qdtvNH2/pWpICOqpean9IgC7vUbUJc3k+k5Dokp85CegamqQpFbXf0rAVkbzpyTA8aw=="],
 

@@ -29,17 +29,6 @@ import ThemeToggle from "@/components/ThemeToggle.astro";
     }
 
     .eyebrow {
-        @apply font-bold;
-        font-size: clamp(
-            theme(--text-base),
-            calc(
-                theme(--text-base) + (theme(--text-lg) - theme(--text-base)) *
-                    (
-                        (100vw - theme(--breakpoint-sm)) /
-                            (theme(--breakpoint-lg) - theme(--breakpoint-sm))
-                    )
-            ),
-            theme(--text-lg)
-        );
+        @apply font-bold fl-text-base/2xl--sm-lg;
     }
 </style>
