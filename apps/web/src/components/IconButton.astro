@@ -12,6 +12,8 @@ const Tag = href ? "a" : "button";
 <Tag
     {...attributes}
     href={href}
+    target={href ? "_blank" : undefined}
+    rel={href ? "noopener noreferrer" : undefined}
     type={href ? undefined : "button"}
     aria-label={label}
     class:list={["icon-button", className]}
