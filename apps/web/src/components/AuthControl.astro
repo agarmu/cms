@@ -1,0 +1,87 @@
+---
+import { config } from "@/lib/config";
+---
+
+{config.auth.kind === "oidc" && (
+    <section class="auth-control" data-auth-control aria-label="Account">
+        <p data-auth-status aria-live="polite">
+            Checking your session...
+        </p>
+        <button type="button" disabled>
+            Sign in
+        </button>
+        <p class="auth-error" role="alert" hidden />
+    </section>
+)}
+
+<script>
+    import {
+        auth,
+        getSession,
+        initializeSession,
+        signIn,
+        signOut,
+        subscribeSession,
+    } from "@/lib/auth";
+
+    const control = document.querySelector<HTMLElement>("[data-auth-control]");
+    const button = control?.querySelector<HTMLButtonElement>("button");
+    const message =
+        control?.querySelector<HTMLParagraphElement>("[role=alert]");
+    const status =
+        control?.querySelector<HTMLParagraphElement>("[data-auth-status]");
+
+    if (auth && button && message && status) {
+        const render = async () => {
+            await initializeSession();
+            const session = await getSession();
+            status.textContent = session.ready ? "Signed in" : "Signed out";
+            button.textContent = session.ready ? "Sign out" : "Sign in";
+            message.textContent = session.error ?? "";
+            message.hidden = !session.error;
+        };
+
+        subscribeSession(() => void render());
+        button.addEventListener("click", async () => {
+            button.disabled = true;
+            message.hidden = true;
+            try {
+                const session = await getSession();
+                if (session.ready) await signOut();
+                else await signIn();
+            } catch (error) {
+                message.textContent =
+                    error instanceof Error ? error.message : "Sign-in failed.";
+                message.hidden = false;
+            } finally {
+                button.disabled = false;
+            }
+        });
+
+        void render().finally(() => {
+            button.disabled = false;
+        });
+    }
+</script>
+
+<style>
+    @reference "../styles/theme.css";
+
+    .auth-control {
+        @apply flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-neutral-200 py-4 text-sm dark:border-neutral-800;
+    }
+
+    button {
+        @apply min-h-11 cursor-pointer rounded-md px-3 font-bold transition-colors;
+        @apply hover:bg-neutral-100 dark:hover:bg-neutral-800;
+        @apply focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary;
+        @apply disabled:cursor-wait disabled:opacity-50;
+    }
+
+    p {
+        @apply text-muted-foreground;
+    }
+    .auth-error {
+        @apply w-full;
+    }
+</style>

@@ -3,7 +3,11 @@ import { Icon } from "astro-icon/components";
 import IconButton from "./IconButton.astro";
 ---
 
-<IconButton label="Toggle color theme" aria-pressed="false" data-sw-theme-toggle>
+<IconButton
+    label="Toggle color theme"
+    aria-pressed="false"
+    data-sw-theme-toggle
+>
     <span class="theme-icons">
         <Icon name="lucide:sun" class="sun" aria-hidden="true" />
         <Icon name="lucide:moon" class="moon" aria-hidden="true" />

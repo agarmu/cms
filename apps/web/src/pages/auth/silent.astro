@@ -1,0 +1,12 @@
+---
+import BaseLayout from "@/layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="Renewing session" chrome={false}>
+    <script>
+        import { auth } from "@/lib/auth";
+
+        if (!auth) throw new Error("OIDC authentication is not configured.");
+        await auth.signinSilentCallback();
+    </script>
+</BaseLayout>
