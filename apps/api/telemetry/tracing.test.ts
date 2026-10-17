@@ -273,7 +273,7 @@ test("upload processing and GC retain nested storage spans and handled retry fai
             .where(eq(schema.imageUploads.photoId, photo.id));
         await new ImageUploadWorker(options).check();
         const saved = await PhotoApi.read(db, photo.id);
-        expect(saved.assets).toHaveLength(1);
+        expect(saved.assets).toHaveLength(2);
         await storage.read(photo.id, saved.assets[0]!.assetLocation);
         await PhotoApi.update(db, photo.id, { assets: [] });
         const due = () =>
@@ -287,7 +287,7 @@ test("upload processing and GC retain nested storage spans and handled retry fai
         await due();
         await new ImageGarbageCollector(options).collect();
     });
-    expect(errors).toEqual([failure]);
+    expect(errors).toEqual([failure, failure]);
     const spans = await spansFor(traceId);
     const span = (name: string) => {
         const found = spans.find((candidate) => candidate.name === name);
@@ -329,6 +329,8 @@ test("upload processing and GC retain nested storage spans and handled retry fai
     );
     expect(jobs.map((job) => job.attributes["job.outcome"])).toEqual([
         "retry",
+        "retry",
+        "deleted",
         "deleted",
     ]);
     expect(jobs[0]!.status.code).toBe(SpanStatusCode.ERROR);

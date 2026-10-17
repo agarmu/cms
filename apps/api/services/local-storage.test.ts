@@ -74,7 +74,7 @@ test("image processing and cleanup work with a non-S3 blob backend", async () =>
     const originalKey = `originals/${photoId}/${uploadId}`;
     await storage.write(originalKey, original, "image/png");
     const processed = await images.processUpload(photoId, uploadId);
-    expect(processed.assets).toHaveLength(1);
+    expect(processed.assets).toHaveLength(2);
     const asset = processed.assets[0]!;
     expect([asset.width, asset.height]).toEqual([640, 320]);
     const download = await images.read(photoId, asset.assetLocation);
@@ -88,6 +88,11 @@ test("image processing and cleanup work with a non-S3 blob backend", async () =>
     await processed.cleanup();
     expect(await images.read(photoId, asset.assetLocation)).toBeUndefined();
     expect((await storage.get(originalKey))!.size).toBe(original.length);
+    for (const processedAsset of processed.assets) {
+        expect(
+            await images.read(photoId, processedAsset.assetLocation),
+        ).toBeUndefined();
+    }
 });
 
 test("local blob keys cannot escape the storage directory", async () => {
@@ -140,7 +145,7 @@ test("image storage instances use independent limits and output variants", async
         }),
     );
     const processed = await custom.processUpload(photoId, uploadId);
-    expect(processed.assets).toHaveLength(1);
+    expect(processed.assets).toHaveLength(2);
     expect(processed.assets[0]).toMatchObject({ width: 160, height: 80 });
     expect(processed.assets[0]!.assetLocation).toEndWith("-preview.webp");
     const download = await custom.read(
@@ -152,6 +157,15 @@ test("image storage instances use independent limits and output variants", async
     expect(
         await sharp(await download.file.arrayBuffer()).metadata(),
     ).toMatchObject({ width: 160, height: 80 });
+    const fullSize = processed.assets[1]!;
+    expect(fullSize).toMatchObject({ width: 640, height: 320 });
+    expect(fullSize.assetLocation).toEndWith("-original.webp");
+    const fullDownload = await custom.read(photoId, fullSize.assetLocation);
+    if (!fullDownload || !("file" in fullDownload))
+        throw new Error("Expected the original-size image");
+    expect(
+        await sharp(await fullDownload.file.arrayBuffer()).metadata(),
+    ).toMatchObject({ format: "webp", width: 640, height: 320 });
 
     const defaults = await new ImageStorage(storage).processUpload(
         photoId,
@@ -159,4 +173,45 @@ test("image storage instances use independent limits and output variants", async
     );
     expect(defaults.assets[0]).toMatchObject({ width: 640, height: 320 });
     expect(defaults.assets[0]!.assetLocation).toEndWith("-thumbnail.webp");
+});
+
+test.each(["original", "Original"])(
+    "%s is reserved for the full-resolution asset",
+    (name) => {
+        expect(
+            () => new ImageConfiguration({ variants: [{ name, minSide: 80 }] }),
+        ).toThrow("original is reserved");
+    },
+);
+
+test("original-size asset uses the display orientation without resizing", async () => {
+    const photoId = crypto.randomUUID();
+    const uploadId = crypto.randomUUID();
+    const source = await sharp({
+        create: { width: 800, height: 400, channels: 3, background: "green" },
+    })
+        .withMetadata({ orientation: 6 })
+        .jpeg()
+        .toBuffer();
+    await storage.write(
+        `originals/${photoId}/${uploadId}`,
+        source,
+        "image/jpeg",
+    );
+    const images = new ImageStorage(storage);
+    const processed = await images.processUpload(photoId, uploadId);
+    const original = processed.assets.find((asset) =>
+        asset.assetLocation.endsWith("-original.webp"),
+    )!;
+    expect(original).toMatchObject({ width: 400, height: 800 });
+    const download = await images.read(photoId, original.assetLocation);
+    if (!download || !("file" in download))
+        throw new Error("Expected the original-size image");
+    expect(
+        await sharp(await download.file.arrayBuffer()).metadata(),
+    ).toMatchObject({
+        format: "webp",
+        width: 400,
+        height: 800,
+    });
 });

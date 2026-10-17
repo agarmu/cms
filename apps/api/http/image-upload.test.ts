@@ -272,18 +272,22 @@ test("issues a presigned PUT and automatically processes the original on a sched
     };
     expect(result.assets.map(({ width, height }) => [width, height])).toEqual([
         [640, 320],
+        [1000, 500],
     ]);
     expect(objects.get(upload.key)).toEqual(png);
     expect(
         [...objects.keys()].filter((key) => key.startsWith(`images/${id}/`)),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
     const largestDownload = await signedDownload(`/api/photos/${id}/image`);
-    const download = await signedDownload(result.assets[0]!.url);
+    const original = result.assets.find((asset) =>
+        asset.filename.endsWith("-original.webp"),
+    )!;
+    const download = await signedDownload(original.url);
     expect(largestDownload.key).toBe(download.key);
-    expect(download.key).toBe(`images/${id}/${result.assets[0]!.filename}`);
+    expect(download.key).toBe(`images/${id}/${original.filename}`);
     expect(new URL(download.url).searchParams.get("X-Amz-Expires")).toBe("900");
-    const largest = objects.get(`images/${id}/${result.assets[0]!.filename}`)!;
-    expect((await sharp(largest).metadata()).width).toBe(640);
+    const largest = objects.get(`images/${id}/${original.filename}`)!;
+    expect((await sharp(largest).metadata()).width).toBe(1000);
 });
 
 test("repeated and concurrent processing does not create additional assets", async () => {
@@ -408,7 +412,7 @@ test("uppercase photo and upload IDs can complete an upload immediately", async 
         id: upload.uploadId,
     });
     const result = await process(id, upload.uploadId);
-    expect(result.assets).toHaveLength(1);
+    expect(result.assets).toHaveLength(2);
     expect(objects.has(`images/${id}/${result.assets[0]!.assetLocation}`)).toBe(
         true,
     );
@@ -470,7 +474,7 @@ test("photo deletion preserves queued object keys for GC", async () => {
             })
         ).status,
     ).toBe(204);
-    expect(await garbageFor(id)).toHaveLength(1);
+    expect(await garbageFor(id)).toHaveLength(saved.assets.length);
     await garbageDue(id);
     await collect();
     expect(objects.has(`images/${id}/${saved.assets[0]!.assetLocation}`)).toBe(
@@ -493,7 +497,7 @@ test("GC keeps assets that were reattached and their next removal restarts the g
     );
     expect(await garbageFor(id)).toEqual([]);
     await PhotoApi.update(db, ApiValidation.uuid.parse(id), { assets: [] });
-    expect(await garbageFor(id)).toHaveLength(1);
+    expect(await garbageFor(id)).toHaveLength(saved.assets.length);
     await garbageDue(id);
     // Remove again before GC runs: even an existing queue entry gets a new grace period.
     await db
@@ -623,9 +627,9 @@ test("a failed GC transaction keeps the entry for an idempotent retry", async ()
             getStorage: () => storage,
             reportError: (error) => gcErrors.push(error),
         }).collect();
-        expect(gcErrors).toHaveLength(1);
+        expect(gcErrors).toHaveLength(saved.assets.length);
         expect(objects.has(key)).toBe(false);
-        expect(await garbageFor(id)).toHaveLength(1);
+        expect(await garbageFor(id)).toHaveLength(saved.assets.length);
     } finally {
         await client.exec(
             "DROP TRIGGER reject_gc_acknowledgement ON image_asset_garbage; DROP FUNCTION reject_gc_acknowledgement();",
@@ -887,9 +891,9 @@ test.each([
             [320, 320],
         ],
     ],
-    [200, 100, [[200, 100]]],
+    [200, 100, []],
 ] satisfies [number, number, number[][]][])(
-    "generates only qualifying variants for %s x %s originals",
+    "retains original resolution and qualifying variants for %s x %s images",
     async (width, height, expected) => {
         const { id } = await photo();
         const upload = await initiate(id);
@@ -904,20 +908,19 @@ test.each([
         const result = await process(id, upload.uploadId);
         expect(
             result.assets.map((asset) => [asset.width, asset.height]),
-        ).toEqual(expected);
+        ).toEqual([...expected, [width, height]]);
         expect(
             result.assets.map((asset) => asset.assetLocation.split("-").at(-1)),
-        ).toEqual(
-            expected.map(([w, h]) =>
-                Math.min(w!, h!) < 320
-                    ? "original.webp"
-                    : Math.min(w!, h!) === 1920
-                      ? "large.webp"
-                      : Math.min(w!, h!) === 960
-                        ? "medium.webp"
-                        : "thumbnail.webp",
+        ).toEqual([
+            ...expected.map(([w, h]) =>
+                Math.min(w!, h!) === 1920
+                    ? "large.webp"
+                    : Math.min(w!, h!) === 960
+                      ? "medium.webp"
+                      : "thumbnail.webp",
             ),
-        );
+            "original.webp",
+        ]);
         for (const asset of result.assets) {
             const metadata = await sharp(
                 objects.get(`images/${id}/${asset.assetLocation}`)!,

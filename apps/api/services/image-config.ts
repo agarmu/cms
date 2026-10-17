@@ -34,7 +34,13 @@ export class ImageConfiguration {
         variants: z
             .array(
                 z.strictObject({
-                    name: z.string().regex(/^[a-zA-Z0-9_-]+$/),
+                    name: z
+                        .string()
+                        .regex(/^[a-zA-Z0-9_-]+$/)
+                        .refine((name) => name.toLowerCase() !== "original", {
+                            message:
+                                "original is reserved for the full-resolution image",
+                        }),
                     minSide: z.int().positive(),
                 }),
             )

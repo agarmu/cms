@@ -173,8 +173,12 @@ Settings in `[images]`:
 | `quality`   | `82`                                     | WebP quality, from 1 to 100.                                             |
 | `variants`  | large: 1920; medium: 960; thumbnail: 320 | Output variants, specified by name and target shorter side (`minSide`).  |
 
-A variant is skipped if the original's shorter side is below its `minSide`. If
-all variants are skipped, processing produces an `original.webp` asset.
+A variant is skipped if the original's shorter side is below its `minSide`.
+Processing always also produces an `original.webp` asset at the original
+resolution, with orientation applied. This is a WebP rendition, not the uploaded
+file's original bytes. The name `original` is reserved and cannot be used for a
+configured variant. Photos processed before this behavior was added need to be
+uploaded again to include the original-size asset.
 
 ## Request limits
 
