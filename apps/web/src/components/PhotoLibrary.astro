@@ -450,13 +450,13 @@ import { Icon } from "astro-icon/components";
         @apply absolute inset-0;
     }
     .entry-layout {
-        @apply grid items-start gap-6 sm:grid-cols-[minmax(15rem,1fr)_minmax(0,2fr)] lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)];
+        @apply grid items-start gap-6 sm:grid-cols-[minmax(16rem,2fr)_minmax(0,3fr)];
     }
     .detail-image {
-        @apply w-full max-w-80;
+        @apply w-full max-w-80 sm:max-w-none;
     }
     .photo-preview {
-        @apply mx-auto w-full min-w-0 max-w-80;
+        @apply mx-auto w-full min-w-0 max-w-80 sm:max-w-none;
     }
     .replace-image {
         @apply mx-auto mt-3 flex size-10 min-h-10 p-0;
@@ -465,7 +465,7 @@ import { Icon } from "astro-icon/components";
         @apply size-4;
     }
     .variant-sizes {
-        @apply mt-3 text-xs text-muted-foreground lg:text-sm;
+        @apply mt-3 text-sm text-muted-foreground sm:text-base;
     }
     .variant-sizes ul {
         @apply grid grid-cols-[minmax(0,1fr)_repeat(5,max-content)] gap-x-1.5 gap-y-2 tabular-nums;
@@ -747,7 +747,7 @@ import { Icon } from "astro-icon/components";
         @apply min-h-0 items-center justify-center;
     }
     .detail-image :global(img) {
-        @apply block h-auto max-h-80 w-auto max-w-full object-contain;
+        @apply block h-auto max-h-80 w-auto max-w-full object-contain sm:max-h-[70dvh];
     }
     .detail-image :global(.photo-open) {
         @apply block w-fit max-w-full cursor-zoom-in appearance-none border-0 bg-transparent p-0;
