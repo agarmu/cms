@@ -20,7 +20,20 @@ export default defineConfig({
     ],
     integrations: [
         icon({
-            include: { lucide: ["github", "sun", "moon", "eye", "eye-off"] },
+            include: {
+                lucide: [
+                    "github",
+                    "sun",
+                    "moon",
+                    "eye",
+                    "eye-off",
+                    "arrow-left",
+                    "camera",
+                    "camera-off",
+                    "aperture",
+                    "clock",
+                ],
+            },
         }),
     ],
     vite: {

@@ -75,9 +75,12 @@ export function mountLibrary(root: HTMLElement) {
         grid.replaceChildren();
         element(root, "[data-photo-image]").replaceChildren();
         // Remove private metadata from the DOM when leaving a view or signing out.
-        for (const field of detail.querySelectorAll("dd")) {
+        for (const field of detail.querySelectorAll("[data-photo-field]")) {
             field.textContent = "";
+            field.removeAttribute("datetime");
         }
+        for (const equipment of detail.querySelectorAll("[data-equipment]"))
+            equipment.removeAttribute("title");
         element(detail, "[data-visibility]").hidden = true;
         list.hidden = true;
         detail.hidden = true;
@@ -100,6 +103,22 @@ export function mountLibrary(root: HTMLElement) {
         element(root, selector).textContent = value;
     }
 
+    function renderEquipment(
+        kind: "camera" | "lens",
+        equipment: Photo["camera"] | Photo["lens"],
+    ) {
+        const name = equipment?.name.trim();
+        const label = kind === "camera" ? "Camera" : "Lens";
+        const field = element(detail, `[data-photo-${kind}]`);
+        field.textContent = name || `${label} not specified`;
+        field.classList.toggle("sr-only", !name);
+        element(detail, `[data-${kind}-present]`).hidden = !name;
+        element(detail, `[data-${kind}-missing]`).hidden = Boolean(name);
+        element(detail, `[data-equipment="${kind}"]`).title = name
+            ? `${label}: ${name}`
+            : `${label} not specified`;
+    }
+
     async function loadImage(
         frame: HTMLElement,
         photo: Photo,
@@ -110,7 +129,7 @@ export function mountLibrary(root: HTMLElement) {
         frame.classList.add("image-frame");
         const message = document.createElement("p");
         message.className = "image-status";
-        message.textContent = asset ? "Loading image…" : "No image available";
+        message.textContent = asset ? "Loading image..." : "No image available";
         frame.replaceChildren(message);
         if (!asset || signal.aborted) return;
         const showError = () => {
@@ -249,7 +268,7 @@ export function mountLibrary(root: HTMLElement) {
             return;
         }
         showStatus(
-            route.photo ? "Opening photo…" : "Loading your photos…",
+            route.photo ? "Opening photo..." : "Loading your photos...",
             "Fetching from your library.",
         );
         if (focus) statusTitle.focus();
@@ -260,19 +279,25 @@ export function mountLibrary(root: HTMLElement) {
                 const photo = await cms.readPhoto(route.photo, signal);
                 if (signal.aborted) return;
                 setText(
+                    "[data-photo-description]",
+                    photo.description || "No description provided",
+                );
+                setText(
                     "[data-photo-alt]",
                     photo.alt || "No alt text provided",
                 );
                 setText("[data-photo-taken]", formatTimestamp(photo.taken));
+                element<HTMLTimeElement>(
+                    detail,
+                    "[data-photo-taken]",
+                ).dateTime = photo.taken;
                 setText("[data-photo-posted]", formatTimestamp(photo.posted));
-                setText(
-                    "[data-photo-camera]",
-                    photo.camera?.name ?? "Not specified",
-                );
-                setText(
-                    "[data-photo-lens]",
-                    photo.lens?.name ?? "Not specified",
-                );
+                element<HTMLTimeElement>(
+                    detail,
+                    "[data-photo-posted]",
+                ).dateTime = photo.posted;
+                renderEquipment("camera", photo.camera);
+                renderEquipment("lens", photo.lens);
                 renderVisibility(
                     element(detail, "[data-visibility]"),
                     photo.enabled,
