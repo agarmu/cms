@@ -51,6 +51,16 @@ function renderVisibility(marker: HTMLElement, enabled: boolean) {
     element(marker, "[data-hidden-icon]").hidden = enabled;
 }
 
+function formatByteSize(bytes: number | null) {
+    if (bytes === null) return "—";
+    const units = ["B", "kB", "MB", "GB", "TB", "PB"];
+    const index = Math.min(Math.floor(Math.log10(bytes) / 3), units.length - 1);
+    const value = bytes / 1000 ** index;
+    return `${new Intl.NumberFormat(undefined, {
+        maximumFractionDigits: index === 0 ? 0 : 1,
+    }).format(value)} ${units[index]}`;
+}
+
 export function mountLibrary(root: HTMLElement) {
     const status = element(root, "[data-library-status]");
     const statusTitle = element(root, "[data-status-title]");
@@ -475,7 +485,7 @@ export function mountLibrary(root: HTMLElement) {
                         .replace(/\.[^.]+$/, "");
                     button.setAttribute(
                         "aria-label",
-                        `View ${name.textContent}: ${asset.width} x ${asset.height} px`,
+                        `View ${name.textContent}: ${asset.width} x ${asset.height} px${asset.byteSize === null ? "" : `, ${formatByteSize(asset.byteSize)}`}`,
                     );
                     button.append(name);
                     for (const [kind, value] of [
@@ -489,6 +499,14 @@ export function mountLibrary(root: HTMLElement) {
                         part.textContent = String(value);
                         button.append(" ", part);
                     }
+                    const size = document.createElement("span");
+                    size.className = "variant-size";
+                    size.textContent = `(${formatByteSize(asset.byteSize)})`;
+                    size.title =
+                        asset.byteSize === null
+                            ? "File size unavailable"
+                            : `${asset.byteSize.toLocaleString()} bytes`;
+                    button.append(" ", size);
                     button.addEventListener("click", () => {
                         if (!signal.aborted)
                             void lightbox.openVariant(photo, asset, button);

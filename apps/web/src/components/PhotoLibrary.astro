@@ -468,7 +468,7 @@ import { Icon } from "astro-icon/components";
         @apply mt-3 text-xs text-muted-foreground lg:text-sm;
     }
     .variant-sizes ul {
-        @apply grid grid-cols-[minmax(0,1fr)_repeat(4,max-content)] gap-x-1.5 gap-y-2 tabular-nums;
+        @apply grid grid-cols-[minmax(0,1fr)_repeat(5,max-content)] gap-x-1.5 gap-y-2 tabular-nums;
     }
     .variant-sizes :global(li) {
         @apply col-span-full grid grid-cols-subgrid items-baseline;
@@ -484,11 +484,14 @@ import { Icon } from "astro-icon/components";
         @apply outline-2 outline-offset-4 outline-primary;
     }
     .variant-sizes :global(.variant-name) {
-        @apply min-w-0 font-medium underline underline-offset-2;
+        @apply min-w-0 break-words font-medium underline underline-offset-2;
     }
     .variant-sizes :global(.variant-width),
     .variant-sizes :global(.variant-height) {
         @apply text-right;
+    }
+    .variant-sizes :global(.variant-size) {
+        @apply whitespace-nowrap text-right;
     }
     .detail-copy {
         @apply min-w-0;

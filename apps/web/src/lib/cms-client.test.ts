@@ -9,6 +9,7 @@ const asset = {
     filename: "small.webp",
     width: 400,
     height: 300,
+    byteSize: 42_000,
     url: `/api/photos/${id}/assets/small.webp`,
 };
 const photo = {
@@ -24,6 +25,34 @@ const photo = {
     lens: null,
     assets: [asset],
 };
+
+test.each([undefined, null, 3_000_000_000])(
+    "photo responses preserve byte counts, including legacy value %s",
+    async (byteSize) => {
+        const client = new CmsClient(
+            "https://cms.example.com/",
+            async () => undefined,
+            async () =>
+                Response.json({ ...photo, assets: [{ ...asset, byteSize }] }),
+        );
+        expect((await client.readPhoto(id)).assets[0]?.byteSize).toBe(
+            byteSize ?? null,
+        );
+    },
+);
+
+test.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+    "photo responses reject invalid byte count %s",
+    async (byteSize) => {
+        const client = new CmsClient(
+            "https://cms.example.com/",
+            async () => undefined,
+            async () =>
+                Response.json({ ...photo, assets: [{ ...asset, byteSize }] }),
+        );
+        expect(client.readPhoto(id)).rejects.toThrow();
+    },
+);
 
 test("CMS bearer tokens stay on the configured origin and redirects are refused", async () => {
     const requests: { url: URL; init: RequestInit }[] = [];

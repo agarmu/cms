@@ -18,6 +18,7 @@ export const photoSchema = z.object({
             filename: z.string(),
             width: z.int().positive(),
             height: z.int().positive(),
+            byteSize: z.int().positive().nullable().default(null),
             url: z.string(),
         }),
     ),
