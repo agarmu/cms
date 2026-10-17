@@ -460,6 +460,10 @@ export function mountLibrary(root: HTMLElement) {
                 );
                 for (const asset of assets) {
                     const item = document.createElement("li");
+                    const button = document.createElement("button");
+                    button.type = "button";
+                    button.className = "variant-open";
+                    button.setAttribute("aria-haspopup", "dialog");
                     const name = document.createElement("span");
                     name.className = "variant-name";
                     // Stored filenames contain an upload generation UUID before the configured name.
@@ -469,10 +473,27 @@ export function mountLibrary(root: HTMLElement) {
                             "",
                         )
                         .replace(/\.[^.]+$/, "");
-                    const dimensions = document.createElement("span");
-                    dimensions.className = "variant-dimensions";
-                    dimensions.textContent = `${asset.width} x ${asset.height} px`;
-                    item.append(name, " ", dimensions);
+                    button.setAttribute(
+                        "aria-label",
+                        `View ${name.textContent}: ${asset.width} x ${asset.height} px`,
+                    );
+                    button.append(name);
+                    for (const [kind, value] of [
+                        ["width", asset.width],
+                        ["separator", "x"],
+                        ["height", asset.height],
+                        ["unit", "px"],
+                    ] as const) {
+                        const part = document.createElement("span");
+                        part.className = `variant-${kind}`;
+                        part.textContent = String(value);
+                        button.append(" ", part);
+                    }
+                    button.addEventListener("click", () => {
+                        if (!signal.aborted)
+                            void lightbox.openVariant(photo, asset, button);
+                    });
+                    item.append(button);
                     variants.append(item);
                 }
                 if (!assets.length) {

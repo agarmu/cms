@@ -468,15 +468,26 @@ import { Icon } from "astro-icon/components";
         @apply mt-3 text-xs text-muted-foreground lg:text-sm;
     }
     .variant-sizes ul {
-        @apply flex flex-col gap-2 tabular-nums;
+        @apply grid grid-cols-[minmax(0,1fr)_repeat(4,max-content)] gap-x-1.5 gap-y-2 tabular-nums;
     }
     .variant-sizes :global(li) {
-        @apply grid grid-cols-2 items-baseline gap-2;
+        @apply col-span-full grid grid-cols-subgrid items-baseline;
+    }
+    .variant-sizes :global(.variant-open) {
+        @apply col-span-full grid min-h-0 w-full cursor-zoom-in grid-cols-subgrid items-baseline rounded-sm border-0 bg-transparent p-0 text-left text-inherit;
+        font: inherit;
+    }
+    .variant-sizes :global(.variant-open:hover .variant-name) {
+        @apply text-foreground;
+    }
+    .variant-sizes :global(.variant-open:focus-visible) {
+        @apply outline-2 outline-offset-4 outline-primary;
     }
     .variant-sizes :global(.variant-name) {
-        @apply min-w-0 font-medium;
+        @apply min-w-0 font-medium underline underline-offset-2;
     }
-    .variant-sizes :global(.variant-dimensions) {
+    .variant-sizes :global(.variant-width),
+    .variant-sizes :global(.variant-height) {
         @apply text-right;
     }
     .detail-copy {

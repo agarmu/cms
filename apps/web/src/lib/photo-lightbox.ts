@@ -1,5 +1,5 @@
 import { cms } from "./api";
-import { selectAsset, type Photo } from "./cms-client";
+import { selectAsset, type Photo, type PhotoAsset } from "./cms-client";
 
 // Match the expand/collapse motion of the website's single-image lightbox.
 function sourceTransform(source: HTMLImageElement, image: HTMLImageElement) {
@@ -33,7 +33,20 @@ export class PhotoLightbox {
         });
     }
 
-    async open(source: HTMLImageElement, photo: Photo, opener: HTMLElement) {
+    open(source: HTMLImageElement, photo: Photo, opener: HTMLElement) {
+        return this.openPhoto(photo, opener, source);
+    }
+
+    openVariant(photo: Photo, asset: PhotoAsset, opener: HTMLElement) {
+        return this.openPhoto(photo, opener, undefined, asset);
+    }
+
+    private async openPhoto(
+        photo: Photo,
+        opener: HTMLElement,
+        source?: HTMLImageElement,
+        variant?: PhotoAsset,
+    ) {
         if (this.dialog.open) return;
         this.reset();
         this.source = source;
@@ -42,32 +55,41 @@ export class PhotoLightbox {
         const controller = new AbortController();
         this.request = controller;
         const previewWidth =
-            Number(source.getAttribute("width")) || source.naturalWidth;
+            Number(source?.getAttribute("width")) ||
+            source?.naturalWidth ||
+            variant?.width ||
+            0;
         const previewHeight =
-            Number(source.getAttribute("height")) || source.naturalHeight;
+            Number(source?.getAttribute("height")) ||
+            source?.naturalHeight ||
+            variant?.height ||
+            0;
         const width = Math.min(
             window.innerWidth - 48,
             ((window.innerHeight - 48) * previewWidth) / previewHeight,
         );
-        const asset = selectAsset(
-            photo.assets,
-            width * (window.devicePixelRatio || 1),
-        );
-        const image = new Image();
-        image.alt = source.alt;
-        image.width = asset?.width ?? previewWidth;
-        image.height = asset?.height ?? previewHeight;
-        image.decoding = "async";
-        image.referrerPolicy = "no-referrer";
-        image.src = source.currentSrc || source.src;
-        await image.decode().catch(() => {});
+        const asset =
+            variant ??
+            selectAsset(photo.assets, width * (window.devicePixelRatio || 1));
+        let image: HTMLImageElement | undefined;
+        if (source) {
+            image = new Image();
+            image.alt = source.alt;
+            image.width = asset?.width ?? previewWidth;
+            image.height = asset?.height ?? previewHeight;
+            image.decoding = "async";
+            image.referrerPolicy = "no-referrer";
+            image.src = source.currentSrc || source.src;
+            await image.decode().catch(() => {});
+        }
         if (controller.signal.aborted || version !== this.version) return;
-        this.stage.replaceChildren(image);
+        if (image) this.stage.replaceChildren(image);
+        else this.showMessage("Loading image...", "status");
         this.previousOverflow = document.documentElement.style.overflow;
         document.documentElement.style.overflow = "hidden";
         this.dialog.showModal();
-        const transform = sourceTransform(source, image);
-        if (transform) {
+        const transform = source && image && sourceTransform(source, image);
+        if (transform && image) {
             this.animation = image.animate(
                 [{ transform }, { transform: "none" }],
                 { duration: 320, easing: "cubic-bezier(.4, 0, .2, 1)" },
@@ -75,7 +97,7 @@ export class PhotoLightbox {
         }
 
         // Keep the already loaded preview visible while fetching a larger asset.
-        if (!asset || asset.width <= previewWidth) return;
+        if (!asset || (!variant && asset.width <= previewWidth)) return;
         try {
             const result = await cms.readImage(asset.url, controller.signal);
             if (
@@ -113,7 +135,23 @@ export class PhotoLightbox {
             this.stage.replaceChildren(fullImage);
         } catch {
             // The preview remains usable if the larger image cannot be loaded.
+            if (
+                !source &&
+                !controller.signal.aborted &&
+                version === this.version
+            )
+                this.showMessage(
+                    "Could not load this image. Close and try again.",
+                    "alert",
+                );
         }
+    }
+
+    private showMessage(text: string, role: "status" | "alert") {
+        const message = document.createElement("p");
+        message.textContent = text;
+        message.setAttribute("role", role);
+        this.stage.replaceChildren(message);
     }
 
     private async close() {

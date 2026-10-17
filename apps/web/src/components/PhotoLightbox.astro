@@ -21,6 +21,9 @@
     .lightbox-image :global(img) {
         @apply block h-auto max-h-[calc(100dvh_-_2_*_var(--lightbox-gutter))] w-auto max-w-[calc(100vw_-_2_*_var(--lightbox-gutter))] cursor-zoom-out object-contain;
     }
+    .lightbox-image :global(p) {
+        @apply text-center text-sm text-white;
+    }
     @media (prefers-reduced-motion: no-preference) {
         dialog[open]::backdrop {
             animation: blur-background 320ms cubic-bezier(0.4, 0, 0.2, 1) both;
