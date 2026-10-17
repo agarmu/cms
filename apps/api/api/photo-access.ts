@@ -20,7 +20,9 @@ export class PhotoAccess {
         return [
             ...new Set(
                 Object.keys(changes).map((field) =>
-                    field === "alt" || field === "description"
+                    field === "altText" ||
+                    field === "caption" ||
+                    field === "description"
                         ? Scope.PhotosTextUpdate
                         : Scope.PhotosMetadataUpdate,
                 ),

@@ -23,8 +23,8 @@ export class HttpValidation {
     private static readonly metadata = PhotoValidation.photo
         .omit({ assets: true })
         .extend({
-            taken: HttpValidation.timestamp,
-            posted: HttpValidation.timestamp,
+            takenAt: HttpValidation.timestamp,
+            postedAt: HttpValidation.timestamp,
         });
     static readonly photo = HttpValidation.metadata.extend({
         uploadId: ApiValidation.uuid,

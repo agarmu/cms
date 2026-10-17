@@ -26,17 +26,19 @@ export class DatabaseSchema {
         name: pg.text("name").notNull(),
     });
 
-    static readonly images = pg.pgTable("images", {
+    static readonly photos = pg.pgTable("photos", {
         id: pg.uuid("id").$type<UUID>().primaryKey().defaultRandom(),
-        taken: pg
-            .timestamp("taken", { withTimezone: true, mode: "date" })
+        takenAt: pg
+            .timestamp("taken_at", { withTimezone: true, mode: "date" })
             .notNull(),
-        posted: pg
-            .timestamp("posted", { withTimezone: true, mode: "date" })
+        postedAt: pg
+            .timestamp("posted_at", { withTimezone: true, mode: "date" })
             .notNull(),
-        alt: pg.text("alt").notNull(),
-        description: pg.text("description").notNull(),
-        enabled: pg.boolean("enabled").notNull(),
+        altText: pg.text("alt_text").notNull(),
+        caption: pg.text("caption").notNull(),
+        description: pg.text("description").notNull().default(""),
+        location: pg.text("location"),
+        visible: pg.boolean("visible").notNull(),
         cameraId: pg
             .uuid("camera_id")
             .$type<UUID>()
@@ -55,7 +57,7 @@ export class DatabaseSchema {
                 .uuid("photo_id")
                 .$type<UUID>()
                 .notNull()
-                .references(() => DatabaseSchema.images.id),
+                .references(() => DatabaseSchema.photos.id),
             width: pg.integer("width").notNull(),
             height: pg.integer("height").notNull(),
             assetLocation: pg.text("asset_location").notNull(),
@@ -152,26 +154,26 @@ export class DatabaseSchema {
     static readonly camerasRelations = relations(
         DatabaseSchema.cameras,
         ({ many }) => ({
-            images: many(DatabaseSchema.images),
+            photos: many(DatabaseSchema.photos),
         }),
     );
 
     static readonly lensesRelations = relations(
         DatabaseSchema.lenses,
         ({ many }) => ({
-            images: many(DatabaseSchema.images),
+            photos: many(DatabaseSchema.photos),
         }),
     );
 
-    static readonly imagesRelations = relations(
-        DatabaseSchema.images,
+    static readonly photosRelations = relations(
+        DatabaseSchema.photos,
         ({ one, many }) => ({
             camera: one(DatabaseSchema.cameras, {
-                fields: [DatabaseSchema.images.cameraId],
+                fields: [DatabaseSchema.photos.cameraId],
                 references: [DatabaseSchema.cameras.id],
             }),
             lens: one(DatabaseSchema.lenses, {
-                fields: [DatabaseSchema.images.lensId],
+                fields: [DatabaseSchema.photos.lensId],
                 references: [DatabaseSchema.lenses.id],
             }),
             assets: many(DatabaseSchema.imageAssets),
@@ -181,9 +183,9 @@ export class DatabaseSchema {
     static readonly imageAssetsRelations = relations(
         DatabaseSchema.imageAssets,
         ({ one }) => ({
-            image: one(DatabaseSchema.images, {
+            image: one(DatabaseSchema.photos, {
                 fields: [DatabaseSchema.imageAssets.photoId],
-                references: [DatabaseSchema.images.id],
+                references: [DatabaseSchema.photos.id],
             }),
         }),
     );
@@ -192,13 +194,13 @@ export class DatabaseSchema {
         return {
             cameras: DatabaseSchema.cameras,
             lenses: DatabaseSchema.lenses,
-            images: DatabaseSchema.images,
+            photos: DatabaseSchema.photos,
             imageAssets: DatabaseSchema.imageAssets,
             imageUploads: DatabaseSchema.imageUploads,
             imageAssetGarbage: DatabaseSchema.imageAssetGarbage,
             camerasRelations: DatabaseSchema.camerasRelations,
             lensesRelations: DatabaseSchema.lensesRelations,
-            imagesRelations: DatabaseSchema.imagesRelations,
+            photosRelations: DatabaseSchema.photosRelations,
             imageAssetsRelations: DatabaseSchema.imageAssetsRelations,
         };
     }
@@ -208,7 +210,7 @@ export type Camera = typeof DatabaseSchema.cameras.$inferSelect;
 export type NewCamera = typeof DatabaseSchema.cameras.$inferInsert;
 export type Lens = typeof DatabaseSchema.lenses.$inferSelect;
 export type NewLens = typeof DatabaseSchema.lenses.$inferInsert;
-export type Image = typeof DatabaseSchema.images.$inferSelect;
-export type NewImage = typeof DatabaseSchema.images.$inferInsert;
+export type Image = typeof DatabaseSchema.photos.$inferSelect;
+export type NewImage = typeof DatabaseSchema.photos.$inferInsert;
 export type ImageAsset = typeof DatabaseSchema.imageAssets.$inferSelect;
 export type NewImageAsset = typeof DatabaseSchema.imageAssets.$inferInsert;

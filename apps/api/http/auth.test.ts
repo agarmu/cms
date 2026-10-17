@@ -64,11 +64,11 @@ const app = new HttpApplication({
 const photoId = crypto.randomUUID();
 const uploadId = crypto.randomUUID();
 const metadata = {
-    taken: "2026-10-02T12:00:00Z",
-    posted: "2026-10-02T12:00:00Z",
-    alt: "photo",
-    description: "",
-    enabled: true,
+    takenAt: "2026-10-02T12:00:00Z",
+    postedAt: "2026-10-02T12:00:00Z",
+    altText: "photo",
+    caption: "",
+    visible: true,
 };
 const routes: [string, string, unknown?][] = [
     ["GET", "/api/photos"],
@@ -76,8 +76,10 @@ const routes: [string, string, unknown?][] = [
     ["GET", `/api/photos/${photoId}/image`],
     ["GET", `/api/photos/${photoId}/assets/original.webp`],
     ["POST", "/api/photos", metadata],
-    ["PATCH", `/api/photos/${photoId}`, { alt: "changed" }],
+    ["PATCH", `/api/photos/${photoId}`, { altText: "changed" }],
     ["DELETE", `/api/photos/${photoId}`],
+    ["PATCH", `/api/cameras/${photoId}`, { name: "Renamed" }],
+    ["PATCH", `/api/lenses/${photoId}`, { name: "Renamed" }],
     ["POST", "/api/photo-uploads", { contentType: "image/png" }],
     ["GET", `/api/photo-uploads/${uploadId}`],
     ["GET", `/api/photo-uploads/${uploadId}/assets/original.webp`],

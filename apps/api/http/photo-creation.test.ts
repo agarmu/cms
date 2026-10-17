@@ -100,11 +100,11 @@ const app = new HttpApplication({
     allowedSubjects: [testAuthIdentity.subject, "another-user"],
 });
 const metadata = {
-    taken: "2026-10-02T12:00:00Z",
-    posted: "2026-10-02T12:00:00Z",
-    alt: "Photo",
-    description: "Description",
-    enabled: true,
+    takenAt: "2026-10-02T12:00:00Z",
+    postedAt: "2026-10-02T12:00:00Z",
+    altText: "Photo",
+    caption: "Description",
+    visible: true,
 };
 const png = new Blob([
     await sharp({
@@ -193,9 +193,9 @@ const expire = (id: UUID) =>
 const collect = () => new ImageGarbageCollector(options).collect();
 
 test("a creator prepares an image, previews it, and saves metadata and equipment atomically", async () => {
-    const before = await db.query.images.findMany();
+    const before = await db.query.photos.findMany();
     const upload = await prepare();
-    expect(await db.query.images.findMany()).toEqual(before);
+    expect(await db.query.photos.findMany()).toEqual(before);
     expect(upload.assets).toMatchObject([{ width: 200, height: 100 }]);
     const preview = await request("creator", upload.assets[0]!.url);
     expect(preview.status).toBe(200);
@@ -212,7 +212,7 @@ test("a creator prepares an image, previews it, and saves metadata and equipment
     expect(response.headers.get("Location")).toBe(`/api/photos/${photo.id}`);
     const saved = await PhotoApi.read(db, photo.id);
     expect(saved).toMatchObject({
-        alt: "Photo",
+        altText: "Photo",
         camera: { name: "New camera" },
         lens: { name: "New lens" },
         assets: [{ width: 200, height: 100 }],
@@ -238,7 +238,7 @@ test("a creator prepares an image, previews it, and saves metadata and equipment
     expect(
         (
             await request("creator", `/api/photos/${photo.id}`, "PATCH", {
-                alt: "Changed",
+                altText: "Changed",
             })
         ).status,
     ).toBe(403);
@@ -271,8 +271,8 @@ test("a creator prepares an image, previews it, and saves metadata and equipment
 });
 
 test("photo reads exclude hidden photos before pagination unless both read scopes are granted", async () => {
-    const photos: { id: UUID; enabled: boolean }[] = [];
-    for (const [posted, enabled] of [
+    const photos: { id: UUID; visible: boolean }[] = [];
+    for (const [postedAt, visible] of [
         ["2099-01-04T00:00:00Z", false],
         ["2099-01-03T00:00:00Z", true],
         ["2099-01-02T00:00:00Z", false],
@@ -280,19 +280,19 @@ test("photo reads exclude hidden photos before pagination unless both read scope
     ] as const) {
         const photo = await PhotoApi.create(db, {
             ...metadata,
-            taken: new Date(metadata.taken),
-            posted: new Date(posted),
-            enabled,
+            takenAt: new Date(metadata.takenAt),
+            postedAt: new Date(postedAt),
+            visible,
             assets: [{ assetLocation: "photo.png", width: 200, height: 100 }],
         });
         objects.set(`images/${photo.id}/photo.png`, png);
-        photos.push({ id: photo.id, enabled });
+        photos.push({ id: photo.id, visible });
     }
     const enabledIds = photos
-        .filter((photo) => photo.enabled)
+        .filter((photo) => photo.visible)
         .map((photo) => photo.id);
     const hiddenIds = photos
-        .filter((photo) => !photo.enabled)
+        .filter((photo) => !photo.visible)
         .map((photo) => photo.id);
     const list = async (token: string, limit: number, offset = 0) => {
         const response = await request(
@@ -301,7 +301,7 @@ test("photo reads exclude hidden photos before pagination unless both read scope
         );
         expect(response.status).toBe(200);
         return (await response.json()) as {
-            items: { id: UUID; enabled: boolean }[];
+            items: { id: UUID; visible: boolean }[];
             limit: number;
             offset: number;
         };
@@ -330,7 +330,7 @@ test("photo reads exclude hidden photos before pagination unless both read scope
             expect((await request("admin", path)).status).toBe(200);
         }
         const response = await request("admin", `/api/photos/${id}`);
-        expect(await response.json()).toMatchObject({ id, enabled: false });
+        expect(await response.json()).toMatchObject({ id, visible: false });
     }
     expect((await request("hiddenReader", "/api/photos")).status).toBe(403);
     for (const id of enabledIds)
@@ -432,35 +432,45 @@ test("text and metadata scopes are independent and mixed patches cannot partiall
     expect(
         (
             await request("text", path, "PATCH", {
-                alt: "Updated",
-                description: "Updated description",
+                altText: "Updated",
+                caption: "Updated caption",
+                description: "An **independent** description.",
             })
         ).status,
     ).toBe(200);
     const before = await PhotoApi.read(db, id);
     for (const patch of [
-        { alt: "Must not apply", enabled: false },
+        { altText: "Must not apply", visible: false },
         { camera: { create: { name: "Forbidden" } } },
-        { taken: metadata.taken },
+        { takenAt: metadata.takenAt },
+        { location: "West Lafayette, Indiana" },
     ]) {
         expect((await request("text", path, "PATCH", patch)).status).toBe(403);
         expect(await PhotoApi.read(db, id)).toEqual(before);
     }
     expect(
-        (await request("metadata", path, "PATCH", { alt: "No" })).status,
+        (await request("metadata", path, "PATCH", { altText: "No" })).status,
     ).toBe(403);
     expect(
-        (await request("metadata", path, "PATCH", { enabled: false })).status,
+        (await request("metadata", path, "PATCH", { description: "No" }))
+            .status,
+    ).toBe(403);
+    expect(
+        (await request("metadata", path, "PATCH", { visible: false })).status,
     ).toBe(200);
-    expect((await request("assets", path, "PATCH", { alt: "No" })).status).toBe(
-        403,
-    );
+    expect(
+        (await request("assets", path, "PATCH", { altText: "No" })).status,
+    ).toBe(403);
     expect((await request("admin", path, "PATCH", { assets: [] })).status).toBe(
         400,
     );
     expect(
-        (await request("both", path, "PATCH", { alt: "Both", enabled: true }))
-            .status,
+        (
+            await request("both", path, "PATCH", {
+                altText: "Both",
+                visible: true,
+            })
+        ).status,
     ).toBe(200);
     expect((await request("text", path, "DELETE")).status).toBe(403);
 });
@@ -478,7 +488,7 @@ test("concurrent processing and saves consume one session and create equipment o
             key.startsWith(`images/${upload.key.split("/")[1]}/`),
         ),
     ).toHaveLength(1);
-    const before = await db.query.images.findMany();
+    const before = await db.query.photos.findMany();
     const camerasBefore = await db.query.cameras.findMany();
     const input = { camera: { create: { name: "Created exactly once" } } };
     const responses = await Promise.all([
@@ -490,15 +500,15 @@ test("concurrent processing and saves consume one session and create equipment o
         responses.map((response) => response.json()),
     );
     expect(results[0]).toEqual(results[1]);
-    expect(await db.query.images.findMany()).toHaveLength(before.length + 1);
+    expect(await db.query.photos.findMany()).toHaveLength(before.length + 1);
     expect(await db.query.cameras.findMany()).toHaveLength(
         camerasBefore.length + 1,
     );
-    expect((await save(upload.id, { ...input, alt: "Different" })).status).toBe(
-        409,
-    );
+    expect(
+        (await save(upload.id, { ...input, altText: "Different" })).status,
+    ).toBe(409);
     const { id } = results[0] as { id: UUID };
-    await PhotoApi.update(db, id, { description: "Private later edit" });
+    await PhotoApi.update(db, id, { caption: "Private later edit" });
     await expire(upload.id);
     expect(await (await save(upload.id, input)).json()).toEqual({ id });
     await PhotoApi.remove(db, id);
@@ -524,13 +534,13 @@ test("the worker prepares new uploads without creating photos and ignores overwr
     const upload = await start();
     expect((await save(upload.id)).status).toBe(409);
     objects.set(upload.key, png);
-    const before = await db.query.images.findMany();
+    const before = await db.query.photos.findMany();
     await db
         .update(schema.imageUploads)
         .set({ nextCheck: new Date(0) })
         .where(eq(schema.imageUploads.id, upload.id));
     await new ImageUploadWorker(options).check();
-    expect(await db.query.images.findMany()).toEqual(before);
+    expect(await db.query.photos.findMany()).toEqual(before);
     expect(await (await request("creator", upload.path)).json()).toMatchObject({
         status: "ready",
     });

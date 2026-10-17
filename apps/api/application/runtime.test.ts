@@ -194,11 +194,11 @@ test("runtime uses the configured RFC 9068 provider for real HTTP requests", asy
                 },
                 body: JSON.stringify({
                     uploadId,
-                    taken: "2026-10-02T12:00:00Z",
-                    posted: "2026-10-02T12:00:00Z",
-                    alt: "Photo",
-                    description: "",
-                    enabled: true,
+                    takenAt: "2026-10-02T12:00:00Z",
+                    postedAt: "2026-10-02T12:00:00Z",
+                    altText: "Photo",
+                    caption: "",
+                    visible: true,
                 }),
             });
         expect((await create(reader)).status).toBe(403);
@@ -279,11 +279,11 @@ test("runtime serves requests on an allocated port, shares lazy storage, and clo
             },
             body: JSON.stringify({
                 uploadId: await readyUpload(db),
-                taken: "2026-10-02T12:00:00Z",
-                posted: "2026-10-02T13:00:00Z",
-                alt: "Photo",
-                description: "",
-                enabled: true,
+                takenAt: "2026-10-02T12:00:00Z",
+                postedAt: "2026-10-02T13:00:00Z",
+                altText: "Photo",
+                caption: "",
+                visible: true,
             }),
         });
         expect(created.status).toBe(201);
@@ -437,11 +437,11 @@ test("configured no-auth supports header-free reads and writes with stable uploa
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 uploadId,
-                taken: "2026-10-02T12:00:00Z",
-                posted: "2026-10-02T12:00:00Z",
-                alt: "Test",
-                description: "",
-                enabled: true,
+                takenAt: "2026-10-02T12:00:00Z",
+                postedAt: "2026-10-02T12:00:00Z",
+                altText: "Test",
+                caption: "",
+                visible: true,
             }),
         });
         expect(created.status).toBe(201);
@@ -451,12 +451,12 @@ test("configured no-auth supports header-free reads and writes with stable uploa
                 await fetch(location, {
                     method: "PATCH",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ alt: "Updated" }),
+                    body: JSON.stringify({ altText: "Updated" }),
                 })
             ).status,
         ).toBe(200);
         expect(await (await fetch(location)).json()).toMatchObject({
-            alt: "Updated",
+            altText: "Updated",
         });
         expect((await fetch(location, { method: "DELETE" })).status).toBe(204);
         const document = await (

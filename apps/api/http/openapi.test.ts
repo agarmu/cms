@@ -67,12 +67,12 @@ test("OpenAPI derives JSON inputs, UUIDs, dates, pagination bounds, and response
                 schema: {
                     required: expect.arrayContaining([
                         "uploadId",
-                        "taken",
-                        "posted",
+                        "takenAt",
+                        "postedAt",
                     ]),
                     properties: {
                         uploadId: { format: "uuid" },
-                        taken: { format: "date-time" },
+                        takenAt: { format: "date-time" },
                     },
                 },
             },
@@ -98,7 +98,7 @@ test("OpenAPI derives JSON inputs, UUIDs, dates, pagination bounds, and response
                     schema: {
                         properties: {
                             id: { format: "uuid" },
-                            taken: { format: "date-time" },
+                            takenAt: { format: "date-time" },
                         },
                     },
                 },

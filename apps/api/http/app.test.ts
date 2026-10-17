@@ -143,11 +143,11 @@ test("API CORS is deny-by-default", async () => {
 });
 
 const metadata = {
-    taken: "2026-10-02T12:00:00.000Z",
-    posted: "2026-10-02T13:00:00.000Z",
-    alt: "A photograph",
-    description: "Evening light",
-    enabled: true,
+    takenAt: "2026-10-02T12:00:00.000Z",
+    postedAt: "2026-10-02T13:00:00.000Z",
+    altText: "A photograph",
+    caption: "Evening light",
+    visible: true,
 };
 
 test("MCP and its discovery routes are absent when disabled", async () => {
@@ -253,11 +253,11 @@ test("adds, reads, modifies, and removes a photo with assets and explicit new eq
     const loaded = await request(`/api/photos/${photo.id}`);
     expect(await loaded.json()).toMatchObject({ ...metadata, ...photo });
     const updated = await request(`/api/photos/${photo.id}`, "PATCH", {
-        enabled: false,
+        visible: false,
     });
     expect(updated.status).toBe(200);
     expect(await updated.json()).toMatchObject({
-        enabled: false,
+        visible: false,
         assets: [asset],
     });
     expect((await request(`/api/photos/${photo.id}`, "DELETE")).status).toBe(
@@ -396,7 +396,7 @@ test("an asset insertion failure rolls back replaced assets, metadata, and new e
     try {
         await expect(
             PhotoApi.update(db, photo.id, {
-                enabled: false,
+                visible: false,
                 camera: { create: { name: "Should roll back" } },
                 assets: [
                     { width: 640, height: 320, assetLocation: "reject.webp" },
@@ -411,7 +411,7 @@ test("an asset insertion failure rolls back replaced assets, metadata, and new e
         ).toEqual(photo);
         expect(
             await (await request(`/api/photos/${photo.id}`)).json(),
-        ).toMatchObject({ enabled: true });
+        ).toMatchObject({ visible: true });
     } finally {
         await client.exec(
             "DROP TRIGGER reject_test_asset ON image_assets; DROP FUNCTION reject_test_asset();",
@@ -495,8 +495,8 @@ const invalidRequests = [
             camera: { id: crypto.randomUUID(), create: { name: "Ambiguous" } },
         },
     ],
-    ["/api/photos", "POST", { ...metadata, taken: "yesterday" }],
-    ["/api/photos", "POST", { ...metadata, enabled: "true" }],
+    ["/api/photos", "POST", { ...metadata, takenAt: "yesterday" }],
+    ["/api/photos", "POST", { ...metadata, visible: "true" }],
     ["/api/photos", "POST", { ...metadata, camera: { id: "invalid" } }],
     ["/api/photos", "POST", { ...metadata, cameraId: crypto.randomUUID() }],
     ["/api/photos", "POST", { ...metadata, assets: [{ ...asset, width: 0 }] }],
@@ -535,7 +535,7 @@ test("rejects malformed JSON, unsupported content types, and oversized bodies", 
         (
             await requestAsUser(app, "/api/photos", {
                 method: "POST",
-                body: "alt=Photo",
+                body: "altText=Photo",
             })
         ).status,
     ).toBe(400);
@@ -543,7 +543,7 @@ test("rejects malformed JSON, unsupported content types, and oversized bodies", 
         (
             await request("/api/photos", "POST", {
                 ...metadata,
-                description: "x".repeat(65_536),
+                caption: "x".repeat(65_536),
             })
         ).status,
     ).toBe(413);
@@ -570,7 +570,7 @@ test("missing JSON content type fails validation for both creation and modificat
     const photo = await createPhoto();
     for (const [path, method, body] of [
         ["/api/photos", "POST", metadata],
-        [`/api/photos/${photo.id}`, "PATCH", { enabled: false }],
+        [`/api/photos/${photo.id}`, "PATCH", { visible: false }],
     ] as const) {
         const response = await requestAsUser(app, path, {
             method,
@@ -596,4 +596,40 @@ test("paginates photos and returns 404 for unknown routes", async () => {
         offset: 1,
     });
     expect((await request("/unknown")).status).toBe(404);
+});
+
+test("each editable metadata field changes independently and location can be cleared", async () => {
+    const { id } = await createPhoto();
+    for (const [field, value] of [
+        ["caption", "A caption"],
+        ["description", "## A longer description\n\nWith **formatting**."],
+        ["description", ""],
+        ["altText", "New alternative"],
+        ["location", "Rincón, Puerto Rico"],
+        ["location", null],
+        ["takenAt", "2026-11-01T06:30:42.123Z"],
+        ["postedAt", "2026-10-15T13:25:00.000Z"],
+        ["visible", false],
+    ] as const) {
+        const before = (await (
+            await request(`/api/photos/${id}`)
+        ).json()) as Record<string, unknown>;
+        const response = await request(`/api/photos/${id}`, "PATCH", {
+            [field]: value,
+        });
+        expect(response.status).toBe(200);
+        const after = (await response.json()) as Record<string, unknown>;
+        expect(after[field]).toEqual(value);
+        expect({ ...after, [field]: before[field] }).toEqual(before);
+    }
+    for (const patch of [
+        { description: null },
+        { alt: "Old field" },
+        { enabled: true },
+        { location: " " },
+        { takenAt: "invalid" },
+    ])
+        expect(
+            (await request(`/api/photos/${id}`, "PATCH", patch)).status,
+        ).toBe(400);
 });

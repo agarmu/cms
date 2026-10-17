@@ -37,11 +37,11 @@ beforeAll(
 afterAll(() => client.close());
 
 const metadata = {
-    taken: new Date(),
-    posted: new Date(),
-    alt: "Photo",
-    description: "",
-    enabled: true,
+    takenAt: new Date(),
+    postedAt: new Date(),
+    altText: "Photo",
+    caption: "",
+    visible: true,
 };
 
 test("direct API calls validate before accessing the database", async () => {
@@ -66,7 +66,7 @@ test("direct API calls validate before accessing the database", async () => {
         CameraApi.list(untouched, { limit: 101, offset: 0 }),
     ).rejects.toBeInstanceOf(z.ZodError);
     await expect(
-        ImageApi.create(untouched, { ...metadata, taken: new Date(NaN) }),
+        ImageApi.create(untouched, { ...metadata, takenAt: new Date(NaN) }),
     ).rejects.toBeInstanceOf(z.ZodError);
     await expect(
         ImageAssetApi.create(untouched, {

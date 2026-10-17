@@ -171,11 +171,11 @@ test.each(["http", "mcp"] as const)(
                 name: "create_photo",
                 arguments: {
                     uploadId: upload.id,
-                    taken: "2026-10-11T12:00:00.000Z",
-                    posted: "2026-10-11T12:00:00.000Z",
-                    alt: "Local upload",
-                    description: "Test",
-                    enabled: true,
+                    takenAt: "2026-10-11T12:00:00.000Z",
+                    postedAt: "2026-10-11T12:00:00.000Z",
+                    altText: "Local upload",
+                    caption: "Test",
+                    visible: true,
                 },
             });
             expect(created.isError).not.toBe(true);

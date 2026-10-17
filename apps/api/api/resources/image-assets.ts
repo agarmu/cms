@@ -54,8 +54,8 @@ export class ImageAssetApi {
         if (value.photoId !== undefined)
             await References.requireReference(
                 db,
-                DatabaseSchema.images,
-                eq(DatabaseSchema.images.id, value.photoId),
+                DatabaseSchema.photos,
+                eq(DatabaseSchema.photos.id, value.photoId),
                 "photoId",
             );
         return db
@@ -77,8 +77,8 @@ export class ImageAssetApi {
         if (value.photoId !== undefined)
             await References.requireReference(
                 db,
-                DatabaseSchema.images,
-                eq(DatabaseSchema.images.id, value.photoId),
+                DatabaseSchema.photos,
+                eq(DatabaseSchema.photos.id, value.photoId),
                 "photoId",
             );
         return db

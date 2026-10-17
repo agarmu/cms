@@ -40,11 +40,13 @@ export function photoResponse(
 ): z.infer<typeof photoSchema> {
     return {
         id: photo.id,
-        taken: photo.taken,
-        posted: photo.posted,
-        alt: photo.alt,
+        takenAt: photo.takenAt,
+        postedAt: photo.postedAt,
+        altText: photo.altText,
+        caption: photo.caption,
         description: photo.description,
-        enabled: photo.enabled,
+        location: photo.location,
+        visible: photo.visible,
         camera: photo.camera,
         lens: photo.lens,
         assets: photo.assets.map((asset) => ({
@@ -68,11 +70,13 @@ export const downloadSchema = z.union([
 ]);
 export const photoSchema = z.object({
     id: ApiValidation.uuid,
-    taken: z.date(),
-    posted: z.date(),
-    alt: z.string(),
+    takenAt: z.date(),
+    postedAt: z.date(),
+    altText: z.string(),
+    caption: z.string(),
     description: z.string(),
-    enabled: z.boolean(),
+    location: z.string().nullable(),
+    visible: z.boolean(),
     camera: equipmentResponse.nullable(),
     lens: equipmentResponse.nullable(),
     assets: z.array(

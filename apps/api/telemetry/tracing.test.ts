@@ -67,11 +67,11 @@ const { http: app } = new Application({
 });
 let provider: NonNullable<ReturnType<Telemetry["start"]>>;
 const metadata = {
-    taken: "2026-10-02T12:00:00.000Z",
-    posted: "2026-10-02T13:00:00.000Z",
-    alt: "Photo",
-    description: "",
-    enabled: true,
+    takenAt: "2026-10-02T12:00:00.000Z",
+    postedAt: "2026-10-02T13:00:00.000Z",
+    altText: "Photo",
+    caption: "",
+    visible: true,
 };
 
 beforeAll(async () => {
@@ -256,8 +256,8 @@ test("upload processing and GC retain nested storage spans and handled retry fai
         traceId = trace.getActiveSpan()!.spanContext().traceId;
         const photo = await PhotoApi.create(db, {
             ...metadata,
-            taken: new Date(metadata.taken),
-            posted: new Date(metadata.posted),
+            takenAt: new Date(metadata.takenAt),
+            postedAt: new Date(metadata.postedAt),
         });
         const upload = await ImageUploadApi.replace(
             db,

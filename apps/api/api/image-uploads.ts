@@ -371,9 +371,9 @@ export class ImageUploadApi {
                         "Upload has already been used with different photo details",
                     );
                 const [photo] = await tx
-                    .select({ id: DatabaseSchema.images.id })
-                    .from(DatabaseSchema.images)
-                    .where(eq(DatabaseSchema.images.id, upload.photoId))
+                    .select({ id: DatabaseSchema.photos.id })
+                    .from(DatabaseSchema.photos)
+                    .where(eq(DatabaseSchema.photos.id, upload.photoId))
                     .execute();
                 if (!photo) throw new NotFoundError("Photo not found");
                 return photo;
@@ -421,9 +421,9 @@ export class ImageUploadApi {
                     // Replacement and deletion both lock the photo before the upload receipt.
                     if (upload.kind === "replacement") {
                         const [photo] = await tx
-                            .select({ id: DatabaseSchema.images.id })
-                            .from(DatabaseSchema.images)
-                            .where(eq(DatabaseSchema.images.id, upload.photoId))
+                            .select({ id: DatabaseSchema.photos.id })
+                            .from(DatabaseSchema.photos)
+                            .where(eq(DatabaseSchema.photos.id, upload.photoId))
                             .for("update")
                             .execute();
                         if (!photo) throw new NotFoundError("Photo not found");

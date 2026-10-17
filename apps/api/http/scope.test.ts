@@ -41,7 +41,7 @@ test("read scopes receive a database object with no write methods", async () => 
                 expect("delete" in database).toBe(false);
                 expect("execute" in database).toBe(false);
                 expect("transaction" in database).toBe(false);
-                database.select().from(schema.images).toSQL();
+                database.select().from(schema.photos).toSQL();
                 return { readable: true };
             },
             { read: Scope.PhotosRead },
@@ -57,7 +57,7 @@ test("write scopes receive the writable database", async () => {
             "/",
             ({ db: database }) => {
                 expect(database).toBe(db);
-                database.delete(schema.images).toSQL();
+                database.delete(schema.photos).toSQL();
                 return { writable: true };
             },
             { write: Scope.PhotosCreate },

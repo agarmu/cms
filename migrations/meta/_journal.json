@@ -29,6 +29,20 @@
       "when": 1791704272362,
       "tag": "0003_photo_upload_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792207757200,
+      "tag": "0004_photo_metadata",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792210326632,
+      "tag": "0005_photo_description",
+      "breakpoints": true
     }
   ]
 }

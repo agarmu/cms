@@ -78,8 +78,8 @@ export class LensApi {
         id = validation.uuid.parse(id);
         await References.preventReferencedDeletion(
             db,
-            DatabaseSchema.images,
-            eq(DatabaseSchema.images.lensId, id),
+            DatabaseSchema.photos,
+            eq(DatabaseSchema.photos.lensId, id),
             "lenses",
         );
         return db

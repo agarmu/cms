@@ -78,8 +78,8 @@ export class CameraApi {
         id = validation.uuid.parse(id);
         await References.preventReferencedDeletion(
             db,
-            DatabaseSchema.images,
-            eq(DatabaseSchema.images.cameraId, id),
+            DatabaseSchema.photos,
+            eq(DatabaseSchema.photos.cameraId, id),
             "cameras",
         );
         return db

@@ -141,7 +141,7 @@ export class PhotoMcpServer extends McpServer {
             "update_photo",
             {
                 description:
-                    "Update photo fields. Alt and description require photos:text:update; all other fields require photos:metadata:update. Omitted fields stay unchanged.",
+                    "Update photo fields. altText, caption, and description require photos:text:update; all other fields require photos:metadata:update. Description is Markdown. Omitted fields stay unchanged.",
                 inputSchema: updateInput,
                 scopeChallenge: (context) => {
                     const input = updateInput.safeParse(

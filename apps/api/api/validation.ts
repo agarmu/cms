@@ -25,11 +25,13 @@ export class ApiValidation {
         name: z.string().trim().min(1),
     });
     static readonly image = z.strictObject({
-        taken: z.date(),
-        posted: z.date(),
-        alt: z.string(),
-        description: z.string(),
-        enabled: z.boolean(),
+        takenAt: z.date(),
+        postedAt: z.date(),
+        altText: z.string(),
+        caption: z.string(),
+        description: z.string().optional(),
+        location: z.string().trim().min(1).nullable().optional(),
+        visible: z.boolean(),
         cameraId: ApiValidation.uuid.nullable().optional(),
         lensId: ApiValidation.uuid.nullable().optional(),
     });

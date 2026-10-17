@@ -102,11 +102,11 @@ afterAll(async () => {
 
 async function photo() {
     return PhotoApi.create(db, {
-        taken: new Date("2026-10-02T12:00:00Z"),
-        posted: new Date("2026-10-02T13:00:00Z"),
-        alt: "Photo",
-        description: "",
-        enabled: true,
+        takenAt: new Date("2026-10-02T12:00:00Z"),
+        postedAt: new Date("2026-10-02T13:00:00Z"),
+        altText: "Photo",
+        caption: "",
+        visible: true,
     });
 }
 async function initiate(id: string) {

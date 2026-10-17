@@ -30,10 +30,10 @@ export class ImageApi {
         const { limit, offset } = validation.pagination.parse(page);
         return db
             .select()
-            .from(DatabaseSchema.images)
+            .from(DatabaseSchema.photos)
             .orderBy(
-                desc(DatabaseSchema.images.posted),
-                asc(DatabaseSchema.images.id),
+                desc(DatabaseSchema.photos.postedAt),
+                asc(DatabaseSchema.photos.id),
             )
             .limit(limit)
             .offset(offset)
@@ -46,8 +46,8 @@ export class ImageApi {
         id = validation.uuid.parse(id);
         return db
             .select()
-            .from(DatabaseSchema.images)
-            .where(eq(DatabaseSchema.images.id, id))
+            .from(DatabaseSchema.photos)
+            .where(eq(DatabaseSchema.photos.id, id))
             .execute();
     }
 
@@ -70,7 +70,7 @@ export class ImageApi {
                 "lensId",
             );
         return db
-            .insert(DatabaseSchema.images)
+            .insert(DatabaseSchema.photos)
             .values({
                 ...value,
                 ...(id ? { id: validation.uuid.parse(id) } : {}),
@@ -99,9 +99,9 @@ export class ImageApi {
                 "lensId",
             );
         return db
-            .update(DatabaseSchema.images)
+            .update(DatabaseSchema.photos)
             .set(value)
-            .where(eq(DatabaseSchema.images.id, id))
+            .where(eq(DatabaseSchema.photos.id, id))
             .returning()
             .execute();
     }
@@ -117,8 +117,8 @@ export class ImageApi {
             "Image",
         );
         return db
-            .delete(DatabaseSchema.images)
-            .where(eq(DatabaseSchema.images.id, id))
+            .delete(DatabaseSchema.photos)
+            .where(eq(DatabaseSchema.photos.id, id))
             .returning()
             .execute();
     }

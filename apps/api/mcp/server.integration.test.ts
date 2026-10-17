@@ -116,11 +116,11 @@ const app = new HttpApplication(
     new HttpConfiguration({ maxBodyBytes: 65_536 }),
 );
 const metadata = {
-    taken: "2026-10-02T12:00:00Z",
-    posted: "2026-10-02T12:00:00Z",
-    alt: "Photo",
-    description: "",
-    enabled: true,
+    takenAt: "2026-10-02T12:00:00Z",
+    postedAt: "2026-10-02T12:00:00Z",
+    altText: "Photo",
+    caption: "",
+    visible: true,
 };
 const clients: Client[] = [];
 
@@ -165,12 +165,12 @@ function output(result: CallToolResult) {
     expect(result.structuredContent).toBeDefined();
     return z.record(z.string(), z.unknown()).parse(result.structuredContent);
 }
-async function photo(enabled = true, posted = metadata.posted) {
+async function photo(visible = true, postedAt = metadata.postedAt) {
     return PhotoApi.create(db, {
         ...metadata,
-        taken: new Date(metadata.taken),
-        posted: new Date(posted),
-        enabled,
+        takenAt: new Date(metadata.takenAt),
+        postedAt: new Date(postedAt),
+        visible,
         assets: [{ assetLocation: "photo.webp", width: 640, height: 320 }],
     });
 }
@@ -221,7 +221,7 @@ test.each(["legacy", "auto"] as const)(
         );
         expect(result).toMatchObject({
             id: saved.id,
-            alt: "Photo",
+            altText: "Photo",
             assets: [{ filename: "photo.webp" }],
         });
         const page = output(
@@ -259,7 +259,7 @@ test.each(["legacy", "auto"] as const)(
             );
             expect(page).toMatchObject({ limit: 1, offset });
             expect(page["items"]).toEqual([
-                expect.objectContaining({ id: expected, enabled: true }),
+                expect.objectContaining({ id: expected, visible: true }),
             ]);
         }
         const adminPage = output(
@@ -269,7 +269,7 @@ test.each(["legacy", "auto"] as const)(
             }),
         );
         expect(adminPage["items"]).toEqual([
-            expect.objectContaining({ id: hidden.id, enabled: false }),
+            expect.objectContaining({ id: hidden.id, visible: false }),
             expect.objectContaining({ id: first.id }),
             expect.objectContaining({ id: second.id }),
         ]);
@@ -291,7 +291,7 @@ test.each(["legacy", "auto"] as const)(
                     arguments: { id: hidden.id },
                 }),
             ),
-        ).toMatchObject({ id: hidden.id, enabled: false });
+        ).toMatchObject({ id: hidden.id, visible: false });
         const downloaded = await admin.callTool({
             name: "get_photo_image",
             arguments: { id: hidden.id },
@@ -463,25 +463,34 @@ test.each(["legacy", "auto"] as const)(
             [
                 "reader",
                 "update_photo",
-                { id: saved.id, changes: { alt: "Denied" } },
+                { id: saved.id, changes: { altText: "Denied" } },
                 [Scope.PhotosTextUpdate],
             ],
             [
                 "text",
                 "update_photo",
-                { id: saved.id, changes: { enabled: false } },
+                { id: saved.id, changes: { visible: false } },
                 [Scope.PhotosMetadataUpdate],
             ],
             [
                 "text",
                 "update_photo",
-                { id: saved.id, changes: { alt: "Denied", enabled: false } },
+                {
+                    id: saved.id,
+                    changes: { altText: "Denied", visible: false },
+                },
                 [Scope.PhotosTextUpdate, Scope.PhotosMetadataUpdate],
             ],
             [
                 "metadata",
                 "update_photo",
-                { id: saved.id, changes: { alt: "Denied" } },
+                { id: saved.id, changes: { altText: "Denied" } },
+                [Scope.PhotosTextUpdate],
+            ],
+            [
+                "metadata",
+                "update_photo",
+                { id: saved.id, changes: { description: "Denied" } },
                 [Scope.PhotosTextUpdate],
             ],
         ] as const) {
@@ -503,8 +512,8 @@ test.each(["legacy", "auto"] as const)(
             );
         }
         expect(await PhotoApi.read(db, saved.id)).toMatchObject({
-            alt: "Photo",
-            enabled: true,
+            altText: "Photo",
+            visible: true,
         });
         const text = await connect("text", mode);
         output(
@@ -512,7 +521,10 @@ test.each(["legacy", "auto"] as const)(
                 name: "update_photo",
                 arguments: {
                     id: saved.id,
-                    changes: { alt: "Accessible text" },
+                    changes: {
+                        altText: "Accessible text",
+                        description: "A **Markdown** description",
+                    },
                 },
             }),
         );
@@ -520,12 +532,13 @@ test.each(["legacy", "auto"] as const)(
         output(
             await metadata.callTool({
                 name: "update_photo",
-                arguments: { id: saved.id, changes: { enabled: false } },
+                arguments: { id: saved.id, changes: { visible: false } },
             }),
         );
         expect(await PhotoApi.read(db, saved.id)).toMatchObject({
-            alt: "Accessible text",
-            enabled: false,
+            altText: "Accessible text",
+            description: "A **Markdown** description",
+            visible: false,
         });
     },
 );

@@ -123,9 +123,9 @@ export class PhotoApi {
             "photo.lock",
             async () => {
                 const [row] = await db
-                    .select({ id: DatabaseSchema.images.id })
-                    .from(DatabaseSchema.images)
-                    .where(eq(DatabaseSchema.images.id, id))
+                    .select({ id: DatabaseSchema.photos.id })
+                    .from(DatabaseSchema.photos)
+                    .where(eq(DatabaseSchema.photos.id, id))
                     .for("update")
                     .execute();
                 if (!row) throw new NotFoundError("Photo not found");
@@ -142,16 +142,16 @@ export class PhotoApi {
     @Tracing.traced("photo.list")
     static async list(db: ReadDatabase, page: Page, identity?: AuthIdentity) {
         const { limit, offset } = validation.pagination.parse(page);
-        return db.query.images.findMany({
+        return db.query.photos.findMany({
             where:
                 identity && !identity.scopes.has(Scope.PhotosReadHidden)
-                    ? eq(DatabaseSchema.images.enabled, true)
+                    ? eq(DatabaseSchema.photos.visible, true)
                     : undefined,
             limit,
             offset,
             orderBy: [
-                desc(DatabaseSchema.images.posted),
-                asc(DatabaseSchema.images.id),
+                desc(DatabaseSchema.photos.postedAt),
+                asc(DatabaseSchema.photos.id),
             ],
             with: { camera: true, lens: true, assets: true },
         });
@@ -161,11 +161,11 @@ export class PhotoApi {
     @Tracing.traced("photo.read")
     static async read(db: ReadDatabase, id: UUID, identity?: AuthIdentity) {
         id = validation.uuid.parse(id);
-        const row = await db.query.images.findFirst({
+        const row = await db.query.photos.findFirst({
             where: and(
-                eq(DatabaseSchema.images.id, id),
+                eq(DatabaseSchema.photos.id, id),
                 identity && !identity.scopes.has(Scope.PhotosReadHidden)
-                    ? eq(DatabaseSchema.images.enabled, true)
+                    ? eq(DatabaseSchema.photos.visible, true)
                     : undefined,
             ),
             with: { camera: true, lens: true, assets: true },

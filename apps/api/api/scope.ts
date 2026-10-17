@@ -41,11 +41,12 @@ export const scopeDescriptions: Record<Scope, string> = {
     [Scope.LensesUpdate]: "Update lens records.",
     [Scope.LensesDelete]: "Delete lens records.",
     [Scope.PhotosRead]:
-        "List and read enabled photos and download their images.",
+        "List and read visible photos and download their images.",
     [Scope.PhotosReadHidden]:
         "Include hidden photos and their images when reading with photos:read.",
     [Scope.PhotosCreate]: "Create photos and manage new-photo uploads.",
-    [Scope.PhotosTextUpdate]: "Update photo alt text and descriptions.",
+    [Scope.PhotosTextUpdate]:
+        "Update photo alt text, captions, and descriptions.",
     [Scope.PhotosMetadataUpdate]:
         "Update non-text photo fields, including dates, visibility, and equipment.",
     [Scope.PhotosAssetsWrite]:

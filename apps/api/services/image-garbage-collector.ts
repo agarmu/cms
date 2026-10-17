@@ -70,12 +70,12 @@ export class ImageGarbageCollector {
                                         // deletion so an asset cannot be reattached after the reference check.
                                         await tx
                                             .select({
-                                                id: DatabaseSchema.images.id,
+                                                id: DatabaseSchema.photos.id,
                                             })
-                                            .from(DatabaseSchema.images)
+                                            .from(DatabaseSchema.photos)
                                             .where(
                                                 eq(
-                                                    DatabaseSchema.images.id,
+                                                    DatabaseSchema.photos.id,
                                                     asset.photoId,
                                                 ),
                                             )

@@ -19,7 +19,7 @@ import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { DatabaseSchema as schema } from "./schema";
 
-const { cameras, imageAssets, images, lenses } = schema;
+const { cameras, imageAssets, photos, lenses } = schema;
 const client = new PGlite();
 const testDb = drizzle(client, { schema: schema.definition });
 
@@ -36,12 +36,42 @@ beforeAll(
 afterAll(() => client.close());
 
 const imageMetadata = {
-    taken: new Date("2026-10-02T12:00:00Z"),
-    posted: new Date("2026-10-02T13:00:00Z"),
-    alt: "A photograph",
-    description: "Evening light",
-    enabled: true,
+    takenAt: new Date("2026-10-02T12:00:00Z"),
+    postedAt: new Date("2026-10-02T13:00:00Z"),
+    altText: "A photograph",
+    caption: "Evening light",
+    description: "Light falls across the **mountains**.",
+    location: null,
+    visible: true,
 };
+
+test("adding description preserves existing caption and alt text", async () => {
+    const upgrade = new PGlite();
+    try {
+        await upgrade.exec(`
+            CREATE TABLE photos (caption text NOT NULL, alt_text text NOT NULL);
+            INSERT INTO photos VALUES ('Existing caption', 'Existing alt text');
+        `);
+        await upgrade.exec(
+            await Bun.file(
+                new URL(
+                    "../../../migrations/0005_photo_description.sql",
+                    import.meta.url,
+                ),
+            ).text(),
+        );
+        const { rows } = await upgrade.query("SELECT * FROM photos");
+        expect(rows).toEqual([
+            {
+                caption: "Existing caption",
+                alt_text: "Existing alt text",
+                description: "",
+            },
+        ]);
+    } finally {
+        await upgrade.close();
+    }
+});
 
 test("loads an image with its camera, lens, and assets", async () => {
     const camera = { id: crypto.randomUUID(), name: "Camera" };
@@ -55,7 +85,7 @@ test("loads an image with its camera, lens, and assets", async () => {
 
     await testDb.insert(cameras).values(camera);
     await testDb.insert(lenses).values(lens);
-    await testDb.insert(images).values(image);
+    await testDb.insert(photos).values(image);
     const assets = await testDb
         .insert(imageAssets)
         .values({
@@ -66,7 +96,7 @@ test("loads an image with its camera, lens, and assets", async () => {
         })
         .returning();
 
-    const loaded = await testDb.query.images.findFirst({
+    const loaded = await testDb.query.photos.findFirst({
         where: (table, { eq }) => eq(table.id, image.id),
         with: { camera: true, lens: true, assets: true },
     });
@@ -83,7 +113,7 @@ test.each(invalidDimensions)(
     "rejects non-positive %s",
     async (dimension, width, height) => {
         const image = { ...imageMetadata, id: crypto.randomUUID() };
-        await testDb.insert(images).values(image);
+        await testDb.insert(photos).values(image);
 
         const insert = testDb.insert(imageAssets).values({
             photoId: image.id,
