@@ -678,7 +678,7 @@ import { Icon } from "astro-icon/components";
         @apply outline-2 outline-offset-4 outline-primary;
     }
     .photo-grid :global(.thumbnail) {
-        @apply aspect-[4/3] overflow-hidden rounded-lg bg-neutral-100 dark:bg-neutral-900;
+        @apply aspect-[4/3];
     }
     .photo-grid :global(.card-copy) {
         @apply mt-3;
@@ -699,7 +699,7 @@ import { Icon } from "astro-icon/components";
         @apply outline-2 -outline-offset-4 outline-primary;
     }
     .photo-grid :global(img) {
-        @apply block size-full object-cover transition-opacity;
+        @apply block h-auto max-h-full w-auto max-w-full rounded-lg object-contain transition-opacity;
     }
     .photo-grid :global(.photo-link:hover img) {
         @apply opacity-90;
