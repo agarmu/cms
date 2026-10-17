@@ -176,10 +176,17 @@ export function mountLibrary(root: HTMLElement) {
         thumbnail: boolean,
     ) {
         frame.classList.add("image-frame");
+        const visibility = thumbnail
+            ? frame.querySelector<HTMLElement>("[data-visibility]")
+            : null;
         const message = document.createElement("p");
         message.className = "image-status";
         message.textContent = asset ? "Loading image..." : "No image available";
         frame.replaceChildren(message);
+        if (visibility) {
+            visibility.hidden = true;
+            frame.append(visibility);
+        }
         if (!asset || signal.aborted) return;
         const showError = () => {
             if (signal.aborted) return;
@@ -214,10 +221,27 @@ export function mountLibrary(root: HTMLElement) {
                 url = source.url;
             }
             disposers.push(() => img.removeAttribute("src"));
+            const positionVisibility = () => {
+                if (!visibility || signal.aborted || img.hidden) return;
+                const imageBounds = img.getBoundingClientRect();
+                const frameBounds = frame.getBoundingClientRect();
+                visibility.style.top = `${imageBounds.top - frameBounds.top + 6}px`;
+                visibility.style.right = `${frameBounds.right - imageBounds.right + 6}px`;
+                visibility.hidden = false;
+            };
+            const imageSizeObserver = visibility
+                ? new ResizeObserver(positionVisibility)
+                : null;
+            if (imageSizeObserver) {
+                disposers.push(() => imageSizeObserver.disconnect());
+            }
             img.onload = () => {
                 if (signal.aborted) return;
                 message.remove();
                 img.hidden = false;
+                positionVisibility();
+                imageSizeObserver?.observe(img);
+                imageSizeObserver?.observe(frame);
             };
             img.onerror = showError;
             if (thumbnail) frame.append(img);
@@ -274,7 +298,9 @@ export function mountLibrary(root: HTMLElement) {
             const time = element<HTMLTimeElement>(card, "time");
             time.dateTime = photo.takenAt;
             time.textContent = formatTimestamp(photo.takenAt).slice(0, 10);
-            renderVisibility(element(card, "[data-visibility]"), photo.visible);
+            const visibility = element(card, "[data-visibility]");
+            renderVisibility(visibility, photo.visible);
+            visibility.hidden = true;
             const frame = element(card, "[data-thumbnail]");
             images.set(frame, {
                 photo,

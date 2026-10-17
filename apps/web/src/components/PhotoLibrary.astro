@@ -327,10 +327,12 @@ import { Icon } from "astro-icon/components";
     <template data-photo-card>
         <li class="photo-card">
             <a class="photo-link">
-                <div class="thumbnail" data-thumbnail />
+                <div class="thumbnail" data-thumbnail>
+                    <VisibilityIcon />
+                </div>
                 <div class="card-copy">
                     <p>
-                        <time /> <VisibilityIcon />
+                        <time />
                     </p>
                 </div>
             </a>
@@ -444,7 +446,7 @@ import { Icon } from "astro-icon/components";
         @apply w-full max-w-80;
     }
     .photo-preview {
-        @apply mx-auto w-full min-w-0 max-w-80 sm:mx-0;
+        @apply mx-auto w-full min-w-0 max-w-80;
     }
     .replace-image {
         @apply mx-auto mt-3 flex size-10 min-h-10 p-0;
@@ -678,13 +680,20 @@ import { Icon } from "astro-icon/components";
         @apply outline-2 outline-offset-4 outline-primary;
     }
     .photo-grid :global(.thumbnail) {
-        @apply aspect-[4/3];
+        @apply relative aspect-[4/3];
+    }
+    .photo-grid :global(.thumbnail .visibility) {
+        @apply pointer-events-none absolute z-10 text-white;
+        filter: drop-shadow(0 1px 2px rgb(0 0 0 / 90%));
+    }
+    .photo-grid :global(.thumbnail .visibility svg) {
+        @apply size-3.5;
     }
     .photo-grid :global(.card-copy) {
         @apply mt-3;
     }
     .photo-grid :global(.card-copy p) {
-        @apply mt-1 flex items-center justify-between gap-2 text-sm text-muted-foreground;
+        @apply mt-1 text-center text-sm text-muted-foreground;
     }
     .photo-library :global(.image-frame) {
         @apply relative flex min-h-32 items-center justify-center;
@@ -705,7 +714,7 @@ import { Icon } from "astro-icon/components";
         @apply opacity-90;
     }
     .detail-image:global(.image-frame) {
-        @apply min-h-0 items-start justify-start;
+        @apply min-h-0 items-center justify-center;
     }
     .detail-image :global(img) {
         @apply block h-auto max-h-80 w-auto max-w-full object-contain;
