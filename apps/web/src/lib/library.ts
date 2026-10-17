@@ -8,6 +8,8 @@ import {
 } from "./cms-client";
 import { libraryUrl, pageSize, readRoute } from "./library-route";
 import { PhotoLightbox } from "./photo-lightbox";
+import { mountPhotoEditor } from "./photo-editor";
+import { renderDescription } from "./photo-description";
 
 function element<T extends HTMLElement>(root: ParentNode, selector: string): T {
     const found = root.querySelector<T>(selector);
@@ -55,7 +57,8 @@ export function mountLibrary(root: HTMLElement) {
     const template = element<HTMLTemplateElement>(root, "[data-photo-card]");
     const previous = element<HTMLAnchorElement>(root, "[data-previous]");
     const next = element<HTMLAnchorElement>(root, "[data-next]");
-    const back = element<HTMLAnchorElement>(root, "[data-back]");
+    const heading = element(document, "[data-library-heading]");
+    const back = element<HTMLAnchorElement>(document, "[data-back]");
     const lightbox = new PhotoLightbox(
         element<HTMLDialogElement>(root, "[data-photo-lightbox]"),
     );
@@ -63,10 +66,15 @@ export function mountLibrary(root: HTMLElement) {
     let observer: IntersectionObserver | undefined;
     let disposers: (() => void)[] = [];
     let sessionReady: boolean | undefined;
+    const editor = mountPhotoEditor(detail, {
+        update: renderPhotoMetadata,
+        replace: () => void renderRoute(true),
+    });
 
     function reset() {
         lightbox.reset();
         request?.abort();
+        editor.reset();
         observer?.disconnect();
         root.removeAttribute("aria-busy");
         statusBack.hidden = true;
@@ -85,6 +93,8 @@ export function mountLibrary(root: HTMLElement) {
         element(detail, "[data-visibility]").hidden = true;
         list.hidden = true;
         detail.hidden = true;
+        heading.hidden = false;
+        back.hidden = true;
     }
 
     function showStatus(
@@ -100,8 +110,42 @@ export function mountLibrary(root: HTMLElement) {
         retry.hidden = !canRetry;
     }
 
-    function setText(selector: string, value: string) {
-        element(root, selector).textContent = value;
+    function renderPhotoMetadata(photo: Photo) {
+        for (const [field, fallback] of [
+            ["caption", "No caption provided"],
+            ["description", "No description provided"],
+            ["location", "None"],
+            ["altText", "No alt text provided"],
+        ] as const) {
+            const target = element(detail, `[data-photo-value="${field}"]`);
+            if (field === "description" && photo.description)
+                target.innerHTML = renderDescription(photo.description);
+            else target.textContent = photo[field] || fallback;
+            target.classList.toggle("is-empty", !photo[field]);
+        }
+        for (const image of root.querySelectorAll<HTMLImageElement>(
+            "[data-photo-image] img, [data-lightbox-image] img",
+        ))
+            image.alt = photo.altText;
+        for (const [field, selector] of [
+            ["takenAt", "taken"],
+            ["postedAt", "posted"],
+        ] as const) {
+            const time = element<HTMLTimeElement>(
+                detail,
+                `[data-photo-date="${selector}"]`,
+            );
+            time.textContent = formatTimestamp(photo[field]);
+            time.dateTime = photo[field];
+        }
+        renderEquipment("camera", photo.camera);
+        renderEquipment("lens", photo.lens);
+        renderVisibility(element(detail, "[data-visibility]"), photo.visible);
+        const visibilityButton = element(detail, '[data-edit-field="visible"]');
+        visibilityButton.setAttribute(
+            "aria-label",
+            photo.visible ? "Hide photo" : "Show photo",
+        );
     }
 
     function renderEquipment(
@@ -110,14 +154,18 @@ export function mountLibrary(root: HTMLElement) {
     ) {
         const name = equipment?.name.trim();
         const label = kind === "camera" ? "Camera" : "Lens";
-        const field = element(detail, `[data-photo-${kind}]`);
+        const field = element(detail, `[data-photo-equipment="${kind}"]`);
         field.textContent = name || `${label} not specified`;
         field.classList.toggle("sr-only", !name);
-        element(detail, `[data-${kind}-present]`).hidden = !name;
-        element(detail, `[data-${kind}-missing]`).hidden = Boolean(name);
-        element(detail, `[data-equipment="${kind}"]`).title = name
-            ? `${label}: ${name}`
-            : `${label} not specified`;
+        element(detail, `[data-equipment-present="${kind}"]`).hidden = !name;
+        element(detail, `[data-equipment-missing="${kind}"]`).hidden =
+            Boolean(name);
+        const button = element(detail, `[data-equipment="${kind}"]`);
+        button.setAttribute(
+            "aria-label",
+            `Edit ${kind}: ${name || "not specified"}`,
+        );
+        button.title = name ? `${label}: ${name}` : `${label} not specified`;
     }
 
     async function loadImage(
@@ -152,7 +200,7 @@ export function mountLibrary(root: HTMLElement) {
             const source = await cms.readImage(asset.url, signal);
             if (signal.aborted) return;
             const img = document.createElement("img");
-            img.alt = thumbnail ? "" : photo.alt;
+            img.alt = thumbnail ? "" : photo.altText;
             img.width = asset.width;
             img.height = asset.height;
             img.decoding = "async";
@@ -224,9 +272,9 @@ export function mountLibrary(root: HTMLElement) {
             const link = element<HTMLAnchorElement>(card, "a");
             link.href = libraryUrl(offset, photo.id);
             const time = element<HTMLTimeElement>(card, "time");
-            time.dateTime = photo.taken;
-            time.textContent = formatTimestamp(photo.taken).slice(0, 10);
-            renderVisibility(element(card, "[data-visibility]"), photo.enabled);
+            time.dateTime = photo.takenAt;
+            time.textContent = formatTimestamp(photo.takenAt).slice(0, 10);
+            renderVisibility(element(card, "[data-visibility]"), photo.visible);
             const frame = element(card, "[data-thumbnail]");
             images.set(frame, {
                 photo,
@@ -256,6 +304,9 @@ export function mountLibrary(root: HTMLElement) {
             return;
         }
         const route = readRoute(new URL(window.location.href));
+        heading.hidden = !!route.photo;
+        back.hidden = !route.photo;
+        back.href = libraryUrl(route.offset);
         if (route.invalidPhoto) {
             showStatus(
                 "Invalid photo link",
@@ -276,33 +327,10 @@ export function mountLibrary(root: HTMLElement) {
         root.setAttribute("aria-busy", "true");
         try {
             if (route.photo) {
-                back.href = libraryUrl(route.offset);
                 const photo = await cms.readPhoto(route.photo, signal);
                 if (signal.aborted) return;
-                setText(
-                    "[data-photo-description]",
-                    photo.description || "No description provided",
-                );
-                setText(
-                    "[data-photo-alt]",
-                    photo.alt || "No alt text provided",
-                );
-                setText("[data-photo-taken]", formatTimestamp(photo.taken));
-                element<HTMLTimeElement>(
-                    detail,
-                    "[data-photo-taken]",
-                ).dateTime = photo.taken;
-                setText("[data-photo-posted]", formatTimestamp(photo.posted));
-                element<HTMLTimeElement>(
-                    detail,
-                    "[data-photo-posted]",
-                ).dateTime = photo.posted;
-                renderEquipment("camera", photo.camera);
-                renderEquipment("lens", photo.lens);
-                renderVisibility(
-                    element(detail, "[data-visibility]"),
-                    photo.enabled,
-                );
+                renderPhotoMetadata(photo);
+                editor.load(photo, signal);
                 const variants = element(root, "[data-photo-variants]");
                 const assets = photo.assets.toSorted(
                     (left, right) =>
@@ -320,6 +348,7 @@ export function mountLibrary(root: HTMLElement) {
                         )
                         .replace(/\.[^.]+$/, "");
                     const dimensions = document.createElement("span");
+                    dimensions.className = "variant-dimensions";
                     dimensions.textContent = `${asset.width} x ${asset.height} px`;
                     item.append(name, " ", dimensions);
                     variants.append(item);
@@ -398,7 +427,7 @@ export function mountLibrary(root: HTMLElement) {
         }
     }
 
-    root.addEventListener("click", (event) => {
+    function navigate(event: MouseEvent) {
         if (
             event.button !== 0 ||
             event.metaKey ||
@@ -410,7 +439,7 @@ export function mountLibrary(root: HTMLElement) {
         const link = (event.target as Element).closest<HTMLAnchorElement>(
             "a[href]",
         );
-        if (!link || !root.contains(link)) return;
+        if (!link || (!root.contains(link) && link !== back)) return;
         const url = new URL(link.href);
         if (url.origin !== window.location.origin || url.pathname !== "/")
             return;
@@ -419,7 +448,9 @@ export function mountLibrary(root: HTMLElement) {
         window.history.pushState(null, "", url);
         window.scrollTo(0, 0);
         void renderRoute(true);
-    });
+    }
+    root.addEventListener("click", navigate);
+    back.addEventListener("click", navigate);
     window.addEventListener("popstate", () => void renderRoute(true));
     retry.addEventListener("click", () => void renderRoute(true));
     const refreshSession = async () => {

@@ -1,6 +1,7 @@
 ---
 import { Font } from "astro:assets";
 import { ThemeInitScript } from "@starwind-ui/astro/theme";
+import { Icon } from "astro-icon/components";
 import Footer from "@/components/Footer.astro";
 import ThemeToggle from "@/components/ThemeToggle.astro";
 import "@/styles/theme.css";
@@ -27,9 +28,19 @@ const { title = "Photos CMS", description, chrome = true } = Astro.props;
         <main>
             {chrome && (
                 <header>
-                    <h1>
+                    <h1 data-library-heading>
                         <a href="/">Photos CMS</a>
                     </h1>
+                    <a
+                        data-back
+                        href="/"
+                        class="back-link"
+                        aria-label="All photos"
+                        title="All photos"
+                        hidden
+                    >
+                        <Icon name="lucide:arrow-left" aria-hidden="true" />
+                    </a>
                     <ThemeToggle />
                 </header>
             )}
@@ -47,7 +58,7 @@ const { title = "Photos CMS", description, chrome = true } = Astro.props;
     }
 
     main {
-        @apply mx-auto flex w-full max-w-6xl flex-1 flex-col px-6 py-6;
+        @apply mx-auto flex w-full max-w-6xl flex-1 flex-col px-6 pt-6;
     }
 
     header {
@@ -56,5 +67,21 @@ const { title = "Photos CMS", description, chrome = true } = Astro.props;
 
     h1 {
         @apply font-bold fl-text-base/2xl--sm-lg;
+    }
+
+    .back-link {
+        @apply inline-flex size-11 items-center justify-center rounded-md text-muted-foreground hover:bg-neutral-100 dark:hover:bg-neutral-800;
+    }
+
+    .back-link:focus-visible {
+        @apply outline-2 outline-offset-4 outline-primary;
+    }
+
+    .back-link :global(svg) {
+        @apply size-5;
+    }
+
+    [hidden] {
+        display: none !important;
     }
 </style>

@@ -32,6 +32,7 @@ export default defineConfig({
                     "camera-off",
                     "aperture",
                     "clock",
+                    "image-up",
                 ],
             },
         }),

@@ -41,128 +41,285 @@ import { Icon } from "astro-icon/components";
     </div>
 
     <article data-photo-view hidden aria-label="Photo details" tabindex="-1">
-        <div class="entry-toolbar">
-            <a
-                data-back
-                href="/"
-                class="back-link"
-                aria-label="All photos"
-                title="All photos"
-            >
-                <Icon name="lucide:arrow-left" aria-hidden="true" />
-            </a>
-        </div>
         <div class="entry-layout">
             <figure class="photo-preview">
                 <div data-photo-image class="detail-image" />
                 <figcaption class="variant-sizes">
                     <ul data-photo-variants aria-label="Image variant sizes" />
+                    <button
+                        data-edit-field="image"
+                        class="replace-image"
+                        type="button"
+                        aria-label="Replace image"
+                        title="Replace image"
+                    >
+                        <Icon name="lucide:image-up" aria-hidden="true" />
+                    </button>
                 </figcaption>
             </figure>
             <div class="detail-copy">
-                <div class="detail-toolbar">
-                    <span class="visibility-item">
-                        <VisibilityIcon />
-                    </span>
-                    <dl class="entry-summary" aria-label="Photo summary">
-                        <div class="summary-item" data-equipment="camera">
-                            <dt class="sr-only">Camera</dt>
-                            <dd>
+                <div
+                    class="detail-toolbar entry-summary"
+                    role="group"
+                    aria-label="Photo summary"
+                >
+                    <div class="summary-equipment">
+                        <button
+                            data-edit-field="visible"
+                            class="visibility-item"
+                            type="button"
+                            aria-label="Change visibility"
+                            title="Change visibility"
+                        >
+                            <VisibilityIcon />
+                        </button>
+                        {(["camera", "lens"] as const).map((kind) => (
+                            <button
+                                data-edit-field={kind}
+                                class="summary-item"
+                                data-equipment={kind}
+                                type="button"
+                                aria-label={"Edit " + kind}
+                            >
                                 <span
-                                    data-camera-present
+                                    data-equipment-present={kind}
                                     class="equipment-icon"
                                 >
                                     <Icon
-                                        name="lucide:camera"
+                                        name={
+                                            kind === "camera"
+                                                ? "lucide:camera"
+                                                : "lucide:aperture"
+                                        }
                                         aria-hidden="true"
                                     />
                                 </span>
                                 <span
-                                    data-camera-missing
-                                    class="equipment-icon"
+                                    data-equipment-missing={kind}
+                                    class:list={[
+                                        "equipment-icon",
+                                        {
+                                            "lens-missing-icon":
+                                                kind === "lens",
+                                        },
+                                    ]}
                                     hidden
                                 >
                                     <Icon
-                                        name="lucide:camera-off"
+                                        name={
+                                            kind === "camera"
+                                                ? "lucide:camera-off"
+                                                : "lucide:aperture"
+                                        }
                                         aria-hidden="true"
                                     />
-                                </span>
-                                <span data-photo-camera data-photo-field />
-                            </dd>
-                        </div>
-                        <div class="summary-item" data-equipment="lens">
-                            <dt class="sr-only">Lens</dt>
-                            <dd>
-                                <span data-lens-present class="equipment-icon">
-                                    <Icon
-                                        name="lucide:aperture"
-                                        aria-hidden="true"
-                                    />
+                                    {kind === "lens" && (
+                                        <svg
+                                            class="lens-strike"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            aria-hidden="true"
+                                        >
+                                            <path
+                                                d="m3 3 18 18"
+                                                stroke="var(--background)"
+                                                stroke-width="5"
+                                                stroke-linecap="round"
+                                            />
+                                            <path
+                                                d="m3 3 18 18"
+                                                stroke="currentColor"
+                                                stroke-width="2"
+                                                stroke-linecap="round"
+                                            />
+                                        </svg>
+                                    )}
                                 </span>
                                 <span
-                                    data-lens-missing
-                                    class="equipment-icon lens-missing-icon"
-                                    hidden
-                                >
+                                    data-photo-equipment={kind}
+                                    data-photo-field
+                                />
+                            </button>
+                        ))}
+                    </div>
+                    <div class="summary-dates">
+                        {(
+                            [
+                                {
+                                    field: "takenAt",
+                                    name: "taken",
+                                    label: "Taken",
+                                },
+                                {
+                                    field: "postedAt",
+                                    name: "posted",
+                                    label: "Posted",
+                                },
+                            ] as const
+                        ).map(({ field, name, label }) => (
+                            <button
+                                data-edit-field={field}
+                                class="summary-item date-item"
+                                type="button"
+                                title={"Edit " + label.toLowerCase() + " date"}
+                            >
+                                <span class="date-label">
                                     <Icon
-                                        name="lucide:aperture"
+                                        name="lucide:clock"
                                         aria-hidden="true"
                                     />
-                                    <svg
-                                        class="lens-strike"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        aria-hidden="true"
-                                    >
-                                        <path
-                                            d="m3 3 18 18"
-                                            stroke="var(--background)"
-                                            stroke-width="5"
-                                            stroke-linecap="round"
-                                        />
-                                        <path
-                                            d="m3 3 18 18"
-                                            stroke="currentColor"
-                                            stroke-width="2"
-                                            stroke-linecap="round"
-                                        />
-                                    </svg>
+                                    {label}
                                 </span>
-                                <span data-photo-lens data-photo-field />
-                            </dd>
-                        </div>
-                        <div class="summary-item date-item">
-                            <dt>
-                                <Icon name="lucide:clock" aria-hidden="true" />
-                                Taken
-                            </dt>
-                            <dd>
-                                <time data-photo-taken data-photo-field />
-                            </dd>
-                        </div>
-                        <div class="summary-item date-item">
-                            <dt>
-                                <Icon name="lucide:clock" aria-hidden="true" />
-                                Posted
-                            </dt>
-                            <dd>
-                                <time data-photo-posted data-photo-field />
-                            </dd>
-                        </div>
-                    </dl>
+                                <time data-photo-date={name} data-photo-field />
+                            </button>
+                        ))}
+                    </div>
                 </div>
                 <dl>
-                    <div class="metadata-wide">
-                        <dt>Description</dt>
-                        <dd data-photo-description data-photo-field />
-                    </div>
-                    <div class="metadata-wide">
-                        <dt>Alt text</dt>
-                        <dd data-photo-alt data-photo-field />
-                    </div>
+                    {[
+                        { field: "location", label: "Location" },
+                        { field: "caption", label: "Caption" },
+                        { field: "description", label: "Description" },
+                        { field: "altText", label: "Alt text" },
+                    ].map(({ field, label }) => (
+                        <div
+                            class:list={[
+                                "metadata-wide",
+                                { "metadata-inline": field === "location" },
+                            ]}
+                        >
+                            <dt class="text-field-label">
+                                {label}
+                                {field !== "location" && (
+                                    <button
+                                        data-edit-field={field}
+                                        type="button"
+                                        class="edit-text"
+                                        aria-label={
+                                            "Edit " + label.toLowerCase()
+                                        }
+                                    >
+                                        Edit
+                                    </button>
+                                )}
+                            </dt>
+                            <dd data-editor-slot={field}>
+                                <div
+                                    data-photo-value={field}
+                                    data-photo-field
+                                    class:list={{
+                                        "description-content":
+                                            field === "description",
+                                    }}
+                                />
+                                {field === "location" && (
+                                    <button
+                                        data-edit-field={field}
+                                        type="button"
+                                        class="edit-text"
+                                        aria-label="Edit location"
+                                    >
+                                        Edit
+                                    </button>
+                                )}
+                            </dd>
+                        </div>
+                    ))}
                 </dl>
+                <form
+                    data-photo-editor
+                    class="text-editor"
+                    hidden
+                    aria-label="Edit photo"
+                >
+                    <fieldset data-editor-fields>
+                        <p data-editor-confirm hidden />
+                        <div data-editor-control>
+                            <label data-editor-label id="photo-editor-label" />
+                            <textarea
+                                data-editor-text
+                                id="photo-editor-text"
+                                rows="4"
+                                hidden
+                            />
+                            <input
+                                data-editor-location
+                                id="photo-editor-location"
+                                type="text"
+                                hidden
+                            />
+                            <input
+                                data-editor-date
+                                id="photo-editor-date"
+                                type="datetime-local"
+                                step="0.001"
+                                hidden
+                            />
+                            <select
+                                data-editor-select
+                                id="photo-editor-select"
+                                hidden
+                            />
+                            <div
+                                data-editor-file-picker
+                                class="file-picker"
+                                hidden
+                            >
+                                <input
+                                    data-editor-file
+                                    id="photo-editor-file"
+                                    type="file"
+                                    accept="image/jpeg,image/png,image/webp,image/avif,image/tiff"
+                                    hidden
+                                />
+                                <span data-editor-file-name aria-hidden="true">
+                                    No file selected
+                                </span>
+                            </div>
+                        </div>
+                        <div data-editor-new-name hidden>
+                            <label for="photo-editor-name">
+                                New equipment name
+                            </label>
+                            <input
+                                data-editor-name
+                                id="photo-editor-name"
+                                type="text"
+                            />
+                        </div>
+                        <div data-editor-time-choice hidden>
+                            <label for="photo-editor-offset">
+                                This time occurs twice. Choose which occurrence.
+                            </label>
+                            <select
+                                data-editor-offset
+                                id="photo-editor-offset"
+                            />
+                        </div>
+                        <p data-editor-help class="editor-help" hidden />
+                        <div class="editor-actions">
+                            <button data-editor-save type="submit">
+                                Save
+                            </button>
+                            <button data-editor-cancel type="button">
+                                Cancel
+                            </button>
+                        </div>
+                    </fieldset>
+                    <p data-editor-error role="alert" hidden />
+                </form>
+                <p
+                    data-editor-status
+                    class="text-status"
+                    role="status"
+                    hidden
+                />
             </div>
         </div>
+        <dialog data-photo-editor-dialog aria-labelledby="photo-editor-title">
+            <h2 id="photo-editor-title" data-editor-title />
+            <div data-editor-slot="modal" />
+        </dialog>
     </article>
 
     <PhotoLightbox />
@@ -196,7 +353,7 @@ import { Icon } from "astro-icon/components";
     @reference "../styles/theme.css";
 
     .photo-library {
-        @apply flex-1 py-8;
+        @apply flex-1 pt-4;
     }
     h2 {
         @apply break-words font-bold fl-text-xl/3xl--sm-lg;
@@ -241,42 +398,32 @@ import { Icon } from "astro-icon/components";
     .back-link {
         @apply inline-flex min-h-11 items-center text-sm font-bold text-muted-foreground;
     }
-    .entry-toolbar {
-        @apply mb-6 flex flex-wrap items-center justify-between gap-3;
-    }
-    .entry-toolbar .back-link {
-        @apply size-11 justify-center rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800;
-    }
-    .entry-toolbar :global(svg) {
-        @apply size-5;
-    }
     .detail-toolbar {
-        @apply flex items-start gap-3;
+        @apply grid min-w-0 gap-2;
+    }
+    .summary-equipment {
+        @apply grid w-full min-w-0 grid-cols-3 items-stretch gap-2;
+    }
+    .summary-dates {
+        @apply grid w-full min-w-0 gap-2;
     }
     .visibility-item {
-        @apply inline-flex size-10 shrink-0 items-center justify-center rounded-md border border-neutral-200 dark:border-neutral-800;
+        @apply inline-flex min-h-10 w-full min-w-0 items-center justify-center rounded-md border border-neutral-200 p-0 dark:border-neutral-800;
     }
     .detail-toolbar .visibility-item :global(svg) {
         @apply size-4;
     }
-    .entry-summary {
-        @apply m-0 flex min-w-0 flex-1 flex-wrap items-center gap-2;
-    }
     .summary-item {
-        @apply flex min-h-10 min-w-0 max-w-full items-center rounded-md border border-neutral-200 px-3 py-2 dark:border-neutral-800;
+        @apply flex min-h-10 min-w-0 max-w-full items-center justify-center gap-1.5 whitespace-normal rounded-md border border-neutral-200 px-2 py-2 text-center text-sm font-normal dark:border-neutral-800;
     }
-    .entry-summary dd {
-        @apply m-0 flex min-w-0 max-w-full items-center gap-2 whitespace-normal text-sm;
-    }
-    .entry-summary [data-photo-camera],
-    .entry-summary [data-photo-lens] {
+    .entry-summary [data-photo-equipment] {
         @apply min-w-0 break-words;
     }
     .date-item {
-        @apply inline-flex flex-wrap items-center gap-2;
+        @apply inline-flex w-full flex-wrap items-center justify-center gap-x-1.5 gap-y-1;
     }
-    .date-item dt {
-        @apply inline-flex items-center gap-2;
+    .date-label {
+        @apply inline-flex items-center gap-1.5;
     }
     .entry-summary :global(svg) {
         @apply block size-4 shrink-0 text-muted-foreground;
@@ -291,34 +438,230 @@ import { Icon } from "astro-icon/components";
         @apply absolute inset-0;
     }
     .entry-layout {
-        @apply grid items-start gap-8 md:grid-cols-[minmax(0,20rem)_minmax(0,1fr)];
+        @apply grid items-start gap-6 sm:grid-cols-[minmax(15rem,1fr)_minmax(0,2fr)] lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)];
     }
     .detail-image {
         @apply w-full max-w-80;
     }
     .photo-preview {
-        @apply min-w-0 max-w-80;
+        @apply mx-auto w-full min-w-0 max-w-80 sm:mx-0;
+    }
+    .replace-image {
+        @apply mx-auto mt-3 flex size-10 min-h-10 p-0;
+    }
+    .replace-image :global(svg) {
+        @apply size-4;
     }
     .variant-sizes {
-        @apply mt-3 text-sm text-muted-foreground;
+        @apply mt-3 text-xs text-muted-foreground lg:text-sm;
     }
     .variant-sizes ul {
         @apply flex flex-col gap-2 tabular-nums;
     }
     .variant-sizes :global(li) {
-        @apply flex items-baseline gap-3;
+        @apply grid grid-cols-2 items-baseline gap-2;
     }
     .variant-sizes :global(.variant-name) {
-        @apply inline-block min-w-24 shrink-0 font-medium;
+        @apply min-w-0 font-medium;
+    }
+    .variant-sizes :global(.variant-dimensions) {
+        @apply text-right;
     }
     .detail-copy {
         @apply min-w-0;
+        container: photo-details / inline-size;
+    }
+    @container photo-details (min-width: 24rem) {
+        .summary-dates {
+            @apply grid-cols-2;
+        }
+    }
+    @container photo-details (min-width: 44rem) {
+        .detail-toolbar {
+            @apply flex flex-wrap items-stretch;
+        }
+        .summary-equipment {
+            @apply flex w-auto flex-auto;
+        }
+        .summary-equipment > button {
+            @apply min-w-10 w-auto flex-auto;
+        }
+        .summary-dates {
+            @apply flex w-auto flex-auto;
+        }
+        .date-item {
+            @apply w-auto flex-auto flex-nowrap whitespace-nowrap;
+        }
     }
     dl {
         @apply mt-5 grid gap-5 sm:grid-cols-2;
     }
     .metadata-wide {
         @apply sm:col-span-2;
+    }
+    .metadata-inline {
+        @apply flex items-baseline gap-3;
+    }
+    .metadata-inline dt {
+        @apply shrink-0;
+    }
+    .metadata-inline dt,
+    .metadata-inline [data-photo-value] {
+        @apply text-sm leading-5 font-normal;
+    }
+    .metadata-inline dd {
+        @apply m-0 flex min-w-0 flex-1 items-baseline gap-3 whitespace-normal text-sm;
+    }
+    .metadata-inline [data-photo-value] {
+        @apply min-w-0 break-words;
+    }
+    .metadata-inline .edit-text {
+        @apply ml-auto shrink-0;
+    }
+    .metadata-inline .text-editor {
+        @apply mt-0 w-full;
+    }
+    [data-photo-value].is-empty {
+        @apply text-muted-foreground;
+    }
+    .text-field-label {
+        @apply flex items-center justify-between gap-3;
+    }
+    .edit-text {
+        @apply min-h-8 border-0 px-2 py-1 text-xs font-medium;
+    }
+    [data-photo-editor-dialog] {
+        @apply fixed inset-0 m-auto max-h-[calc(100dvh_-_2rem)] w-[calc(100%_-_2rem)] max-w-xs overflow-y-auto rounded-lg border border-neutral-200 bg-background p-4 text-sm text-foreground shadow-xl dark:border-neutral-800;
+    }
+    [data-photo-editor-dialog][data-date-editor] {
+        @apply max-w-sm;
+    }
+    [data-photo-editor-dialog]::backdrop {
+        @apply bg-black/50 backdrop-blur-sm;
+    }
+    [data-photo-editor-dialog] h2 {
+        @apply mb-3 text-base;
+    }
+    [data-photo-editor-dialog] .text-editor {
+        @apply mt-0;
+    }
+    [data-photo-editor-dialog] .editor-help {
+        @apply text-xs;
+    }
+    .text-editor {
+        @apply mt-2 whitespace-normal;
+    }
+    .text-editor fieldset {
+        @apply grid min-w-0 gap-3;
+    }
+    .text-editor textarea,
+    .text-editor input,
+    .text-editor select {
+        @apply block w-full resize-y rounded-md border border-neutral-300 bg-background px-3 py-2 text-foreground dark:border-neutral-700;
+        @apply focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary;
+    }
+    .text-editor label {
+        @apply mb-2 block text-sm text-muted-foreground;
+    }
+    .file-picker {
+        @apply relative rounded-md border border-neutral-300 px-3 py-2 text-muted-foreground dark:border-neutral-700;
+    }
+    .file-picker:focus-within {
+        @apply outline-2 outline-offset-2 outline-primary;
+    }
+    .file-picker [data-editor-file-name] {
+        @apply break-words;
+    }
+    .text-editor .file-picker [data-editor-file] {
+        @apply absolute inset-0 h-full w-full cursor-pointer opacity-0;
+    }
+    .text-editor [data-editor-file]::file-selector-button {
+        display: none;
+    }
+    .text-editor .markdown-input {
+        @apply font-mono text-sm;
+    }
+    .description-content {
+        @apply whitespace-normal;
+    }
+    .description-content :global(p + p),
+    .description-content :global(ul),
+    .description-content :global(ol),
+    .description-content :global(blockquote),
+    .description-content :global(pre) {
+        @apply mt-3;
+    }
+    .description-content :global(:first-child) {
+        @apply mt-0;
+    }
+    .description-content :global(h1),
+    .description-content :global(h2),
+    .description-content :global(h3),
+    .description-content :global(h4),
+    .description-content :global(h5),
+    .description-content :global(h6) {
+        @apply mt-4 mb-2 text-base font-bold;
+    }
+    .description-content :global(ul) {
+        @apply list-disc pl-5;
+    }
+    .description-content :global(ol) {
+        @apply list-decimal pl-5;
+    }
+    .description-content :global(blockquote) {
+        @apply border-l-2 border-neutral-300 pl-3 text-muted-foreground dark:border-neutral-700;
+    }
+    .description-content :global(a) {
+        @apply break-words text-primary underline underline-offset-2;
+    }
+    .description-content :global(code) {
+        @apply rounded bg-neutral-100 px-1 py-0.5 text-sm dark:bg-neutral-900;
+    }
+    .description-content :global(pre) {
+        @apply overflow-x-auto rounded-md bg-neutral-100 p-3 dark:bg-neutral-900;
+    }
+    .description-content :global(pre code) {
+        @apply bg-transparent p-0;
+    }
+    .description-content :global(hr) {
+        @apply my-4 border-neutral-200 dark:border-neutral-800;
+    }
+    .description-content :global(img) {
+        @apply max-w-full rounded-md;
+    }
+    [data-photo-editor-dialog] button {
+        @apply min-h-10 px-3 py-2;
+    }
+    .editor-help {
+        @apply text-sm text-muted-foreground;
+    }
+    .editor-actions {
+        @apply flex flex-wrap gap-2;
+    }
+    .editor-actions button {
+        @apply min-w-24 text-center;
+    }
+    .editor-actions [data-editor-save] {
+        @apply border-blue-700 bg-blue-700 text-white hover:border-blue-800 hover:bg-blue-800;
+    }
+    .editor-actions [data-editor-cancel] {
+        @apply border-neutral-200 bg-neutral-100 text-neutral-950 hover:bg-neutral-200 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50 dark:hover:bg-neutral-700;
+    }
+    [data-photo-editor-dialog] .editor-actions {
+        @apply grid grid-cols-2;
+    }
+    .text-editor button:disabled,
+    .edit-text:disabled,
+    .summary-item:disabled,
+    .visibility-item:disabled,
+    .text-editor fieldset:disabled input,
+    .text-editor fieldset:disabled select,
+    .text-editor fieldset:disabled textarea {
+        @apply cursor-not-allowed opacity-50;
+    }
+    .text-editor [role="alert"],
+    .text-status {
+        @apply mt-3 text-sm;
     }
     dt {
         @apply text-sm text-muted-foreground;

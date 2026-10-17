@@ -90,7 +90,7 @@ export class PhotoLightbox {
                 this.objectUrls.push(url);
             } else url = result.url;
             const fullImage = new Image();
-            fullImage.alt = photo.alt;
+            fullImage.alt = photo.altText;
             fullImage.width = asset.width;
             fullImage.height = asset.height;
             fullImage.decoding = "async";
