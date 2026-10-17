@@ -14,8 +14,14 @@ export function readRoute(url: URL) {
     return {
         offset,
         photo,
+        creating: url.searchParams.has("new"),
         invalidPhoto: photo !== null && !photoId.safeParse(photo).success,
     };
+}
+
+export function createPhotoUrl(offset: number, photo?: string) {
+    const library = libraryUrl(offset, photo);
+    return `${library}${library.includes("?") ? "&" : "?"}new=1`;
 }
 
 export function libraryUrl(offset: number, photo?: string) {

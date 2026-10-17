@@ -41,7 +41,19 @@ const { title = "Photos CMS", description, chrome = true } = Astro.props;
                     >
                         <Icon name="lucide:arrow-left" aria-hidden="true" />
                     </a>
-                    <ThemeToggle />
+                    <div class="header-actions">
+                        <a
+                            data-add-photo
+                            href="/?new=1"
+                            class="add-photo"
+                            aria-label="Add photo"
+                            title="Add photo"
+                            hidden
+                        >
+                            <Icon name="lucide:plus" aria-hidden="true" />
+                        </a>
+                        <ThemeToggle />
+                    </div>
                 </header>
             )}
             <slot />
@@ -56,6 +68,9 @@ const { title = "Photos CMS", description, chrome = true } = Astro.props;
     body {
         @apply flex min-h-screen flex-col bg-background text-foreground antialiased scheme-light dark:scheme-dark;
     }
+    body:has(dialog[open]) {
+        overflow: hidden;
+    }
 
     main {
         @apply mx-auto flex w-full max-w-6xl flex-1 flex-col px-6 pt-6;
@@ -69,16 +84,26 @@ const { title = "Photos CMS", description, chrome = true } = Astro.props;
         @apply font-bold fl-text-base/2xl--sm-lg;
     }
 
-    .back-link {
+    .header-actions {
+        @apply ml-auto flex shrink-0 items-center gap-2;
+    }
+
+    .back-link,
+    .add-photo {
         @apply inline-flex size-11 items-center justify-center rounded-md text-muted-foreground hover:bg-neutral-100 dark:hover:bg-neutral-800;
     }
 
-    .back-link:focus-visible {
+    .back-link:focus-visible,
+    .add-photo:focus-visible {
         @apply outline-2 outline-offset-4 outline-primary;
     }
 
     .back-link :global(svg) {
         @apply size-5;
+    }
+
+    .add-photo :global(svg) {
+        @apply fl-size-5/6--sm-lg;
     }
 
     [hidden] {

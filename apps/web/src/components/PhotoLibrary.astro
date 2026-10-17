@@ -1,5 +1,6 @@
 ---
 import PhotoLightbox from "./PhotoLightbox.astro";
+import PhotoCreator from "./PhotoCreator.astro";
 import VisibilityIcon from "./VisibilityIcon.astro";
 import { Icon } from "astro-icon/components";
 ---
@@ -39,6 +40,8 @@ import { Icon } from "astro-icon/components";
             </a>
         </nav>
     </div>
+
+    <PhotoCreator />
 
     <article data-photo-view hidden aria-label="Photo details" tabindex="-1">
         <div class="entry-layout">

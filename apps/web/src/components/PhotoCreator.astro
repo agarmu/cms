@@ -1,0 +1,377 @@
+<dialog
+    data-photo-create-view
+    class="photo-create"
+    aria-labelledby="create-title"
+    hidden
+>
+    <header>
+        <h2 id="create-title" data-create-title tabindex="-1">
+            Choose image
+        </h2>
+        <span data-create-progress class="step-progress">
+            1 of 4
+        </span>
+    </header>
+    <form data-photo-create-form novalidate>
+        <div data-create-scroll class="step-content">
+            <fieldset data-create-fields>
+                <section data-create-step="0">
+                    <label for="create-file" class="sr-only">
+                        Image
+                    </label>
+                    <div class="create-file-picker">
+                        <input
+                            data-create-file
+                            id="create-file"
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp,image/avif,image/tiff"
+                            required
+                        />
+                        <span data-create-file-name aria-hidden="true">
+                            Select a file
+                        </span>
+                    </div>
+                    <div class="create-preview">
+                        <img
+                            data-create-preview
+                            alt="Selected image preview"
+                            hidden
+                        />
+                        <p data-create-preview-status hidden />
+                    </div>
+                </section>
+                <section data-create-step="1" class="step-fields" hidden>
+                    <div>
+                        <label for="create-location">Location</label>
+                        <input
+                            data-create-location
+                            id="create-location"
+                            type="text"
+                        />
+                    </div>
+                    <div>
+                        <label for="create-caption">Caption</label>
+                        <input
+                            data-create-caption
+                            id="create-caption"
+                            type="text"
+                        />
+                    </div>
+                    <div>
+                        <label for="create-description">
+                            Description <span class="field-hint">Markdown</span>
+                        </label>
+                        <textarea
+                            data-create-description
+                            id="create-description"
+                            rows="3"
+                            class="markdown-input"
+                        />
+                    </div>
+                    <div>
+                        <label for="create-alt">Alt text</label>
+                        <textarea data-create-alt id="create-alt" rows="2" />
+                    </div>
+                </section>
+                <section data-create-step="2" class="step-fields" hidden>
+                    {(["takenAt", "postedAt"] as const).map((field) => (
+                        <div>
+                            <label for={`create-${field}`}>
+                                {field === "takenAt" ? "Taken" : "Posted"}
+                            </label>
+                            <input
+                                data-create-date={field}
+                                id={`create-${field}`}
+                                type="datetime-local"
+                                step="0.001"
+                                required
+                            />
+                            <p
+                                data-create-date-error={field}
+                                class="field-hint date-error"
+                                hidden
+                            />
+                            <div
+                                data-create-time-choice={field}
+                                class="time-choice"
+                                hidden
+                            >
+                                <label for={`create-offset-${field}`}>
+                                    Choose which occurrence of this time
+                                </label>
+                                <select
+                                    data-create-offset={field}
+                                    id={`create-offset-${field}`}
+                                />
+                            </div>
+                        </div>
+                    ))}
+                    <p data-create-timezone class="field-hint" />
+                    <div class="equipment-fields">
+                        {(["camera", "lens"] as const).map((kind) => (
+                            <div>
+                                <label for={`create-${kind}`}>
+                                    {kind === "camera" ? "Camera" : "Lens"}
+                                </label>
+                                <select
+                                    data-create-equipment={kind}
+                                    id={`create-${kind}`}
+                                >
+                                    <option value="">None</option>
+                                    <option value="__new__">Create new…</option>
+                                </select>
+                                <div
+                                    data-create-new-equipment={kind}
+                                    class="new-equipment"
+                                    hidden
+                                >
+                                    <label for={`create-new-${kind}`}>
+                                        New {kind} name
+                                    </label>
+                                    <input
+                                        data-create-equipment-name={kind}
+                                        id={`create-new-${kind}`}
+                                        type="text"
+                                    />
+                                </div>
+                                <p
+                                    data-create-equipment-status={kind}
+                                    class="field-hint"
+                                    hidden
+                                />
+                            </div>
+                        ))}
+                    </div>
+                    <label class="visibility-choice">
+                        <input data-create-visible type="checkbox" checked />
+                        Visible
+                    </label>
+                </section>
+                <section data-create-step="3" class="review-step" hidden>
+                    <div class="review-image">
+                        <img
+                            data-create-review-image
+                            alt="Image to add"
+                            hidden
+                        />
+                    </div>
+                    <p data-create-review-file class="review-file" />
+                    <dl>
+                        {[
+                            ["location", "Location"],
+                            ["caption", "Caption"],
+                            ["description", "Description"],
+                            ["altText", "Alt text"],
+                            ["takenAt", "Taken"],
+                            ["postedAt", "Posted"],
+                            ["camera", "Camera"],
+                            ["lens", "Lens"],
+                            ["visible", "Visibility"],
+                        ].map(([field, label]) => (
+                            <div>
+                                <dt>{label}</dt>
+                                <dd
+                                    data-create-review={field}
+                                    class:list={{
+                                        "review-markdown":
+                                            field === "description",
+                                    }}
+                                />
+                            </div>
+                        ))}
+                    </dl>
+                </section>
+            </fieldset>
+        </div>
+        <p data-create-status role="status" aria-live="polite" hidden />
+        <p data-create-error role="alert" hidden />
+        <div class="create-actions">
+            <button data-create-back type="button" hidden>
+                Back
+            </button>
+            <button data-create-save type="submit" disabled>
+                Next
+            </button>
+            <button data-create-cancel type="button">
+                Cancel
+            </button>
+        </div>
+    </form>
+</dialog>
+
+<style>
+    @reference "../styles/theme.css";
+    .photo-create {
+        @apply fixed inset-0 m-auto max-h-[min(36rem,calc(100dvh_-_2rem))] w-[calc(100%_-_2rem)] max-w-md flex-col overflow-hidden rounded-lg border border-neutral-200 bg-background p-4 text-sm text-foreground shadow-xl dark:border-neutral-800;
+    }
+    .photo-create[open] {
+        @apply flex;
+    }
+    .photo-create::backdrop {
+        @apply bg-black/50 backdrop-blur-sm;
+    }
+    header {
+        @apply mb-4 flex shrink-0 items-center justify-between gap-3;
+    }
+    h2 {
+        @apply text-base font-bold;
+    }
+    h2:focus {
+        outline: none;
+    }
+    .step-progress {
+        @apply text-xs text-muted-foreground;
+    }
+    form {
+        @apply flex min-h-0 flex-col;
+    }
+    fieldset {
+        @apply min-w-0 p-1;
+    }
+    .step-content {
+        @apply min-h-0 overflow-y-auto;
+    }
+    .step-fields {
+        @apply grid gap-3;
+    }
+    .create-preview,
+    .review-image {
+        @apply flex items-center justify-center;
+    }
+    .create-preview img {
+        @apply mt-3 block h-auto max-h-48 w-auto max-w-full rounded-lg object-contain;
+    }
+    .create-preview p {
+        @apply mt-3 text-sm text-muted-foreground;
+    }
+    .review-image img {
+        @apply block h-auto max-h-40 w-auto max-w-full rounded-lg object-contain;
+    }
+    .create-file-picker {
+        @apply relative rounded-md border border-neutral-300 px-3 py-2 text-muted-foreground dark:border-neutral-700;
+    }
+    .create-file-picker:focus-within {
+        @apply outline-2 outline-offset-2 outline-primary;
+    }
+    .create-file-picker input {
+        @apply absolute inset-0 h-full w-full cursor-pointer opacity-0;
+    }
+    .create-file-picker span,
+    .review-file {
+        @apply break-words;
+    }
+    label {
+        @apply mb-2 flex items-center justify-between gap-2 text-sm text-muted-foreground;
+    }
+    input:not([type="file"]):not([type="checkbox"]),
+    select,
+    textarea {
+        @apply block w-full min-w-0 rounded-md border border-neutral-300 bg-background px-3 py-2 text-sm text-foreground dark:border-neutral-700;
+    }
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible,
+    button:focus-visible {
+        @apply outline-2 outline-offset-2 outline-primary;
+    }
+    textarea {
+        @apply resize-y;
+    }
+    .markdown-input {
+        @apply font-mono;
+    }
+    .field-hint {
+        @apply text-xs text-muted-foreground;
+    }
+    .equipment-fields {
+        @apply grid min-w-0 grid-cols-2 gap-3;
+    }
+    .equipment-fields > div {
+        @apply min-w-0;
+    }
+    .new-equipment,
+    .time-choice {
+        @apply mt-3;
+    }
+    .date-error {
+        @apply mt-2;
+    }
+    .visibility-choice {
+        @apply m-0 flex items-center justify-start gap-2 text-foreground;
+    }
+    .review-file {
+        @apply mt-2 text-center text-xs text-muted-foreground;
+    }
+    dl {
+        @apply mt-4 grid gap-3;
+    }
+    dt {
+        @apply text-xs text-muted-foreground;
+    }
+    dd {
+        @apply mt-1 whitespace-pre-wrap break-words;
+    }
+    dd.is-empty {
+        @apply text-muted-foreground;
+    }
+    .review-markdown {
+        @apply whitespace-normal;
+    }
+    .review-markdown :global(p + p),
+    .review-markdown :global(ul),
+    .review-markdown :global(ol),
+    .review-markdown :global(pre),
+    .review-markdown :global(blockquote) {
+        @apply mt-2;
+    }
+    .review-markdown :global(ul) {
+        @apply list-disc pl-5;
+    }
+    .review-markdown :global(ol) {
+        @apply list-decimal pl-5;
+    }
+    .review-markdown :global(h1),
+    .review-markdown :global(h2),
+    .review-markdown :global(h3),
+    .review-markdown :global(h4),
+    .review-markdown :global(h5),
+    .review-markdown :global(h6) {
+        @apply mt-3 mb-1 text-sm font-bold;
+    }
+    .review-markdown :global(a) {
+        @apply text-primary underline;
+    }
+    .review-markdown :global(pre) {
+        @apply overflow-x-auto rounded bg-neutral-100 p-2 dark:bg-neutral-900;
+    }
+    .review-markdown :global(img) {
+        @apply max-w-full;
+    }
+    [data-create-status],
+    [data-create-error] {
+        @apply mt-3 shrink-0 text-sm;
+    }
+    .create-actions {
+        @apply mt-4 flex shrink-0 gap-2;
+    }
+    button {
+        @apply inline-flex min-h-10 min-w-0 flex-1 cursor-pointer items-center justify-center rounded-md border px-3 py-2 text-center text-sm font-bold;
+    }
+    [data-create-save] {
+        @apply border-blue-700 bg-blue-700 text-white enabled:hover:bg-blue-800;
+    }
+    [data-create-cancel],
+    [data-create-back] {
+        @apply border-neutral-200 bg-neutral-100 text-neutral-950 enabled:hover:bg-neutral-200 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-50 dark:enabled:hover:bg-neutral-700;
+    }
+    button:disabled,
+    fieldset:disabled {
+        @apply opacity-50;
+    }
+    button:disabled {
+        @apply cursor-not-allowed;
+    }
+    [hidden] {
+        display: none !important;
+    }
+</style>

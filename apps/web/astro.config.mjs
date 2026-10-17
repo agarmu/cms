@@ -33,6 +33,7 @@ export default defineConfig({
                     "aperture",
                     "clock",
                     "image-up",
+                    "plus",
                 ],
             },
         }),

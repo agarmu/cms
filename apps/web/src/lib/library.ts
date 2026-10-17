@@ -6,10 +6,16 @@ import {
     type Photo,
     type PhotoAsset,
 } from "./cms-client";
-import { libraryUrl, pageSize, readRoute } from "./library-route";
+import {
+    createPhotoUrl,
+    libraryUrl,
+    pageSize,
+    readRoute,
+} from "./library-route";
 import { PhotoLightbox } from "./photo-lightbox";
 import { mountPhotoEditor } from "./photo-editor";
 import { renderDescription } from "./photo-description";
+import { mountPhotoCreator } from "./photo-creator";
 
 function element<T extends HTMLElement>(root: ParentNode, selector: string): T {
     const found = root.querySelector<T>(selector);
@@ -53,6 +59,8 @@ export function mountLibrary(root: HTMLElement) {
     const statusBack = element<HTMLAnchorElement>(root, "[data-status-back]");
     const list = element(root, "[data-library-view]");
     const detail = element(root, "[data-photo-view]");
+    const createView = element(root, "[data-photo-create-view]");
+    const addPhoto = element<HTMLAnchorElement>(document, "[data-add-photo]");
     const grid = element(root, "[data-photo-grid]");
     const template = element<HTMLTemplateElement>(root, "[data-photo-card]");
     const previous = element<HTMLAnchorElement>(root, "[data-previous]");
@@ -63,6 +71,8 @@ export function mountLibrary(root: HTMLElement) {
         element<HTMLDialogElement>(root, "[data-photo-lightbox]"),
     );
     let request: AbortController | undefined;
+    let creationRequest: AbortController | undefined;
+    let displayedRoute: ReturnType<typeof readRoute> | undefined;
     let observer: IntersectionObserver | undefined;
     let disposers: (() => void)[] = [];
     let sessionReady: boolean | undefined;
@@ -70,11 +80,75 @@ export function mountLibrary(root: HTMLElement) {
         update: renderPhotoMetadata,
         replace: () => void renderRoute(true),
     });
+    const creator = mountPhotoCreator(createView, {
+        created(id) {
+            window.history.replaceState(null, "", libraryUrl(0, id));
+            window.scrollTo(0, 0);
+            void renderRoute(true);
+        },
+        cancel() {
+            const { offset, photo } = readRoute(new URL(window.location.href));
+            const href = libraryUrl(offset, photo ?? undefined);
+            window.history.replaceState(null, "", href);
+            void transitionRoute(false).then(() => {
+                if (
+                    window.location.pathname + window.location.search ===
+                        href &&
+                    !addPhoto.hidden
+                )
+                    addPhoto.focus({ preventScroll: true });
+            });
+        },
+    });
+
+    function resetCreator() {
+        creationRequest?.abort();
+        creationRequest = undefined;
+        creator.reset();
+        createView.hidden = true;
+    }
+
+    function syncCreator(route: ReturnType<typeof readRoute>) {
+        addPhoto.href = createPhotoUrl(route.offset, route.photo ?? undefined);
+        addPhoto.hidden = route.creating;
+        if (route.creating) {
+            if (!creationRequest) {
+                creationRequest = new AbortController();
+                createView.hidden = false;
+                creator.load(creationRequest.signal);
+            }
+            document.title = "Add photo · Photos CMS";
+        } else if (creationRequest) {
+            resetCreator();
+            document.title = route.photo
+                ? "Photos CMS"
+                : "Your photos · Photos CMS";
+            addPhoto.focus({ preventScroll: true });
+        }
+    }
+
+    async function transitionRoute(focus = true) {
+        const route = readRoute(new URL(window.location.href));
+        if (
+            sessionReady &&
+            request &&
+            !request.signal.aborted &&
+            displayedRoute?.offset === route.offset &&
+            displayedRoute.photo === route.photo
+        ) {
+            // Opening or closing a modal keeps the current view and its scroll.
+            syncCreator(route);
+            return;
+        }
+        await renderRoute(focus);
+    }
 
     function reset() {
         lightbox.reset();
         request?.abort();
         editor.reset();
+        resetCreator();
+        displayedRoute = undefined;
         observer?.disconnect();
         root.removeAttribute("aria-busy");
         statusBack.hidden = true;
@@ -93,6 +167,8 @@ export function mountLibrary(root: HTMLElement) {
         element(detail, "[data-visibility]").hidden = true;
         list.hidden = true;
         detail.hidden = true;
+        createView.hidden = true;
+        addPhoto.hidden = true;
         heading.hidden = false;
         back.hidden = true;
     }
@@ -330,9 +406,11 @@ export function mountLibrary(root: HTMLElement) {
             return;
         }
         const route = readRoute(new URL(window.location.href));
+        displayedRoute = route;
         heading.hidden = !!route.photo;
         back.hidden = !route.photo;
         back.href = libraryUrl(route.offset);
+        syncCreator(route);
         if (route.invalidPhoto) {
             showStatus(
                 "Invalid photo link",
@@ -342,14 +420,14 @@ export function mountLibrary(root: HTMLElement) {
             );
             statusBack.href = libraryUrl(route.offset);
             statusBack.hidden = false;
-            if (focus) statusTitle.focus();
+            if (focus && !creationRequest) statusTitle.focus();
             return;
         }
         showStatus(
             route.photo ? "Opening photo..." : "Loading your photos...",
             "Fetching from your library.",
         );
-        if (focus) statusTitle.focus();
+        if (focus && !creationRequest) statusTitle.focus();
         root.setAttribute("aria-busy", "true");
         try {
             if (route.photo) {
@@ -398,7 +476,7 @@ export function mountLibrary(root: HTMLElement) {
                     signal,
                     false,
                 );
-                if (focus) detail.focus();
+                if (focus && !creationRequest) detail.focus();
             } else {
                 // One lookahead item tells us whether a Next page exists.
                 const page = await cms.listPhotos(
@@ -429,7 +507,7 @@ export function mountLibrary(root: HTMLElement) {
                 next.href = libraryUrl(route.offset + pageSize);
                 list.hidden = !photos.length && !route.offset;
                 document.title = "Your photos · Photos CMS";
-                if (focus && photos.length) grid.focus();
+                if (focus && photos.length && !creationRequest) grid.focus();
             }
         } catch (error) {
             if (signal.aborted) return;
@@ -447,9 +525,12 @@ export function mountLibrary(root: HTMLElement) {
                 statusBack.href = libraryUrl(route.offset);
                 statusBack.hidden = false;
             }
-            if (focus) statusTitle.focus();
+            if (focus && !creationRequest) statusTitle.focus();
         } finally {
-            if (!signal.aborted) root.removeAttribute("aria-busy");
+            if (!signal.aborted) {
+                root.removeAttribute("aria-busy");
+                if (creationRequest) document.title = "Add photo · Photos CMS";
+            }
         }
     }
 
@@ -465,19 +546,29 @@ export function mountLibrary(root: HTMLElement) {
         const link = (event.target as Element).closest<HTMLAnchorElement>(
             "a[href]",
         );
-        if (!link || (!root.contains(link) && link !== back)) return;
+        if (
+            !link ||
+            (!root.contains(link) && link !== back && link !== addPhoto)
+        )
+            return;
         const url = new URL(link.href);
         if (url.origin !== window.location.origin || url.pathname !== "/")
             return;
         event.preventDefault();
         // Push history without a document navigation, preserving in-memory tokens.
         window.history.pushState(null, "", url);
-        window.scrollTo(0, 0);
-        void renderRoute(true);
+        const route = readRoute(url);
+        if (
+            displayedRoute?.offset !== route.offset ||
+            displayedRoute.photo !== route.photo
+        )
+            window.scrollTo(0, 0);
+        void transitionRoute();
     }
     root.addEventListener("click", navigate);
     back.addEventListener("click", navigate);
-    window.addEventListener("popstate", () => void renderRoute(true));
+    addPhoto.addEventListener("click", navigate);
+    window.addEventListener("popstate", () => void transitionRoute());
     retry.addEventListener("click", () => void renderRoute(true));
     const refreshSession = async () => {
         await initializeSession();
