@@ -74,6 +74,7 @@ export function mountLibrary(root: HTMLElement) {
         disposers = [];
         grid.replaceChildren();
         element(root, "[data-photo-image]").replaceChildren();
+        element(root, "[data-photo-variants]").replaceChildren();
         // Remove private metadata from the DOM when leaving a view or signing out.
         for (const field of detail.querySelectorAll("[data-photo-field]")) {
             field.textContent = "";
@@ -302,13 +303,32 @@ export function mountLibrary(root: HTMLElement) {
                     element(detail, "[data-visibility]"),
                     photo.enabled,
                 );
-                const largest = selectAsset(photo.assets, Infinity);
-                setText(
-                    "[data-photo-size]",
-                    largest
-                        ? `${largest.width} × ${largest.height} px`
-                        : "No image assets",
+                const variants = element(root, "[data-photo-variants]");
+                const assets = photo.assets.toSorted(
+                    (left, right) =>
+                        left.width * left.height - right.width * right.height,
                 );
+                for (const asset of assets) {
+                    const item = document.createElement("li");
+                    const name = document.createElement("span");
+                    name.className = "variant-name";
+                    // Stored filenames contain an upload generation UUID before the configured name.
+                    name.textContent = asset.filename
+                        .replace(
+                            /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}-/i,
+                            "",
+                        )
+                        .replace(/\.[^.]+$/, "");
+                    const dimensions = document.createElement("span");
+                    dimensions.textContent = `${asset.width} x ${asset.height} px`;
+                    item.append(name, " ", dimensions);
+                    variants.append(item);
+                }
+                if (!assets.length) {
+                    const item = document.createElement("li");
+                    item.textContent = "No image variants";
+                    variants.append(item);
+                }
                 detail.hidden = false;
                 status.hidden = true;
                 document.title = "Photos CMS";

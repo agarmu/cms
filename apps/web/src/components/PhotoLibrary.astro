@@ -54,7 +54,12 @@ import { Icon } from "astro-icon/components";
             </a>
         </div>
         <div class="entry-layout">
-            <div data-photo-image class="detail-image" />
+            <figure class="photo-preview">
+                <div data-photo-image class="detail-image" />
+                <figcaption class="variant-sizes">
+                    <ul data-photo-variants aria-label="Image variant sizes" />
+                </figcaption>
+            </figure>
             <div class="detail-copy">
                 <div class="detail-toolbar">
                     <span class="visibility-item">
@@ -155,10 +160,6 @@ import { Icon } from "astro-icon/components";
                     <div class="metadata-wide">
                         <dt>Alt text</dt>
                         <dd data-photo-alt data-photo-field />
-                    </div>
-                    <div>
-                        <dt>Image size</dt>
-                        <dd data-photo-size data-photo-field />
                     </div>
                 </dl>
             </div>
@@ -300,6 +301,21 @@ import { Icon } from "astro-icon/components";
     }
     .detail-image {
         @apply w-full max-w-80;
+    }
+    .photo-preview {
+        @apply min-w-0 max-w-80;
+    }
+    .variant-sizes {
+        @apply mt-3 text-sm text-muted-foreground;
+    }
+    .variant-sizes ul {
+        @apply flex flex-col gap-2 tabular-nums;
+    }
+    .variant-sizes :global(li) {
+        @apply flex items-baseline gap-3;
+    }
+    .variant-sizes :global(.variant-name) {
+        @apply inline-block min-w-24 shrink-0 font-medium;
     }
     .detail-copy {
         @apply min-w-0;
