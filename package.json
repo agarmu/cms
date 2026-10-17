@@ -25,7 +25,7 @@
         "check": "tsc -p tsconfig.tools.json && bun run --filter '*' check",
         "format": "prettier . --write",
         "format:check": "prettier . --check",
-        "test": "bun run --filter @photos-cms/api test",
+        "test": "bun run --filter '*' test",
         "test:integration": "bun run --filter @photos-cms/api test:integration",
         "db:generate": "bunx --bun drizzle-kit generate"
     },

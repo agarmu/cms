@@ -1,0 +1,21 @@
+# Copy to config.toml and set the public values for your deployment.
+# This file contains no secrets; it is compiled into the static frontend.
+
+[api]
+baseUrl = "https://cms.example.com/"
+
+[auth]
+kind = "oidc"
+issuer = "https://auth.example.com/"
+clientId = "replace-with-your-public-browser-client-id"
+scopes = ["openid", "photos:read"]
+
+# Register the frontend's / and /auth/silent URLs as redirect URIs on
+# the provider's public browser client. Allow its origin for browser requests.
+# Add offline_access to scopes if your provider supports refresh tokens.
+
+# Optional provider-specific API selection; use only what your provider needs.
+# resource = "https://cms.example.com/"
+# audience = "https://cms.example.com/"
+
+# For local no-auth mode, use kind = "no-auth" and remove other [auth] fields.

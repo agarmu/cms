@@ -1,6 +1,11 @@
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig, fontProviders } from "astro/config";
 import icon from "astro-icon";
+import { ApplicationConfig } from "./config.ts";
+
+const config = await ApplicationConfig.fromFile(
+    new URL("./config.toml", import.meta.url),
+);
 
 export default defineConfig({
     fonts: [
@@ -15,6 +20,7 @@ export default defineConfig({
     ],
     integrations: [icon({ include: { lucide: ["github", "sun", "moon"] } })],
     vite: {
+        define: { __CMS_CONFIG__: JSON.stringify(config) },
         plugins: [tailwindcss()],
     },
 });

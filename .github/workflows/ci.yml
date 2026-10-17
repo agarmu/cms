@@ -23,6 +23,8 @@ jobs:
               with:
                   bun-version: 1.4.2
             - run: bun install --frozen-lockfile
+            - name: Configure frontend build
+              run: cp apps/web/config.example.toml apps/web/config.toml
             - run: bun run check
             - run: bun run format:check
             - run: bun run test
@@ -39,6 +41,9 @@ jobs:
                       dockerfile: Dockerfile.web
         steps:
             - uses: actions/checkout@v4
+            - name: Configure frontend build
+              if: matrix.app == 'web'
+              run: cp apps/web/config.example.toml apps/web/config.toml
             - uses: docker/setup-buildx-action@v3
             - uses: docker/build-push-action@v6
               with:

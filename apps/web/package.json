@@ -8,7 +8,8 @@
         "dev": "bun --bun astro dev",
         "build": "bun --bun astro build",
         "preview": "bun --bun astro preview",
-        "check": "bun --bun astro check"
+        "check": "bun --bun astro check",
+        "test": "bun test --isolate config.test.ts"
     },
     "dependencies": {
         "@starwind-ui/astro": "1.3.0",
@@ -16,7 +17,9 @@
         "astro": "^7.3.8",
         "astro-icon": "^1.2.0",
         "fluid-tailwindcss": "^1.1.8",
-        "tailwindcss": "^4"
+        "oidc-client-ts": "^3.5.0",
+        "tailwindcss": "^4",
+        "zod": "^4.6.7"
     },
     "devDependencies": {
         "@astrojs/check": "^0.9.10",

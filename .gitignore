@@ -24,4 +24,5 @@ apps/web/dist/
 .env
 /secrets.toml
 /config.toml
+/apps/web/config.toml
 /data/
