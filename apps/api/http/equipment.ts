@@ -68,6 +68,21 @@ export class EquipmentRoutes {
                     response: equipmentResponse,
                 },
             )
+            .patch(
+                "/:id",
+                async ({ db, params, body }) => {
+                    const [row] = await calls.update(db, params.id, body);
+                    if (!row) throw new NotFoundError("Equipment not found");
+                    return row;
+                },
+                {
+                    detail: { summary: `Rename a shared ${singular} record` },
+                    write: ApiScope.getScope(calls.update, "write"),
+                    params: z.object({ id: ApiValidation.uuid }),
+                    body: ApiValidation.equipmentChanges,
+                    response: equipmentResponse,
+                },
+            )
             .delete(
                 "/:id",
                 async ({ db, params }) => {

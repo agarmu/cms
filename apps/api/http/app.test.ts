@@ -633,3 +633,32 @@ test("each editable metadata field changes independently and location can be cle
             (await request(`/api/photos/${id}`, "PATCH", patch)).status,
         ).toBe(400);
 });
+
+test("equipment rename updates all linked photos without changing their assignments", async () => {
+    const first = await createPhoto({
+        camera: { create: { name: "Shared camera" } },
+        lens: { create: { name: "Shared lens" } },
+    });
+    const second = await createPhoto({
+        camera: { id: first.camera!.id },
+        lens: { id: first.lens!.id },
+    });
+    for (const kind of ["camera", "lens"] as const) {
+        const equipment = first[kind]!;
+        const response = await request(
+            `/api/${kind === "camera" ? "cameras" : "lenses"}/${equipment.id}`,
+            "PATCH",
+            { name: `Renamed ${kind}` },
+        );
+        expect(response.status).toBe(200);
+        for (const id of [first.id, second.id]) {
+            const record = (await (
+                await request(`/api/photos/${id}`)
+            ).json()) as Record<string, unknown>;
+            expect(record[kind]).toEqual({
+                id: equipment.id,
+                name: `Renamed ${kind}`,
+            });
+        }
+    }
+});
