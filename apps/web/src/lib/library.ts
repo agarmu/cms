@@ -15,11 +15,24 @@ function element<T extends HTMLElement>(root: ParentNode, selector: string): T {
     return found;
 }
 
-const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
-const timestampFormat = new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
+const timestampFormatter = new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZoneName: "short",
 });
+
+function formatTimestamp(value: string) {
+    const parts = new Map(
+        timestampFormatter
+            .formatToParts(new Date(value))
+            .map((part) => [part.type, part.value]),
+    );
+    return `${parts.get("year")}-${parts.get("month")}-${parts.get("day")} ${parts.get("hour")}:${parts.get("minute")} ${parts.get("timeZoneName")}`;
+}
 
 function renderVisibility(marker: HTMLElement, enabled: boolean) {
     const label = enabled ? "Visible" : "Hidden";
@@ -192,7 +205,7 @@ export function mountLibrary(root: HTMLElement) {
             link.href = libraryUrl(offset, photo.id);
             const time = element<HTMLTimeElement>(card, "time");
             time.dateTime = photo.taken;
-            time.textContent = dateFormat.format(new Date(photo.taken));
+            time.textContent = formatTimestamp(photo.taken).slice(0, 10);
             renderVisibility(element(card, "[data-visibility]"), photo.enabled);
             const frame = element(card, "[data-thumbnail]");
             images.set(frame, {
@@ -250,14 +263,8 @@ export function mountLibrary(root: HTMLElement) {
                     "[data-photo-alt]",
                     photo.alt || "No alt text provided",
                 );
-                setText(
-                    "[data-photo-taken]",
-                    timestampFormat.format(new Date(photo.taken)),
-                );
-                setText(
-                    "[data-photo-posted]",
-                    timestampFormat.format(new Date(photo.posted)),
-                );
+                setText("[data-photo-taken]", formatTimestamp(photo.taken));
+                setText("[data-photo-posted]", formatTimestamp(photo.posted));
                 setText(
                     "[data-photo-camera]",
                     photo.camera?.name ?? "Not specified",
