@@ -27,7 +27,7 @@ const photoPageSchema = z.object({
     limit: z.int().min(1).max(100),
     offset: z.int().nonnegative(),
 });
-const photoChangesSchema = photoSchema
+const newPhotoSchema = photoSchema
     .pick({
         altText: true,
         caption: true,
@@ -55,8 +55,9 @@ const photoChangesSchema = photoSchema
             ])
             .nullable(),
     })
+    .strict();
+const photoChangesSchema = newPhotoSchema
     .partial()
-    .strict()
     .refine((changes) =>
         Object.values(changes).some((value) => value !== undefined),
     );
@@ -67,6 +68,8 @@ const signedImageSchema = z.object({
 
 export type Photo = z.infer<typeof photoSchema>;
 export type PhotoChanges = z.infer<typeof photoChangesSchema>;
+export type NewPhoto = z.infer<typeof newPhotoSchema>;
+export type UploadPhase = "uploading" | "processing";
 export type PhotoAsset = Photo["assets"][number];
 export type ImageSource =
     { kind: "blob"; blob: Blob } | { kind: "remote"; url: string };
@@ -203,6 +206,59 @@ export class CmsClient {
 
     async replaceImage(id: string, file: File, signal?: AbortSignal) {
         const path = `/api/photos/${z.uuid().parse(id)}/uploads`;
+        await this.uploadImage(path, file, "completed", signal);
+        return this.readPhoto(id, signal);
+    }
+
+    async preparePhotoUpload(
+        file: File,
+        signal?: AbortSignal,
+        progress?: (phase: UploadPhase) => void,
+    ) {
+        return this.uploadImage(
+            "/api/photo-uploads",
+            file,
+            "ready",
+            signal,
+            progress,
+        );
+    }
+
+    async createPhoto(
+        uploadId: string,
+        metadata: NewPhoto,
+        signal?: AbortSignal,
+    ) {
+        const body = {
+            uploadId: z.uuid().parse(uploadId),
+            ...newPhotoSchema.parse(metadata),
+        };
+        const response = await this.request("/api/photos", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+            ...(signal ? { signal } : {}),
+        });
+        return z.object({ id: z.uuid() }).parse(await response.json());
+    }
+
+    async cancelPhotoUpload(uploadId: string) {
+        await this.request(
+            `/api/photo-uploads/${z.uuid().parse(uploadId)}/cancel`,
+            {
+                method: "POST",
+                signal: AbortSignal.timeout(5000),
+            },
+        );
+    }
+
+    private async uploadImage(
+        path: string,
+        file: File,
+        expectedStatus: "ready" | "completed",
+        signal?: AbortSignal,
+        progress?: (phase: UploadPhase) => void,
+    ) {
         const contentType = z
             .enum([
                 "image/jpeg",
@@ -212,6 +268,8 @@ export class CmsClient {
                 "image/tiff",
             ])
             .parse(file.type);
+        if (!file.size) throw new Error("Choose a non-empty image.");
+        progress?.("uploading");
         const started = await this.request(path, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -228,20 +286,20 @@ export class CmsClient {
                 }),
             })
             .parse(await started.json());
-        const uploadUrl = new URL(receipt.upload.url);
-        if (
-            (uploadUrl.protocol !== "https:" &&
-                !(
-                    uploadUrl.protocol === "http:" &&
-                    ["localhost", "127.0.0.1", "[::1]"].includes(
-                        uploadUrl.hostname,
-                    )
-                )) ||
-            uploadUrl.username ||
-            uploadUrl.password
-        )
-            throw new Error("The CMS returned an unsafe upload URL.");
         try {
+            const uploadUrl = new URL(receipt.upload.url);
+            if (
+                (uploadUrl.protocol !== "https:" &&
+                    !(
+                        uploadUrl.protocol === "http:" &&
+                        ["localhost", "127.0.0.1", "[::1]"].includes(
+                            uploadUrl.hostname,
+                        )
+                    )) ||
+                uploadUrl.username ||
+                uploadUrl.password
+            )
+                throw new Error("The CMS returned an unsafe upload URL.");
             const upload = await this.uploadFetcher(uploadUrl, {
                 method: "PUT",
                 headers: receipt.upload.headers,
@@ -251,19 +309,20 @@ export class CmsClient {
                 ...(signal ? { signal } : {}),
             });
             if (!upload.ok) throw new Error("The image upload failed.");
+            progress?.("processing");
             const completed = await this.request(
                 `${path}/${receipt.id}/complete`,
                 { method: "POST", ...(signal ? { signal } : {}) },
             );
-            z.object({ status: z.literal("completed") }).parse(
+            z.object({ status: z.literal(expectedStatus) }).parse(
                 await completed.json(),
             );
-            return await this.readPhoto(id, signal);
+            return receipt.id;
         } catch (error) {
-            if (!signal?.aborted)
-                await this.request(`${path}/${receipt.id}/cancel`, {
-                    method: "POST",
-                }).catch(() => {});
+            await this.request(`${path}/${receipt.id}/cancel`, {
+                method: "POST",
+                signal: AbortSignal.timeout(5000),
+            }).catch(() => {});
             throw error;
         }
     }
