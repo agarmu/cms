@@ -1,0 +1,52 @@
+<dialog data-photo-lightbox aria-label="Enlarged photo">
+    <div data-lightbox-image class="lightbox-image" />
+</dialog>
+
+<style>
+    @reference "../styles/theme.css";
+
+    dialog {
+        --lightbox-gutter: clamp(1rem, 3vw, 1.5rem);
+        @apply fixed inset-0 m-0 box-border h-dvh max-h-none w-screen max-w-none overflow-hidden border-0 bg-transparent p-[var(--lightbox-gutter)];
+    }
+    dialog[open] {
+        @apply grid place-items-center;
+    }
+    dialog::backdrop {
+        @apply bg-[rgb(8_8_8_/_.45)] backdrop-blur-[6px];
+    }
+    .lightbox-image {
+        @apply flex min-h-0 min-w-0 items-center justify-center;
+    }
+    .lightbox-image :global(img) {
+        @apply block h-auto max-h-[calc(100dvh_-_2_*_var(--lightbox-gutter))] w-auto max-w-[calc(100vw_-_2_*_var(--lightbox-gutter))] cursor-zoom-out object-contain;
+    }
+    @media (prefers-reduced-motion: no-preference) {
+        dialog[open]::backdrop {
+            animation: blur-background 320ms cubic-bezier(0.4, 0, 0.2, 1) both;
+        }
+        dialog[open][data-closing]::backdrop {
+            animation: unblur-background 280ms cubic-bezier(0.4, 0, 0.2, 1) both;
+        }
+    }
+    @keyframes blur-background {
+        from {
+            backdrop-filter: blur(0px);
+            background-color: rgb(8 8 8 / 0);
+        }
+        to {
+            backdrop-filter: blur(6px);
+            background-color: rgb(8 8 8 / 0.45);
+        }
+    }
+    @keyframes unblur-background {
+        from {
+            backdrop-filter: blur(6px);
+            background-color: rgb(8 8 8 / 0.45);
+        }
+        to {
+            backdrop-filter: blur(0px);
+            background-color: rgb(8 8 8 / 0);
+        }
+    }
+</style>

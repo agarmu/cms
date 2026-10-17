@@ -1,4 +1,5 @@
 ---
+import PhotoLightbox from "./PhotoLightbox.astro";
 import VisibilityIcon from "./VisibilityIcon.astro";
 ---
 
@@ -76,6 +77,8 @@ import VisibilityIcon from "./VisibilityIcon.astro";
             </div>
         </div>
     </article>
+
+    <PhotoLightbox />
 
     <template data-photo-card>
         <li class="photo-card">
@@ -217,6 +220,12 @@ import VisibilityIcon from "./VisibilityIcon.astro";
     }
     .detail-image :global(img) {
         @apply block h-auto max-h-80 w-auto max-w-full object-contain;
+    }
+    .detail-image :global(.photo-open) {
+        @apply block w-fit max-w-full cursor-zoom-in appearance-none border-0 bg-transparent p-0;
+    }
+    .detail-image :global(.photo-open:focus-visible) {
+        @apply outline-2 outline-offset-4 outline-primary;
     }
     .detail-image :global(.image-status) {
         @apply content-center;

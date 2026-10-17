@@ -7,6 +7,7 @@ import {
     type PhotoAsset,
 } from "./cms-client";
 import { libraryUrl, pageSize, readRoute } from "./library-route";
+import { PhotoLightbox } from "./photo-lightbox";
 
 function element<T extends HTMLElement>(root: ParentNode, selector: string): T {
     const found = root.querySelector<T>(selector);
@@ -42,12 +43,16 @@ export function mountLibrary(root: HTMLElement) {
     const previous = element<HTMLAnchorElement>(root, "[data-previous]");
     const next = element<HTMLAnchorElement>(root, "[data-next]");
     const back = element<HTMLAnchorElement>(root, "[data-back]");
+    const lightbox = new PhotoLightbox(
+        element<HTMLDialogElement>(root, "[data-photo-lightbox]"),
+    );
     let request: AbortController | undefined;
     let observer: IntersectionObserver | undefined;
     let disposers: (() => void)[] = [];
     let sessionReady: boolean | undefined;
 
     function reset() {
+        lightbox.reset();
         request?.abort();
         observer?.disconnect();
         root.removeAttribute("aria-busy");
@@ -134,7 +139,20 @@ export function mountLibrary(root: HTMLElement) {
                 img.hidden = false;
             };
             img.onerror = showError;
-            frame.append(img);
+            if (thumbnail) frame.append(img);
+            else {
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = "photo-open";
+                button.setAttribute("aria-label", "Enlarge photo");
+                button.setAttribute("aria-haspopup", "dialog");
+                button.append(img);
+                button.addEventListener("click", () => {
+                    if (!img.hidden && !signal.aborted)
+                        void lightbox.open(img, photo, button);
+                });
+                frame.append(button);
+            }
             img.src = url;
         } catch {
             showError();
