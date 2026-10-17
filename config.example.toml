@@ -88,6 +88,8 @@ retryTime = 10_000 # Initial delay for both workers; exponential backoff starts 
 
 [http]
 maxBodyBytes = 65_536
+# Browser origins allowed to call /api with bearer tokens (no cookies).
+allowedOrigins = ["http://localhost:4321"]
 
 [telemetry]
 enabled = true

@@ -12,6 +12,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 import { Elysia } from "elysia";
+import { cors } from "@elysiajs/cors";
 import { HttpOpenApi } from "./openapi";
 import { HttpTelemetry } from "./telemetry";
 import { CameraApi } from "../api/resources/cameras";
@@ -91,6 +92,38 @@ export class HttpApplication {
             const app = new Elysia()
                 .use(new HttpTelemetry().plugin)
                 .use(new HttpErrorHandler(options.reportError).plugin)
+                .use(
+                    cors({
+                        origin: (request) =>
+                            new URL(request.url).pathname.startsWith("/api/") &&
+                            config.allowedOrigins.has(
+                                request.headers.get("Origin") ?? "",
+                            ),
+                        methods: [
+                            "GET",
+                            "POST",
+                            "PUT",
+                            "PATCH",
+                            "DELETE",
+                            "OPTIONS",
+                        ],
+                        allowedHeaders: ["Authorization", "Content-Type"],
+                        exposeHeaders: ["WWW-Authenticate"],
+                        credentials: false,
+                        preflight: false,
+                    }),
+                )
+                .onRequest(({ request }) => {
+                    // Anonymous API preflights must finish before bearer authentication.
+                    // MCP retains its own origin policy and OPTIONS handling.
+                    if (
+                        request.method === "OPTIONS" &&
+                        new URL(request.url).pathname.startsWith("/api/")
+                    ) {
+                        return new Response(null, { status: 204 });
+                    }
+                    return;
+                })
                 .put(
                     "/api/local-uploads/:token",
                     async ({ params, request }) => {

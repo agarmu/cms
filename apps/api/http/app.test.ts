@@ -13,7 +13,7 @@
 //
 import { readyUpload } from "../api/test-fixtures";
 import { PhotoApi } from "../api/photos";
-import { requestAsUser } from "../auth/test-fixtures";
+import { requestAsUser, requestApp } from "../auth/test-fixtures";
 import { testAuthSettings, testAuthDependencies } from "../auth/test-fixtures";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
@@ -25,6 +25,7 @@ import { DatabaseSchema as schema } from "../db/schema";
 import { Application } from "../application";
 import { ApplicationConfig } from "../application/config";
 import { ApiValidation } from "../api/validation";
+import { HttpConfiguration } from "./config";
 
 const client = new PGlite();
 const db = drizzle(client, { schema: schema.definition });
@@ -60,6 +61,86 @@ function request(path: string, method = "GET", body?: unknown) {
     }
     return requestAsUser(app, path, init);
 }
+
+const editorOrigin = "https://editor.example.com";
+const { http: browserApp } = new Application({
+    ...testAuthDependencies,
+    db,
+    getBlobStorage: () => {
+        throw new Error("Metadata requests must not initialize blob storage");
+    },
+    reportError: (error) => reportedErrors.push(error),
+    httpConfig: new HttpConfiguration({ allowedOrigins: [editorOrigin] }),
+});
+
+test("browser preflight is anonymous, but API access still requires a bearer token", async () => {
+    const preflight = await requestApp(browserApp, "/api/photos", {
+        method: "OPTIONS",
+        headers: {
+            Origin: editorOrigin,
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "authorization",
+        },
+    });
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers.get("Access-Control-Allow-Origin")).toBe(
+        editorOrigin,
+    );
+    expect(preflight.headers.get("Access-Control-Allow-Headers")).toContain(
+        "Authorization",
+    );
+    expect(preflight.headers.get("Access-Control-Allow-Methods")).toContain(
+        "GET",
+    );
+    expect(
+        preflight.headers.get("Access-Control-Allow-Credentials"),
+    ).toBeNull();
+
+    const unauthenticated = await requestApp(browserApp, "/api/photos", {
+        headers: { Origin: editorOrigin },
+    });
+    expect(unauthenticated.status).toBe(401);
+    expect(unauthenticated.headers.get("Access-Control-Allow-Origin")).toBe(
+        editorOrigin,
+    );
+
+    const authenticated = await requestAsUser(browserApp, "/api/photos", {
+        headers: { Origin: editorOrigin },
+    });
+    expect(authenticated.status).toBe(200);
+    expect(authenticated.headers.get("Access-Control-Allow-Origin")).toBe(
+        editorOrigin,
+    );
+});
+
+test.each([
+    "https://editor.example.com.evil",
+    "https://evil.example.com",
+    "null",
+])(
+    "does not grant API access to unlisted browser origin %s",
+    async (origin) => {
+        const response = await requestApp(browserApp, "/api/photos", {
+            method: "OPTIONS",
+            headers: {
+                Origin: origin,
+                "Access-Control-Request-Method": "GET",
+            },
+        });
+        expect(response.headers.get("Access-Control-Allow-Origin")).toBeNull();
+    },
+);
+
+test("API CORS is deny-by-default", async () => {
+    const response = await requestApp(app, "/api/photos", {
+        method: "OPTIONS",
+        headers: {
+            Origin: editorOrigin,
+            "Access-Control-Request-Method": "GET",
+        },
+    });
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBeNull();
+});
 
 const metadata = {
     taken: "2026-10-02T12:00:00.000Z",

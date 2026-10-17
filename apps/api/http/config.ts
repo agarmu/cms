@@ -12,6 +12,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 import { z } from "zod";
+import { publicUrl } from "../lib/url";
 
 export type HttpSettings = z.input<typeof HttpConfiguration.schema>;
 
@@ -21,10 +22,21 @@ export class HttpConfiguration {
             .int()
             .positive()
             .default(64 * 1024),
+        allowedOrigins: z
+            .array(
+                publicUrl.refine(
+                    (value) =>
+                        URL.canParse(value) && new URL(value).origin === value,
+                ),
+            )
+            .default([]),
     });
     readonly maxBodyBytes: number;
+    readonly allowedOrigins: ReadonlySet<string>;
 
     constructor(values: HttpSettings = {}) {
-        this.maxBodyBytes = HttpConfiguration.schema.parse(values).maxBodyBytes;
+        const settings = HttpConfiguration.schema.parse(values);
+        this.maxBodyBytes = settings.maxBodyBytes;
+        this.allowedOrigins = new Set(settings.allowedOrigins);
     }
 }
