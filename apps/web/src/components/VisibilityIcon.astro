@@ -1,0 +1,29 @@
+---
+import { Icon } from "astro-icon/components";
+---
+
+<span
+    data-visibility
+    class="visibility"
+    role="img"
+    aria-label="Visible"
+    title="Visible"
+>
+    <span data-visible-icon>
+        <Icon name="lucide:eye" aria-hidden="true" />
+    </span>
+    <span data-hidden-icon hidden>
+        <Icon name="lucide:eye-off" aria-hidden="true" />
+    </span>
+</span>
+
+<style>
+    @reference "../styles/theme.css";
+
+    .visibility {
+        @apply inline-flex shrink-0 items-center text-muted-foreground;
+    }
+    .visibility :global(svg) {
+        @apply block size-5;
+    }
+</style>

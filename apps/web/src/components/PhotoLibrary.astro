@@ -1,0 +1,228 @@
+---
+import VisibilityIcon from "./VisibilityIcon.astro";
+---
+
+<section data-photo-library class="photo-library" aria-label="Photo library">
+    <div
+        data-library-status
+        class="library-status"
+        role="status"
+        aria-live="polite"
+    >
+        <h2 data-status-title tabindex="-1">
+            Opening your library…
+        </h2>
+        <p data-status-description>Checking your session.</p>
+        <button data-retry type="button" hidden>
+            Try again
+        </button>
+        <a data-status-back href="/" class="back-link" hidden>
+            ← All photos
+        </a>
+    </div>
+
+    <div data-library-view hidden>
+        <div class="section-heading">
+            <div>
+                <h2 tabindex="-1">Your photos</h2>
+                <p data-page-description aria-live="polite" />
+            </div>
+        </div>
+        <ul data-photo-grid class="photo-grid" aria-label="Photos" />
+        <nav class="pagination" aria-label="Photo pages">
+            <a data-previous href="/">
+                Previous
+            </a>
+            <a data-next href="/">
+                Next
+            </a>
+        </nav>
+    </div>
+
+    <article data-photo-view hidden aria-label="Photo details" tabindex="-1">
+        <a data-back href="/" class="back-link">
+            ← All photos
+        </a>
+        <div class="entry-layout">
+            <div data-photo-image class="detail-image" />
+            <div class="detail-copy">
+                <VisibilityIcon />
+                <dl>
+                    <div class="alt-field">
+                        <dt>Alt text</dt>
+                        <dd data-photo-alt />
+                    </div>
+                    <div>
+                        <dt>Taken</dt>
+                        <dd data-photo-taken />
+                    </div>
+                    <div>
+                        <dt>Posted</dt>
+                        <dd data-photo-posted />
+                    </div>
+                    <div>
+                        <dt>Camera</dt>
+                        <dd data-photo-camera />
+                    </div>
+                    <div>
+                        <dt>Lens</dt>
+                        <dd data-photo-lens />
+                    </div>
+                    <div>
+                        <dt>Image size</dt>
+                        <dd data-photo-size />
+                    </div>
+                </dl>
+            </div>
+        </div>
+    </article>
+
+    <template data-photo-card>
+        <li class="photo-card">
+            <a class="photo-link">
+                <div class="thumbnail" data-thumbnail />
+                <div class="card-copy">
+                    <p>
+                        <time /> <VisibilityIcon />
+                    </p>
+                </div>
+            </a>
+        </li>
+    </template>
+
+    <noscript>
+        <p>Enable JavaScript to sign in and browse your photos.</p>
+    </noscript>
+</section>
+
+<script>
+    import { mountLibrary } from "@/lib/library";
+
+    const root = document.querySelector<HTMLElement>("[data-photo-library]");
+    if (root) mountLibrary(root);
+</script>
+
+<style>
+    @reference "../styles/theme.css";
+
+    .photo-library {
+        @apply flex-1 py-8;
+    }
+    h2 {
+        @apply break-words font-bold fl-text-xl/3xl--sm-lg;
+    }
+    h2:focus {
+        outline: none;
+    }
+    [data-photo-view]:focus {
+        outline: none;
+    }
+    .section-heading {
+        @apply mb-6 flex items-end justify-between gap-4;
+    }
+    .section-heading p {
+        @apply mt-1 text-sm text-muted-foreground;
+    }
+    .library-status {
+        @apply flex min-h-72 flex-col items-center justify-center gap-3 text-center;
+    }
+    .library-status p {
+        @apply max-w-md text-muted-foreground;
+    }
+    .library-status button {
+        @apply mt-2;
+    }
+    .photo-grid {
+        @apply grid grid-cols-1 gap-x-5 gap-y-8 sm:grid-cols-2 lg:grid-cols-3;
+    }
+    .pagination {
+        @apply mt-8 flex items-center justify-between gap-4 border-t border-neutral-200 pt-5 dark:border-neutral-800;
+    }
+    .pagination a,
+    button {
+        @apply inline-flex min-h-11 cursor-pointer items-center justify-center rounded-md border border-neutral-200 px-4 py-2 text-sm font-bold transition-colors dark:border-neutral-800;
+    }
+    .pagination a:hover,
+    button:hover {
+        @apply bg-neutral-100 dark:bg-neutral-800;
+    }
+    .pagination [data-next] {
+        @apply ml-auto;
+    }
+    a:focus-visible,
+    button:focus-visible {
+        @apply outline-2 outline-offset-4 outline-primary;
+    }
+    .back-link {
+        @apply mb-6 inline-flex min-h-11 items-center text-sm font-bold text-muted-foreground;
+    }
+    .entry-layout {
+        @apply grid items-start gap-8 md:grid-cols-[minmax(0,20rem)_minmax(0,1fr)];
+    }
+    .detail-image {
+        @apply w-full max-w-80;
+    }
+    .detail-copy {
+        @apply min-w-0;
+    }
+    dl {
+        @apply mt-5 grid gap-5 sm:grid-cols-2;
+    }
+    .alt-field {
+        @apply sm:col-span-2;
+    }
+    dt {
+        @apply text-sm text-muted-foreground;
+    }
+    dd {
+        @apply mt-1 whitespace-pre-wrap break-words;
+    }
+
+    /* Cards and images are created from API data in the browser. */
+    .photo-grid :global(.photo-link) {
+        @apply block rounded-lg;
+    }
+    .photo-grid :global(.photo-link:focus-visible) {
+        @apply outline-2 outline-offset-4 outline-primary;
+    }
+    .photo-grid :global(.thumbnail) {
+        @apply aspect-[4/3] overflow-hidden rounded-lg bg-neutral-100 dark:bg-neutral-900;
+    }
+    .photo-grid :global(.card-copy) {
+        @apply mt-3;
+    }
+    .photo-grid :global(.card-copy p) {
+        @apply mt-1 flex items-center justify-between gap-2 text-sm text-muted-foreground;
+    }
+    .photo-library :global(.image-frame) {
+        @apply relative flex min-h-32 items-center justify-center;
+    }
+    .photo-library :global(.image-status) {
+        @apply p-5 text-center text-sm text-muted-foreground;
+    }
+    .photo-library :global(.image-retry) {
+        @apply absolute inset-0 flex cursor-pointer items-center justify-center bg-background/90 p-4 text-sm font-bold;
+    }
+    .photo-library :global(.image-retry:focus-visible) {
+        @apply outline-2 -outline-offset-4 outline-primary;
+    }
+    .photo-grid :global(img) {
+        @apply block size-full object-cover transition-opacity;
+    }
+    .photo-grid :global(.photo-link:hover img) {
+        @apply opacity-90;
+    }
+    .detail-image:global(.image-frame) {
+        @apply min-h-0 items-start justify-start;
+    }
+    .detail-image :global(img) {
+        @apply block h-auto max-h-80 w-auto max-w-full object-contain;
+    }
+    .detail-image :global(.image-status) {
+        @apply content-center;
+    }
+    [hidden],
+    .photo-library :global([hidden]) {
+        display: none !important;
+    }
+</style>

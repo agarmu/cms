@@ -18,7 +18,11 @@ export default defineConfig({
             subsets: ["latin"],
         },
     ],
-    integrations: [icon({ include: { lucide: ["github", "sun", "moon"] } })],
+    integrations: [
+        icon({
+            include: { lucide: ["github", "sun", "moon", "eye", "eye-off"] },
+        }),
+    ],
     vite: {
         define: { __CMS_CONFIG__: JSON.stringify(config) },
         plugins: [tailwindcss()],
