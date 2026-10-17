@@ -256,10 +256,11 @@ export class ImageUploadApi {
             assets:
                 status.status === "ready"
                     ? (upload.assets ?? []).map(
-                          ({ assetLocation, width, height }) => ({
+                          ({ assetLocation, width, height, byteSize }) => ({
                               filename: assetLocation,
                               width,
                               height,
+                              byteSize: byteSize ?? null,
                               url: `/api/photo-uploads/${upload.id}/assets/${encodeURIComponent(assetLocation)}`,
                           }),
                       )

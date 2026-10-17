@@ -81,6 +81,12 @@ test("image processing and cleanup work with a non-S3 blob backend", async () =>
     if (!download || !("file" in download))
         throw new Error("Expected a local image");
     expect(download.file.type).toBe("image/webp");
+    expect(asset.byteSize).toBe(download.file.size);
+    for (const variant of processed.assets)
+        expect(variant.byteSize).toBe(
+            (await storage.get(`images/${photoId}/${variant.assetLocation}`))!
+                .size,
+        );
     expect(
         (await sharp(await download.file.arrayBuffer()).metadata()).format,
     ).toBe("webp");

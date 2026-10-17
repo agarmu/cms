@@ -1,0 +1,2 @@
+ALTER TABLE "image_assets" ADD COLUMN "byte_size" bigint;--> statement-breakpoint
+ALTER TABLE "image_assets" ADD CONSTRAINT "image_assets_byte_size_valid" CHECK ("image_assets"."byte_size" > 0 AND "image_assets"."byte_size" <= 9007199254740991);

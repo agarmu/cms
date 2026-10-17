@@ -73,6 +73,46 @@ test("adding description preserves existing caption and alt text", async () => {
     }
 });
 
+test("adding byte counts preserves existing assets and rejects non-positive sizes", async () => {
+    const upgrade = new PGlite();
+    try {
+        await upgrade.exec(`
+            CREATE TABLE image_assets (asset_location text NOT NULL);
+            INSERT INTO image_assets VALUES ('existing.webp');
+        `);
+        await upgrade.exec(
+            await Bun.file(
+                new URL(
+                    "../../../migrations/0006_image_asset_byte_size.sql",
+                    import.meta.url,
+                ),
+            ).text(),
+        );
+        expect(
+            (await upgrade.query("SELECT * FROM image_assets")).rows,
+        ).toEqual([{ asset_location: "existing.webp", byte_size: null }]);
+        await upgrade.query(
+            "INSERT INTO image_assets VALUES ('new.webp', 3000000000)",
+        );
+        expect(
+            (
+                await upgrade.query(
+                    "SELECT byte_size FROM image_assets WHERE asset_location = 'new.webp'",
+                )
+            ).rows,
+        ).toEqual([{ byte_size: 3_000_000_000 }]);
+        for (const size of [0, -1, Number.MAX_SAFE_INTEGER + 1])
+            await expect(
+                upgrade.query(
+                    "INSERT INTO image_assets VALUES ('invalid.webp', $1)",
+                    [size],
+                ),
+            ).rejects.toThrow();
+    } finally {
+        await upgrade.close();
+    }
+});
+
 test("loads an image with its camera, lens, and assets", async () => {
     const camera = { id: crypto.randomUUID(), name: "Camera" };
     const lens = { id: crypto.randomUUID(), name: "Lens" };

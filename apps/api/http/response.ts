@@ -54,6 +54,7 @@ export function photoResponse(
             filename: asset.assetLocation,
             width: asset.width,
             height: asset.height,
+            byteSize: asset.byteSize,
             url: assetUrl(photo.id, asset.assetLocation),
         })),
     };
@@ -85,6 +86,7 @@ export const photoSchema = z.object({
             filename: z.string(),
             width: z.number().int().positive(),
             height: z.number().int().positive(),
+            byteSize: z.int().positive().nullable(),
             url: z.string(),
         }),
     ),

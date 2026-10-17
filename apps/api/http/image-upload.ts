@@ -62,6 +62,7 @@ const uploadResponse = uploadStatus.extend({
             filename: z.string(),
             width: z.number().int().positive(),
             height: z.number().int().positive(),
+            byteSize: z.int().positive().nullable(),
             url: z.string(),
         }),
     ),

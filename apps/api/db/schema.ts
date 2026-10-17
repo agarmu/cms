@@ -60,11 +60,16 @@ export class DatabaseSchema {
                 .references(() => DatabaseSchema.photos.id),
             width: pg.integer("width").notNull(),
             height: pg.integer("height").notNull(),
+            byteSize: pg.bigint("byte_size", { mode: "number" }),
             assetLocation: pg.text("asset_location").notNull(),
         },
         (table) => [
             pg.check("image_assets_width_positive", sql`${table.width} > 0`),
             pg.check("image_assets_height_positive", sql`${table.height} > 0`),
+            pg.check(
+                "image_assets_byte_size_valid",
+                sql`${table.byteSize} > 0 AND ${table.byteSize} <= 9007199254740991`,
+            ),
         ],
     );
 
@@ -84,11 +89,14 @@ export class DatabaseSchema {
                 .timestamp("created", { withTimezone: true, mode: "date" })
                 .notNull()
                 .defaultNow(),
-            assets: pg
-                .jsonb("assets")
-                .$type<
-                    { width: number; height: number; assetLocation: string }[]
-                >(),
+            assets: pg.jsonb("assets").$type<
+                {
+                    width: number;
+                    height: number;
+                    byteSize?: number | null;
+                    assetLocation: string;
+                }[]
+            >(),
             consumed: pg.timestamp("consumed", {
                 withTimezone: true,
                 mode: "date",

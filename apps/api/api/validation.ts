@@ -39,6 +39,7 @@ export class ApiValidation {
         photoId: ApiValidation.uuid,
         width: ApiValidation.positiveInteger,
         height: ApiValidation.positiveInteger,
+        byteSize: z.int().positive().nullable().optional(),
         assetLocation: z.string().min(1),
     });
 

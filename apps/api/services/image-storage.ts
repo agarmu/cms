@@ -21,6 +21,8 @@ import { Tracing } from "../telemetry/tracing";
 export type ProcessedAsset = {
     width: number;
     height: number;
+    // Older persisted upload receipts may not contain a byte count.
+    byteSize?: number | null;
     assetLocation: string;
 };
 type PreparedImage = {
@@ -216,7 +218,11 @@ export class ImageStorage {
                 const key = `images/${photoId}/${filename}`;
                 keys.push(key);
                 await this.storage.write(key, image.data, image.mimeType);
-                assets.push({ ...image.dimensions, assetLocation: filename });
+                assets.push({
+                    ...image.dimensions,
+                    byteSize: image.data.byteLength,
+                    assetLocation: filename,
+                });
             }
             await checkActive();
         } catch (error) {

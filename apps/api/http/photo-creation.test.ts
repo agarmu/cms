@@ -170,6 +170,7 @@ async function prepare() {
             filename: string;
             width: number;
             height: number;
+            byteSize: number;
         }[];
     };
     expect(status).toMatchObject({
@@ -199,9 +200,9 @@ test("a creator prepares an image, previews it, and saves metadata and equipment
     expect(upload.assets).toMatchObject([{ width: 200, height: 100 }]);
     const preview = await request("creator", upload.assets[0]!.url);
     expect(preview.status).toBe(200);
-    expect((await sharp(await preview.arrayBuffer()).metadata()).width).toBe(
-        200,
-    );
+    const previewBytes = await preview.arrayBuffer();
+    expect(upload.assets[0]!.byteSize).toBe(previewBytes.byteLength);
+    expect((await sharp(previewBytes).metadata()).width).toBe(200);
     const response = await save(upload.id, {
         camera: { create: { name: "New camera" } },
         lens: { create: { name: "New lens" } },
@@ -211,6 +212,17 @@ test("a creator prepares an image, previews it, and saves metadata and equipment
     expect(Object.keys(photo)).toEqual(["id"]);
     expect(response.headers.get("Location")).toBe(`/api/photos/${photo.id}`);
     const saved = await PhotoApi.read(db, photo.id);
+    const expectedSizes = saved.assets.map((asset) => ({
+        byteSize: objects.get(`images/${photo.id}/${asset.assetLocation}`)!
+            .size,
+    }));
+    expect(saved.assets).toMatchObject(expectedSizes);
+    expect(
+        await (await request("reader", `/api/photos/${photo.id}`)).json(),
+    ).toMatchObject({ assets: expectedSizes });
+    expect(await (await request("reader", "/api/photos")).json()).toMatchObject(
+        { items: [{ id: photo.id, assets: expectedSizes }] },
+    );
     expect(saved).toMatchObject({
         altText: "Photo",
         camera: { name: "New camera" },
