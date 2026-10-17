@@ -364,10 +364,6 @@ export function mountLibrary(root: HTMLElement) {
                     );
                 } else {
                     renderCards(photos, route.offset, signal);
-                    setText(
-                        "[data-page-description]",
-                        `Photos ${route.offset + 1}–${route.offset + photos.length}`,
-                    );
                     status.hidden = true;
                 }
                 previous.hidden = route.offset === 0;
@@ -378,7 +374,7 @@ export function mountLibrary(root: HTMLElement) {
                 next.href = libraryUrl(route.offset + pageSize);
                 list.hidden = !photos.length && !route.offset;
                 document.title = "Your photos · Photos CMS";
-                if (focus && photos.length) element(list, "h2").focus();
+                if (focus && photos.length) grid.focus();
             }
         } catch (error) {
             if (signal.aborted) return;

@@ -24,13 +24,12 @@ import { Icon } from "astro-icon/components";
     </div>
 
     <div data-library-view hidden>
-        <div class="section-heading">
-            <div>
-                <h2 tabindex="-1">Your photos</h2>
-                <p data-page-description aria-live="polite" />
-            </div>
-        </div>
-        <ul data-photo-grid class="photo-grid" aria-label="Photos" />
+        <ul
+            data-photo-grid
+            class="photo-grid"
+            aria-label="Photos"
+            tabindex="-1"
+        />
         <nav class="pagination" aria-label="Photo pages">
             <a data-previous href="/">
                 Previous
@@ -205,14 +204,9 @@ import { Icon } from "astro-icon/components";
     h2:focus {
         outline: none;
     }
+    [data-photo-grid]:focus,
     [data-photo-view]:focus {
         outline: none;
-    }
-    .section-heading {
-        @apply mb-6 flex items-end justify-between gap-4;
-    }
-    .section-heading p {
-        @apply mt-1 text-sm text-muted-foreground;
     }
     .library-status {
         @apply flex min-h-72 flex-col items-center justify-center gap-3 text-center;
