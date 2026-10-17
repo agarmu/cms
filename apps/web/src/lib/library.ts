@@ -127,8 +127,26 @@ export function mountLibrary(root: HTMLElement) {
         }
     }
 
+    function canCreatePhoto() {
+        return editor.requireFinished(
+            "Save or cancel your current edit before adding a photo.",
+        );
+    }
+
     async function transitionRoute(focus = true) {
         const route = readRoute(new URL(window.location.href));
+        if (route.creating && !canCreatePhoto()) {
+            if (displayedRoute)
+                window.history.replaceState(
+                    null,
+                    "",
+                    libraryUrl(
+                        displayedRoute.offset,
+                        displayedRoute.photo ?? undefined,
+                    ),
+                );
+            return;
+        }
         if (
             sessionReady &&
             request &&
@@ -555,6 +573,7 @@ export function mountLibrary(root: HTMLElement) {
         if (url.origin !== window.location.origin || url.pathname !== "/")
             return;
         event.preventDefault();
+        if (url.searchParams.has("new") && !canCreatePhoto()) return;
         // Push history without a document navigation, preserving in-memory tokens.
         window.history.pushState(null, "", url);
         const route = readRoute(url);

@@ -300,6 +300,13 @@ import { Icon } from "astro-icon/components";
                             />
                         </div>
                         <p data-editor-help class="editor-help" hidden />
+                        <p
+                            data-editor-reminder
+                            id="photo-editor-reminder"
+                            class="editor-reminder"
+                            role="alert"
+                            hidden
+                        />
                         <div class="editor-actions">
                             <button data-editor-save type="submit">
                                 Save
@@ -556,6 +563,12 @@ import { Icon } from "astro-icon/components";
     .text-editor {
         @apply mt-2 whitespace-normal;
     }
+    .text-editor[data-finish-required] {
+        @apply rounded-md outline-2 outline-offset-4 outline-red-600 dark:outline-red-400;
+    }
+    .text-editor .editor-reminder {
+        @apply m-0 text-sm text-red-600 dark:text-red-400;
+    }
     .text-editor fieldset {
         @apply grid min-w-0 gap-3;
     }
@@ -664,7 +677,7 @@ import { Icon } from "astro-icon/components";
     .text-editor fieldset:disabled textarea {
         @apply cursor-not-allowed opacity-50;
     }
-    .text-editor [role="alert"],
+    .text-editor [data-editor-error],
     .text-status {
         @apply mt-3 text-sm;
     }

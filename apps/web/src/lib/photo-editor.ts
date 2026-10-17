@@ -50,6 +50,7 @@ export function mountPhotoEditor(
     const timeChoice = element("[data-editor-time-choice]");
     const offset = element<HTMLSelectElement>("[data-editor-offset]");
     const help = element("[data-editor-help]");
+    const reminder = element("[data-editor-reminder]");
     const error = element("[data-editor-error]");
     const status = element("[data-editor-status]");
     const save = element<HTMLButtonElement>("[data-editor-save]");
@@ -80,6 +81,10 @@ export function mountPhotoEditor(
         loading = false;
         form.hidden = true;
         form.removeAttribute("aria-busy");
+        form.removeAttribute("data-finish-required");
+        form.removeAttribute("aria-describedby");
+        reminder.textContent = "";
+        reminder.hidden = true;
         form.reset();
         fileName.textContent = "No file selected";
         date.setCustomValidity("");
@@ -99,6 +104,8 @@ export function mountPhotoEditor(
             value.hidden = false;
         error.textContent = "";
         error.hidden = true;
+        status.textContent = "";
+        status.hidden = true;
         restoreButtons();
         if (dialog.open) dialog.close();
         if (restoreFocus) opener?.focus();
@@ -468,6 +475,17 @@ export function mountPhotoEditor(
         }
     });
     return {
+        requireFinished(message: string) {
+            if (!editing) return true;
+            reminder.textContent = message;
+            reminder.hidden = false;
+            form.setAttribute("data-finish-required", "");
+            form.setAttribute("aria-describedby", reminder.id);
+            const action = save.matches(":disabled") ? cancel : save;
+            if (!action.matches(":disabled")) action.focus();
+            else form.scrollIntoView({ block: "nearest" });
+            return false;
+        },
         load(value: Photo, signal: AbortSignal) {
             photo = value;
             routeSignal = signal;
