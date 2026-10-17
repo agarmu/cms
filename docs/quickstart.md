@@ -69,10 +69,46 @@ The CMS applies migrations automatically and listens at `http://localhost:3000`.
 This configuration uses local image storage and no authentication, and binds to
 loopback. Stop the app with Ctrl-C.
 
-For backend watch mode, run `bun run dev`. The separate Astro workspace runs with
-`bun run dev:web` at `http://localhost:4321`; its initial page does not call the
-CMS API. Build it with `bun run build:web` and serve that build with
-`bun run preview:web`.
+For backend watch mode, run `bun run dev`.
+
+## 4. Open the photo library
+
+Create `apps/web/config.toml` for the separate Astro frontend:
+
+```toml
+[api]
+baseUrl = "http://localhost:3000/"
+
+[auth]
+kind = "no-auth"
+```
+
+Add the frontend origin to the backend's root `config.toml` and restart the API:
+
+```toml
+[http]
+allowedOrigins = ["http://localhost:4321"]
+```
+
+Run `bun run dev:web` and open `http://localhost:4321`. The library displays
+photos in pages of 24; select a photo to see its image, alt text, dates, and equipment.
+The library is empty until photos have been uploaded through the API or MCP.
+Photo links retain the selected photo and library page when reloaded or shared.
+
+For authenticated deployments, start from `apps/web/config.example.toml` and
+register the frontend's `/` and `/auth/silent` URLs as redirect URIs on your
+provider's public browser client. The client needs `openid` and `photos:read`;
+add `photos:read:hidden` to include hidden photos. The provider must allow the
+frontend origin for token requests and support the API's audience or resource
+configuration. Never put a client secret in frontend configuration.
+
+Tokens stay in memory. Reloads attempt silent session recovery; if the provider
+or browser blocks it, use Sign in again. Sign out clears this frontend's session;
+it does not end the identity provider's session.
+
+Build the frontend with `bun run build:web` and serve it with
+`bun run preview:web`. Configuration is compiled into the build, so rebuild after
+changing it and allow the preview or deployed frontend origin in `[http].allowedOrigins`.
 
 ## API documentation
 

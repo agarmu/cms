@@ -77,8 +77,9 @@ Path parameters such as `:id` are replaced with resource IDs.
 | DELETE | `/api/cameras/:id`, `/api/lenses/:id` | Delete equipment                    |
 
 Photo lists accept `limit` (1–100, default 50) and `offset` (default 0).
-Downloads return local image bytes or redirect to a signed S3 URL. Clients must
-follow redirects; with curl, use `-L`.
+Downloads return local image bytes or a JSON object containing a signed S3 `url`
+and its `expiresAt` timestamp. For S3, load the returned URL separately without
+the CMS bearer token. API image paths require the same permissions as metadata.
 
 ### New-photo uploads
 
