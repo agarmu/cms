@@ -20,7 +20,7 @@ const isField = (value: string | undefined): value is Field =>
 
 export function mountPhotoEditor(
     root: HTMLElement,
-    callbacks: { update(photo: Photo): void; replace(): void },
+    callbacks: { update(photo: Photo): void; replace(): Promise<void> },
 ) {
     function element<T extends HTMLElement>(selector: string) {
         const result = root.querySelector<T>(selector);
@@ -67,6 +67,22 @@ export function mountPhotoEditor(
     let loading = false;
     let candidates: string[] = [];
     let confirmedImage: File | undefined;
+    let statusTimeout: number | undefined;
+
+    function hideSaved() {
+        window.clearTimeout(statusTimeout);
+        statusTimeout = undefined;
+        status.textContent = "";
+        status.hidden = true;
+    }
+
+    function showSaved(field: Field) {
+        hideSaved();
+        status.hidden = false;
+        status.textContent =
+            field === "image" ? "Image replaced." : `${labels[field]} saved.`;
+        statusTimeout = window.setTimeout(hideSaved, 3000);
+    }
 
     function restoreButtons() {
         for (const button of buttons) {
@@ -104,8 +120,7 @@ export function mountPhotoEditor(
             value.hidden = false;
         error.textContent = "";
         error.hidden = true;
-        status.textContent = "";
-        status.hidden = true;
+        hideSaved();
         restoreButtons();
         if (dialog.open) dialog.close();
         if (restoreFocus) opener?.focus();
@@ -228,7 +243,7 @@ export function mountPhotoEditor(
         controlGroup.hidden = field === "visible";
         filePicker.hidden = field !== "image";
         label.hidden = false;
-        status.hidden = true;
+        hideSaved();
         label.textContent = labels[field];
         form.setAttribute("aria-label", `Edit ${labels[field].toLowerCase()}`);
         title.textContent =
@@ -449,9 +464,11 @@ export function mountPhotoEditor(
             if (controller.signal.aborted || photo !== current) return;
             callbacks.update(current);
             close();
-            status.hidden = false;
-            status.textContent = "Saved.";
-            if (field === "image") callbacks.replace();
+            if (field === "image") {
+                await callbacks.replace();
+                if (photo?.id !== current.id || routeSignal?.aborted) return;
+            }
+            showSaved(field);
         } catch (failure) {
             if (controller.signal.aborted || photo !== current) return;
             error.textContent =
@@ -495,8 +512,6 @@ export function mountPhotoEditor(
             close(false);
             photo = undefined;
             routeSignal = undefined;
-            status.textContent = "";
-            status.hidden = true;
         },
     };
 }

@@ -88,7 +88,7 @@ export function mountLibrary(root: HTMLElement) {
     let sessionReady: boolean | undefined;
     const editor = mountPhotoEditor(detail, {
         update: renderPhotoMetadata,
-        replace: () => void renderRoute(true),
+        replace: () => renderRoute(true),
     });
     const creator = mountPhotoCreator(createView, {
         created(id) {

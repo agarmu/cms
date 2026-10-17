@@ -318,14 +318,15 @@ import { Icon } from "astro-icon/components";
                     </fieldset>
                     <p data-editor-error role="alert" hidden />
                 </form>
-                <p
-                    data-editor-status
-                    class="text-status"
-                    role="status"
-                    hidden
-                />
             </div>
         </div>
+        <p
+            data-editor-status
+            class="save-toast"
+            role="status"
+            aria-atomic="true"
+            hidden
+        />
         <dialog data-photo-editor-dialog aria-labelledby="photo-editor-title">
             <h2 id="photo-editor-title" data-editor-title />
             <div data-editor-slot="modal" />
@@ -691,9 +692,11 @@ import { Icon } from "astro-icon/components";
     .text-editor fieldset:disabled textarea {
         @apply cursor-not-allowed opacity-50;
     }
-    .text-editor [data-editor-error],
-    .text-status {
+    .text-editor [data-editor-error] {
         @apply mt-3 text-sm;
+    }
+    .save-toast {
+        @apply pointer-events-none fixed inset-x-4 bottom-4 z-40 mx-auto w-fit max-w-[calc(100%_-_2rem)] rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-950 shadow-lg sm:right-6 sm:left-auto sm:mx-0 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100;
     }
     dt {
         @apply text-sm text-muted-foreground;
