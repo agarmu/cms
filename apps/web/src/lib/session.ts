@@ -39,11 +39,19 @@ export function createSession(
     };
 
     async function invalidateSession() {
+        if (!manager) return;
+        environment.storage.setItem(signedOutKey, "true");
         sessionError = "Your session has ended. Sign in again to continue.";
-        await manager?.removeUser();
+        manager.stopSilentRenew();
+        await manager.removeUser();
     }
 
     manager?.events.addUserLoaded(() => {
+        if (manager && environment.storage.getItem(signedOutKey)) {
+            manager.stopSilentRenew();
+            void manager.removeUser().catch(notify);
+            return;
+        }
         sessionError = undefined;
         notify();
     });
@@ -67,6 +75,10 @@ export function createSession(
 
         try {
             const user = await manager.signinRedirectCallback(url.href);
+            if (environment.storage.getItem(signedOutKey)) {
+                await manager.removeUser();
+                return true;
+            }
             const state = user.state as { returnTo?: unknown } | undefined;
             if (typeof state?.returnTo === "string") {
                 const returnTo = new URL(state.returnTo, url.origin);
@@ -106,7 +118,10 @@ export function createSession(
         async getSession() {
             const user = await manager?.getUser();
             return {
-                ready: !manager || Boolean(user && !user.expired),
+                ready:
+                    !manager ||
+                    (!environment.storage.getItem(signedOutKey) &&
+                        Boolean(user && !user.expired)),
                 error: sessionError,
             };
         },

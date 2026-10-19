@@ -82,6 +82,10 @@ function fixture(initialUrl = "https://editor.example.com/") {
         environment,
         calls,
         callbacks,
+        loadUser() {
+            user = { expired: false };
+            callbacks["loaded"]?.();
+        },
         get url() {
             return url;
         },
@@ -177,6 +181,48 @@ test("expired tokens unload the session and notify consumers", async () => {
     expect((await f.session.getSession()).ready).toBe(false);
     expect((await f.session.getSession()).error).toContain("session has ended");
     expect(notifications).toBe(1);
+});
+
+test("a late renewal cannot restore the user after explicit sign-out", async () => {
+    const f = fixture();
+    await f.session.initializeSession();
+    await f.session.signOut();
+    f.loadUser();
+    await Promise.resolve();
+    expect((await f.session.getSession()).ready).toBe(false);
+    expect(await f.manager.getUser()).toBeNull();
+    expect(f.environment.storage.getItem("cms.signed-out")).toBe("true");
+});
+
+test("an API-rejected session cannot be silently restored after reload", async () => {
+    const f = fixture();
+    await f.session.initializeSession();
+    await f.session.invalidateSession();
+    f.loadUser();
+    await Promise.resolve();
+    const reloaded = createSession(f.manager, f.environment);
+    await reloaded.initializeSession();
+    expect((await reloaded.getSession()).ready).toBe(false);
+    expect(f.calls.silent).toBe(1);
+});
+
+test("a sign-in callback finishing after sign-out does not restart renewal", async () => {
+    const f = fixture("https://editor.example.com/?code=temporary&state=nonce");
+    let complete!: (user: { expired: boolean }) => void;
+    f.manager.signinRedirectCallback = () =>
+        new Promise((resolve) => {
+            complete = resolve;
+        });
+    const initializing = f.session.initializeSession();
+    await Promise.resolve();
+    await f.session.signOut();
+    f.loadUser();
+    complete({ expired: false });
+    await initializing;
+    expect((await f.session.getSession()).ready).toBe(false);
+    expect(f.calls.started).toBe(0);
+    expect(f.environment.storage.getItem("cms.signed-out")).toBe("true");
+    expect(f.url.search).toBe("");
 });
 
 test("no-auth mode opens the library without provider or token storage access", async () => {
