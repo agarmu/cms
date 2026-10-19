@@ -6,16 +6,24 @@ baseUrl = "https://cms.example.com/"
 
 [auth]
 kind = "oidc"
-issuer = "https://auth.example.com/"
+issuer = "https://your-tenant.logto.app/oidc"
 clientId = "replace-with-your-public-browser-client-id"
-scopes = ["openid", "photos:read"]
+resource = "https://cms.example.com/"
+scopes = [
+  "openid", "offline_access",
+  "photos:read", "photos:read:hidden", "photos:create",
+  "photos:text:update", "photos:metadata:update", "photos:assets:write",
+  "cameras:read", "cameras:create", "cameras:update",
+  "lenses:read", "lenses:create", "lenses:update",
+]
 
 # Register the frontend's / and /auth/silent URLs as redirect URIs on
 # the provider's public browser client. Allow its origin for browser requests.
-# Add offline_access to scopes if your provider supports refresh tokens.
+# In Logto, register resource as an API identifier (including its trailing /).
+# Define the API permissions above and assign them to your user's role.
+# Tokens and refresh tokens remain in memory; offline_access enables renewal.
 
 # Optional provider-specific API selection; use only what your provider needs.
-# resource = "https://cms.example.com/"
 # audience = "https://cms.example.com/"
 
 # For local no-auth mode, use kind = "no-auth" and remove other [auth] fields.
