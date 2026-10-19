@@ -111,7 +111,8 @@ test.each([false, true])(
     },
 );
 
-test("runtime uses the configured RFC 9068 provider for real HTTP requests", async () => {
+test("runtime verifies the token audience independently of its public URL", async () => {
+    const audience = "https://api.example.com/";
     const key = await generateKeyPair("ES256");
     const jwks = {
         keys: [
@@ -135,19 +136,24 @@ test("runtime uses the configured RFC 9068 provider for real HTTP requests", asy
             ...testAuthSettings,
             issuer: issuer.url.href,
             jwksUrl: issuer.url.href,
+            audience,
         },
         database: { url: databaseUrl },
-        serve: { port: 0, baseUrl: "https://cms.example.com" },
+        serve: { port: 0, baseUrl: "http://localhost:3000" },
         storage: { backend: "local", directory: "./data/blobs" },
     });
     const runtime = new ApplicationRuntime(config, {
         connect: async () => ({ db, close: () => client.close() }),
     });
-    const accessToken = (sub: string, scope: string) =>
+    const accessToken = (
+        sub: string,
+        scope: string,
+        tokenAudience = audience,
+    ) =>
         new SignJWT({ scope, client_id: "runtime-client" })
             .setProtectedHeader({ alg: "ES256", kid: "runtime", typ: "at+jwt" })
             .setIssuer(issuer.url.href)
-            .setAudience("https://cms.example.com/")
+            .setAudience(tokenAudience)
             .setSubject(sub)
             .setIssuedAt()
             .setExpirationTime("5m")
@@ -162,6 +168,15 @@ test("runtime uses the configured RFC 9068 provider for real HTTP requests", asy
         await runtime.start();
         const url = new URL("/api/photos", runtime.url);
         expect((await fetch(url)).status).toBe(401);
+        expect(
+            (
+                await fetch(url, {
+                    headers: {
+                        Authorization: `Bearer ${await accessToken("test-user", "photos:read", "http://localhost:3000/")}`,
+                    },
+                })
+            ).status,
+        ).toBe(401);
         const reader = await accessToken("test-user", "photos:read");
         const response = await fetch(url, {
             headers: { Authorization: `Bearer ${reader}` },

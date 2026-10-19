@@ -30,6 +30,9 @@ kind = "rfc-9068"
 algorithm = "ES384"
 issuer = "https://your-tenant.logto.app/oidc"
 jwksUrl = "https://your-tenant.logto.app/oidc/jwks"
+# Optional API identifier; defaults to serve.baseUrl (normalized with a trailing /).
+# Set this when the registered identifier differs from the URL serving the API.
+# audience = "https://photos.example.com/"
 # Optional restriction to specific users; otherwise API scopes control access.
 # allowedSubjects = ["replace-with-your-user-id"]
 

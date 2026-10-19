@@ -32,6 +32,7 @@ export class AuthenticationConfiguration {
             "Issuer cannot contain a query",
         ),
         jwksUrl: endpoint,
+        audience: z.string().min(1).regex(/^\S+$/).optional(),
         allowedSubjects: z
             .array(z.string().trim().min(1))
             .min(1)

@@ -124,6 +124,24 @@ test("accepts audience arrays and grants no scopes when the claim is absent", as
     expect(identity.scopes.size).toBe(0);
 });
 
+test("an explicit audience replaces the base URL and preserves exact identifier spelling", async () => {
+    const audience = "https://api.example.com";
+    const auth = new Rfc9068AuthenticationProvider(
+        { ...testAuthSettings, jwksUrl: server.url.href, audience },
+        new URL("http://localhost:3000/"),
+    );
+    expect(
+        await auth.authenticate(await token({ aud: audience })),
+    ).toMatchObject({
+        subject: "test-user",
+    });
+    for (const aud of ["http://localhost:3000/", `${audience}/`]) {
+        await expect(
+            auth.authenticate(await token({ aud })),
+        ).rejects.toBeInstanceOf(AuthenticationError);
+    }
+});
+
 test("accepts only the configured algorithm when JWKS publishes ES256, ES384, and RSA keys", async () => {
     const rsaKey = await generateKeyPair("RS256");
     const es384Key = await generateKeyPair("ES384");
@@ -287,6 +305,8 @@ test("rejects unsupported or insecure settings", () => {
         { ...testAuthSettings, kind: "none" },
         { ...testAuthSettings, algorithm: "HS256" },
         { ...testAuthSettings, algorithm: "ES512" },
+        { ...testAuthSettings, audience: "" },
+        { ...testAuthSettings, audience: " " },
         { ...testAuthSettings, issuer: "http://issuer.example.com/" },
         {
             ...testAuthSettings,

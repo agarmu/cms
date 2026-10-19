@@ -288,13 +288,25 @@ test("bearer authentication requires the public base URL even without MCP", () =
             mcp?.enabled ? "https://cms.example.com/" : undefined,
         );
     }
-    expect(
-        ApplicationConfig.schema.safeParse({
-            ...settings,
-            serve: { baseUrl: "https://cms.example.com" },
-            auth: { ...testAuthSettings, audience: "https://cms.example.com/" },
-        }).success,
-    ).toBe(false);
+});
+
+test("supports a fixed token audience while serving local URLs", () => {
+    const config = new ApplicationConfig({
+        auth: { ...testAuthSettings, audience: "https://api.example.com/" },
+        serve: { baseUrl: "http://localhost:3000" },
+        mcp: { enabled: true },
+        database: { url: "postgres://localhost/cms" },
+        storage: { backend: "local", directory: "./data" },
+    });
+    expect(config.baseUrl?.href).toBe("http://localhost:3000/");
+    expect(config.auth).toMatchObject({ audience: "https://api.example.com/" });
+    expect(config.mcp?.authorization?.resource).toBe(
+        "https://api.example.com/",
+    );
+    expect(config.mcp?.url.href).toBe("http://localhost:3000/mcp");
+    expect(config.mcp?.authorization?.metadataUrl).toBe(
+        "http://localhost:3000/.well-known/oauth-protected-resource/mcp",
+    );
 });
 
 test("loads explicit no-auth settings from TOML without OAuth configuration", async () => {

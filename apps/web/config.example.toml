@@ -19,7 +19,8 @@ scopes = [
 
 # Register the frontend's / and /auth/silent URLs as redirect URIs on
 # the provider's public browser client. Allow its origin for browser requests.
-# In Logto, register resource as an API identifier (including its trailing /).
+# In Logto, resource must exactly match the registered API identifier.
+# Match the API's auth.audience (or its normalized serve.baseUrl when omitted).
 # Define the API permissions above and assign them to your user's role.
 # Tokens and refresh tokens remain in memory; offline_access enables renewal.
 

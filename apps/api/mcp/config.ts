@@ -51,7 +51,7 @@ export class McpConfiguration {
         ]);
         if (auth.kind === "no-auth") return;
         this.authorization = {
-            resource: baseUrl.href,
+            resource: auth.audience ?? baseUrl.href,
             issuer: auth.issuer,
             metadataUrl: new URL(
                 "/.well-known/oauth-protected-resource/mcp",
