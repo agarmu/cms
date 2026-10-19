@@ -26,13 +26,17 @@ const endpoint = z.url().refine((value) => {
 export class AuthenticationConfiguration {
     static readonly rfc9068 = z.strictObject({
         kind: z.literal("rfc-9068"),
-        algorithm: z.enum(["ES256", "RS256"]).default("ES256"),
+        algorithm: z.enum(["ES256", "ES384", "RS256"]).default("ES256"),
         issuer: endpoint.refine(
             (value) => !value.includes("?"),
             "Issuer cannot contain a query",
         ),
         jwksUrl: endpoint,
-        allowedSubjects: z.array(z.string().trim().min(1)).min(1).readonly(),
+        allowedSubjects: z
+            .array(z.string().trim().min(1))
+            .min(1)
+            .readonly()
+            .optional(),
     });
     static readonly schema = z.discriminatedUnion("kind", [
         AuthenticationConfiguration.rfc9068,

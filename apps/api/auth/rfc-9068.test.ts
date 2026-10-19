@@ -124,12 +124,19 @@ test("accepts audience arrays and grants no scopes when the claim is absent", as
     expect(identity.scopes.size).toBe(0);
 });
 
-test("accepts only the configured algorithm even when JWKS publishes both key types", async () => {
+test("accepts only the configured algorithm when JWKS publishes ES256, ES384, and RSA keys", async () => {
     const rsaKey = await generateKeyPair("RS256");
+    const es384Key = await generateKeyPair("ES384");
+    const es384Jwk = {
+        ...(await exportJWK(es384Key.publicKey)),
+        kid: "es384",
+        alg: "ES384",
+        use: "sig",
+    };
     const jwks = Bun.serve({
         hostname: "127.0.0.1",
         port: 0,
-        fetch: () => Response.json({ keys: [jwk, rsaJwk] }),
+        fetch: () => Response.json({ keys: [jwk, rsaJwk, es384Jwk] }),
     });
     const rsaJwk = {
         ...(await exportJWK(rsaKey.publicKey)),
@@ -140,13 +147,18 @@ test("accepts only the configured algorithm even when JWKS publishes both key ty
     try {
         const tokens = {
             ES256: await token(),
+            ES384: await token({}, es384Key.privateKey, {
+                alg: "ES384",
+                kid: "es384",
+                typ: "at+jwt",
+            }),
             RS256: await token({}, rsaKey.privateKey, {
                 alg: "RS256",
                 kid: "rsa",
                 typ: "at+jwt",
             }),
         };
-        for (const algorithm of ["ES256", "RS256"] as const) {
+        for (const algorithm of ["ES256", "ES384", "RS256"] as const) {
             const auth = new Rfc9068AuthenticationProvider(
                 {
                     ...testAuthSettings,
@@ -160,10 +172,12 @@ test("accepts only the configured algorithm even when JWKS publishes both key ty
                 issuer: testAuthSettings.issuer,
                 scopes: new Set([Scope.PhotosRead]),
             });
-            const other = algorithm === "ES256" ? "RS256" : "ES256";
-            await expect(
-                auth.authenticate(tokens[other]),
-            ).rejects.toBeInstanceOf(AuthenticationError);
+            for (const other of ["ES256", "ES384", "RS256"] as const) {
+                if (other === algorithm) continue;
+                await expect(
+                    auth.authenticate(tokens[other]),
+                ).rejects.toBeInstanceOf(AuthenticationError);
+            }
         }
     } finally {
         jwks.stop(true);
@@ -260,13 +274,19 @@ test.each(["unavailable", "invalid-json", "invalid-jwks"])(
     },
 );
 
+test("allows scope-based access without a subject allowlist", () => {
+    const { allowedSubjects: _, ...settings } = testAuthSettings;
+    const parsed = AuthenticationConfiguration.rfc9068.parse(settings);
+    expect(parsed.allowedSubjects).toBeUndefined();
+});
+
 test("rejects unsupported or insecure settings", () => {
     for (const settings of [
         { ...testAuthSettings, issuer: "not a url" },
         { ...testAuthSettings, jwksUrl: "not a url" },
         { ...testAuthSettings, kind: "none" },
         { ...testAuthSettings, algorithm: "HS256" },
-        { ...testAuthSettings, algorithm: "ES384" },
+        { ...testAuthSettings, algorithm: "ES512" },
         { ...testAuthSettings, issuer: "http://issuer.example.com/" },
         {
             ...testAuthSettings,

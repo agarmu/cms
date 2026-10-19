@@ -28,7 +28,7 @@ import { LocalUploadStorage } from "../services/local-upload-storage";
 
 export type ApplicationDependencies = {
     authentication: AuthenticationProvider;
-    allowedSubjects: readonly string[];
+    allowedSubjects?: readonly string[] | undefined;
     db: Database;
     getBlobStorage: () => BlobStorage;
     reportError: (error: Error) => void;

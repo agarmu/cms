@@ -27,10 +27,11 @@ enabled = false
 # kind = "no-auth"
 [auth]
 kind = "rfc-9068"
-algorithm = "ES256"
-issuer = "https://auth.example.com/"
-jwksUrl = "https://auth.example.com/.well-known/jwks.json"
-allowedSubjects = ["replace-with-your-user-id"]
+algorithm = "ES384"
+issuer = "https://your-tenant.logto.app/oidc"
+jwksUrl = "https://your-tenant.logto.app/oidc/jwks"
+# Optional restriction to specific users; otherwise API scopes control access.
+# allowedSubjects = ["replace-with-your-user-id"]
 
 [database]
 # Public connection details

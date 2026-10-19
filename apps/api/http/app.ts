@@ -48,7 +48,7 @@ export class HttpApplication {
             getLocalUploads?: () => LocalUploadStorage | undefined;
             imageConfig?: ImageConfiguration | undefined;
             authentication: AuthenticationProvider;
-            allowedSubjects: readonly string[];
+            allowedSubjects?: readonly string[] | undefined;
             mcp?: McpConfiguration | undefined;
         },
         config = new HttpConfiguration(),

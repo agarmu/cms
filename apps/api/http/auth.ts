@@ -22,10 +22,10 @@ export class HttpAuthentication {
 
     constructor(
         provider: AuthenticationProvider,
-        allowedSubjects: readonly string[],
+        allowedSubjects?: readonly string[],
         applies: (request: Request) => boolean = () => true,
     ) {
-        const allowed = new Set(allowedSubjects);
+        const allowed = allowedSubjects ? new Set(allowedSubjects) : undefined;
         this.plugin = new Elysia({ name: "authentication" })
             .onRequest(async ({ request, set }) => {
                 if (!applies(request)) return;
@@ -36,7 +36,7 @@ export class HttpAuthentication {
                 if (provider.scheme === "bearer" && !token)
                     throw new AuthenticationError();
                 const identity = await provider.authenticate(token);
-                if (!allowed.has(identity.subject))
+                if (allowed && !allowed.has(identity.subject))
                     throw new ForbiddenError("Account is not authorized");
                 this.identities.set(request, identity);
             })

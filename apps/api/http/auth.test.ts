@@ -220,6 +220,36 @@ test("checks exact scopes and passes AuthIdentity to permitted handlers", async 
     ).toBe(403);
 });
 
+test("without a subject allowlist, verified users still need each operation's scope", async () => {
+    const auth = new HttpAuthentication(authentication);
+    const scoped = new Elysia()
+        .use(
+            new HttpErrorHandler((error) => {
+                throw error;
+            }).plugin,
+        )
+        .use(auth.plugin)
+        .use(new HttpAccess(db, auth).plugin)
+        .get("/", ({ authIdentity }) => ({ subject: authIdentity.subject }), {
+            read: Scope.PhotosRead,
+        });
+    const permitted = await requestApp(scoped, "/", {
+        headers: { Authorization: "Bearer stranger" },
+    });
+    expect(permitted.status).toBe(200);
+    expect(await permitted.json()).toEqual({ subject: "stranger" });
+    for (const [token, status] of [
+        ["writer", 403],
+        ["invalid", 401],
+        [undefined, 401],
+    ] as const) {
+        const response = await requestApp(scoped, "/", {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        expect(response.status).toBe(status);
+    }
+});
+
 test("scope checks fail closed if authentication middleware is missing", async () => {
     const auth = new HttpAuthentication(authentication, [
         testAuthIdentity.subject,
