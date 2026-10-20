@@ -68,7 +68,7 @@ const { title = "Photos CMS", description, chrome = true } = Astro.props;
     @reference "../styles/theme.css";
 
     body {
-        @apply flex min-h-screen flex-col bg-background text-foreground antialiased scheme-light dark:scheme-dark;
+        @apply flex min-h-dvh flex-col bg-background text-foreground antialiased scheme-light dark:scheme-dark;
     }
     body:has(dialog[open]) {
         overflow: hidden;

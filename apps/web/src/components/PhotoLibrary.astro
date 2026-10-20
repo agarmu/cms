@@ -461,7 +461,8 @@ import { Icon } from "astro-icon/components";
         @apply w-full max-w-80 sm:max-w-none;
     }
     .photo-preview {
-        @apply mx-auto w-full min-w-0 max-w-80 sm:max-w-none;
+        /* Reserve the 44px footer button and its 32px padding in this column. */
+        @apply mx-auto w-full min-w-0 max-w-80 sm:max-w-none sm:pb-19;
     }
     .replace-image {
         @apply mx-auto mt-3 flex size-10 min-h-10 p-0;
@@ -754,7 +755,8 @@ import { Icon } from "astro-icon/components";
         @apply min-h-0 items-center justify-center;
     }
     .detail-image :global(img) {
-        @apply block h-auto max-h-80 w-auto max-w-full object-contain sm:max-h-[70dvh];
+        /* Leave room for the header, variant controls, and footer in two columns. */
+        @apply block h-auto max-h-80 w-auto max-w-full object-contain sm:max-h-[max(10rem,calc(100dvh_-_22rem))];
     }
     .detail-image :global(.photo-open) {
         @apply block w-fit max-w-full cursor-zoom-in appearance-none border-0 bg-transparent p-0;
