@@ -1,17 +1,59 @@
 ---
 import { config } from "@/lib/config";
+import { Icon } from "astro-icon/components";
+import { Menu } from "@starwind-ui/astro/menu";
+import IconButton from "./IconButton.astro";
+
+interface Props {
+    action: "sign-in" | "sign-out";
+}
+const { action } = Astro.props;
 ---
 
 {config.auth.kind === "oidc" && (
-    <section class="auth-control" data-auth-control aria-label="Account">
-        <p data-auth-status aria-live="polite">
-            Checking your session...
-        </p>
-        <button type="button" disabled>
-            Sign in
-        </button>
-        <p class="auth-error" role="alert" hidden />
-    </section>
+    <div
+        class:list={["auth-control", `auth-control--${action}`]}
+        data-auth-control={action}
+        hidden={action === "sign-out"}
+    >
+        <div class="auth-content">
+            {action === "sign-in" ? (
+                <button type="button" data-auth-action disabled>
+                    Sign in
+                </button>
+            ) : (
+                <Menu.Root>
+                    <IconButton
+                        label="Account"
+                        title="Account"
+                        data-sw-menu-trigger
+                        aria-haspopup="menu"
+                        aria-expanded="false"
+                        disabled
+                    >
+                        <Icon name="lucide:user" aria-hidden="true" />
+                    </IconButton>
+                    <Menu.Popup
+                        class="account-menu"
+                        align="end"
+                        sideOffset={8}
+                        aria-label="Account"
+                    >
+                        <button
+                            type="button"
+                            data-auth-action
+                            data-sw-menu-item
+                            role="menuitem"
+                            disabled
+                        >
+                            Sign out
+                        </button>
+                    </Menu.Popup>
+                </Menu.Root>
+            )}
+            <p class="auth-error" role="alert" hidden />
+        </div>
+    </div>
 )}
 
 <script>
@@ -24,42 +66,63 @@ import { config } from "@/lib/config";
         subscribeSession,
     } from "@/lib/auth";
 
-    const control = document.querySelector<HTMLElement>("[data-auth-control]");
-    const button = control?.querySelector<HTMLButtonElement>("button");
-    const message =
-        control?.querySelector<HTMLParagraphElement>("[role=alert]");
-    const status =
-        control?.querySelector<HTMLParagraphElement>("[data-auth-status]");
+    const params = new URL(window.location.href).searchParams;
+    const returningFromSignIn =
+        params.has("state") && (params.has("code") || params.has("error"));
 
-    if (auth && button && message && status) {
+    for (const control of document.querySelectorAll<HTMLElement>(
+        "[data-auth-control]",
+    )) {
+        const button =
+            control.querySelector<HTMLButtonElement>("[data-auth-action]");
+        const trigger = control.querySelector<HTMLButtonElement>(
+            "[data-sw-menu-trigger]",
+        );
+        const message =
+            control.querySelector<HTMLParagraphElement>("[role=alert]");
+        if (!auth || !button || !message) continue;
+        const signingIn = control.dataset["authControl"] === "sign-in";
+        let busy = false;
+        const setDisabled = (disabled: boolean) => {
+            button.disabled = disabled;
+            if (trigger) trigger.disabled = disabled;
+        };
         const render = async () => {
             await initializeSession();
             const session = await getSession();
-            status.textContent = session.ready ? "Signed in" : "Signed out";
-            button.textContent = session.ready ? "Sign out" : "Sign in";
+            if (
+                !session.ready &&
+                trigger?.getAttribute("aria-expanded") === "true"
+            ) {
+                trigger.click();
+            }
+            control.hidden = signingIn ? session.ready : !session.ready;
             message.textContent = session.error ?? "";
             message.hidden = !session.error;
         };
 
         subscribeSession(() => void render());
         button.addEventListener("click", async () => {
-            button.disabled = true;
+            busy = true;
+            setDisabled(true);
             message.hidden = true;
             try {
-                const session = await getSession();
-                if (session.ready) await signOut();
-                else await signIn();
+                if (signingIn) await signIn();
+                else await signOut();
             } catch (error) {
                 message.textContent =
                     error instanceof Error ? error.message : "Sign-in failed.";
                 message.hidden = false;
             } finally {
-                button.disabled = false;
+                busy = false;
+                setDisabled(false);
             }
         });
 
+        // Silent session recovery can finish in the background.
+        setDisabled(returningFromSignIn);
         void render().finally(() => {
-            button.disabled = false;
+            if (!busy) setDisabled(false);
         });
     }
 </script>
@@ -68,20 +131,44 @@ import { config } from "@/lib/config";
     @reference "../styles/theme.css";
 
     .auth-control {
-        @apply flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-neutral-200 py-4 text-sm dark:border-neutral-800;
+        @apply relative shrink-0 text-sm;
+    }
+
+    .auth-control--sign-in {
+        @apply flex flex-1 items-center justify-center py-8;
+    }
+
+    .auth-content {
+        @apply flex max-w-full flex-col items-center gap-4;
     }
 
     button {
-        @apply min-h-11 cursor-pointer rounded-md px-3 font-bold transition-colors;
-        @apply hover:bg-neutral-100 dark:hover:bg-neutral-800;
+        @apply inline-flex cursor-pointer items-center justify-center rounded-md font-bold whitespace-nowrap transition-colors;
         @apply focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary;
         @apply disabled:cursor-wait disabled:opacity-50;
     }
 
-    p {
-        @apply text-muted-foreground;
+    .auth-control--sign-in button {
+        @apply min-h-16 min-w-52 max-w-full border border-blue-700 bg-blue-700 px-10 py-4 text-xl text-white enabled:hover:border-blue-800 enabled:hover:bg-blue-800;
     }
+
+    .account-menu {
+        @apply z-50 min-w-36 rounded-md border border-neutral-200 bg-background p-1 text-foreground shadow-lg dark:border-neutral-800;
+    }
+
+    .account-menu button {
+        @apply min-h-10 w-full justify-start px-3 py-2 text-sm font-normal hover:bg-neutral-100 focus-visible:bg-neutral-100 dark:hover:bg-neutral-800 dark:focus-visible:bg-neutral-800;
+    }
+
     .auth-error {
-        @apply w-full;
+        @apply max-w-sm text-center text-red-600;
+    }
+
+    .auth-control--sign-out .auth-error {
+        @apply absolute top-full right-0 z-10 mt-2 w-56 rounded-md border border-red-600 bg-background p-3 text-red-600;
+    }
+
+    [hidden] {
+        display: none !important;
     }
 </style>

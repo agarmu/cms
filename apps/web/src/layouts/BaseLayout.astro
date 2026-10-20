@@ -4,6 +4,7 @@ import { ThemeInitScript } from "@starwind-ui/astro/theme";
 import { Icon } from "astro-icon/components";
 import Footer from "@/components/Footer.astro";
 import ThemeToggle from "@/components/ThemeToggle.astro";
+import AuthControl from "@/components/AuthControl.astro";
 import "@/styles/theme.css";
 
 interface Props {
@@ -52,6 +53,7 @@ const { title = "Photos CMS", description, chrome = true } = Astro.props;
                         >
                             <Icon name="lucide:plus" aria-hidden="true" />
                         </a>
+                        <AuthControl action="sign-out" />
                         <ThemeToggle />
                     </div>
                 </header>

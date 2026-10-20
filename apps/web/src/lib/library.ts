@@ -425,11 +425,11 @@ export function mountLibrary(root: HTMLElement) {
         const { signal } = controller;
         const session = await getSession();
         if (signal.aborted) return;
+        root.hidden = !session.ready;
         if (!session.ready) {
-            showStatus(
-                "Your photographs, in one place.",
-                "Sign in above to browse your library and view photo details.",
-            );
+            status.hidden = true;
+            statusTitle.textContent = "";
+            statusDescription.textContent = "";
             document.title = "Photos CMS";
             return;
         }

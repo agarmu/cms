@@ -5,17 +5,21 @@ import VisibilityIcon from "./VisibilityIcon.astro";
 import { Icon } from "astro-icon/components";
 ---
 
-<section data-photo-library class="photo-library" aria-label="Photo library">
+<section
+    data-photo-library
+    class="photo-library"
+    aria-label="Photo library"
+    hidden
+>
     <div
         data-library-status
         class="library-status"
         role="status"
         aria-live="polite"
+        hidden
     >
-        <h2 data-status-title tabindex="-1">
-            Opening your library...
-        </h2>
-        <p data-status-description>Checking your session.</p>
+        <h2 data-status-title tabindex="-1" />
+        <p data-status-description />
         <button data-retry type="button" hidden>
             Try again
         </button>

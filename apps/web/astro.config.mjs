@@ -34,6 +34,7 @@ export default defineConfig({
                     "clock",
                     "image-up",
                     "plus",
+                    "user",
                 ],
             },
         }),
