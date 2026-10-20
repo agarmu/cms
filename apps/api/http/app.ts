@@ -120,7 +120,14 @@ export class HttpApplication {
                         request.method === "OPTIONS" &&
                         new URL(request.url).pathname.startsWith("/api/")
                     ) {
-                        return new Response(null, { status: 204 });
+                        return new Response(null, {
+                            status: 204,
+                            ...(config.allowedOrigins.has(
+                                request.headers.get("Origin") ?? "",
+                            ) && {
+                                headers: { "Access-Control-Max-Age": "600" },
+                            }),
+                        });
                     }
                     return;
                 })

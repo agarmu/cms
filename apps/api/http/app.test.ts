@@ -86,6 +86,7 @@ test("browser preflight is anonymous, but API access still requires a bearer tok
     expect(preflight.headers.get("Access-Control-Allow-Origin")).toBe(
         editorOrigin,
     );
+    expect(preflight.headers.get("Access-Control-Max-Age")).toBe("600");
     expect(preflight.headers.get("Access-Control-Allow-Headers")).toContain(
         "Authorization",
     );
@@ -128,6 +129,7 @@ test.each([
             },
         });
         expect(response.headers.get("Access-Control-Allow-Origin")).toBeNull();
+        expect(response.headers.get("Access-Control-Max-Age")).toBeNull();
     },
 );
 
