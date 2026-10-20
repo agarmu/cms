@@ -5,6 +5,8 @@ import { Icon } from "astro-icon/components";
 import Footer from "@/components/Footer.astro";
 import ThemeToggle from "@/components/ThemeToggle.astro";
 import AuthControl from "@/components/AuthControl.astro";
+import DemoNotice from "@/components/DemoNotice.astro";
+import { isDemoPath } from "@/lib/demo-mode";
 import "@/styles/theme.css";
 
 interface Props {
@@ -13,6 +15,7 @@ interface Props {
     chrome?: boolean;
 }
 const { title = "Photos CMS", description, chrome = true } = Astro.props;
+const home = isDemoPath(Astro.url.pathname) ? "/demo/" : "/";
 ---
 
 <!doctype html>
@@ -30,11 +33,11 @@ const { title = "Photos CMS", description, chrome = true } = Astro.props;
             {chrome && (
                 <header>
                     <h1 data-library-heading>
-                        <a href="/">Photos CMS</a>
+                        <a href={home}>Photos CMS</a>
                     </h1>
                     <a
                         data-back
-                        href="/"
+                        href={home}
                         class="back-link"
                         aria-label="All photos"
                         title="All photos"
@@ -45,7 +48,7 @@ const { title = "Photos CMS", description, chrome = true } = Astro.props;
                     <div class="header-actions">
                         <a
                             data-add-photo
-                            href="/?new=1"
+                            href={`${home}?new=1`}
                             class="add-photo"
                             aria-label="Add photo"
                             title="Add photo"
@@ -58,6 +61,7 @@ const { title = "Photos CMS", description, chrome = true } = Astro.props;
                     </div>
                 </header>
             )}
+            {chrome && <DemoNotice />}
             <slot />
         </main>
         {chrome && <Footer />}

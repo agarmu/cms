@@ -1,11 +1,12 @@
 import { config } from "./config";
 import { createSession } from "./session";
 import { CmsUserManager, oidcSettings } from "./oidc-settings";
+import { demoMode } from "./demo-mode";
 
 const settings = config.auth;
 
 export const auth =
-    settings.kind === "oidc"
+    !demoMode && settings.kind === "oidc"
         ? new CmsUserManager(
               oidcSettings(settings, window.location.origin, sessionStorage),
           )

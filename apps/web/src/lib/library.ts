@@ -16,6 +16,7 @@ import { PhotoLightbox } from "./photo-lightbox";
 import { mountPhotoEditor } from "./photo-editor";
 import { renderDescription } from "./photo-description";
 import { mountPhotoCreator } from "./photo-creator";
+import { isDemoPath, libraryHome } from "./demo-mode";
 
 function element<T extends HTMLElement>(root: ParentNode, selector: string): T {
     const found = root.querySelector<T>(selector);
@@ -597,7 +598,11 @@ export function mountLibrary(root: HTMLElement) {
         )
             return;
         const url = new URL(link.href);
-        if (url.origin !== window.location.origin || url.pathname !== "/")
+        if (
+            url.origin !== window.location.origin ||
+            (url.pathname !== libraryHome &&
+                !(libraryHome === "/demo/" && isDemoPath(url.pathname)))
+        )
             return;
         event.preventDefault();
         if (url.searchParams.has("new") && !canCreatePhoto()) return;

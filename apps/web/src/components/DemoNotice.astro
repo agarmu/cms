@@ -1,0 +1,37 @@
+---
+import { isDemoPath } from "@/lib/demo-mode";
+---
+
+{isDemoPath(Astro.url.pathname) && (
+    <aside class="demo-notice" aria-label="Demo mode">
+        <p>
+            <strong>Demo mode</strong>: Explore a sample library! Any edits and
+            uploads are temporary/only on your device. Photo credits located in
+            individual image descriptions.
+        </p>
+        <div class="demo-actions">
+            <a href="/demo/">Reset demo</a>
+            <a href="/">Exit demo</a>
+        </div>
+    </aside>
+)}
+
+<style>
+    @reference "../styles/theme.css";
+
+    .demo-notice {
+        @apply mt-4 flex shrink-0 flex-wrap items-center justify-center gap-x-4 gap-y-2 rounded-lg border border-neutral-200 bg-neutral-100 px-4 py-3 text-sm dark:border-neutral-800 dark:bg-neutral-900;
+    }
+    p {
+        @apply grow;
+    }
+    a {
+        @apply shrink-0 font-bold text-primary underline;
+    }
+    .demo-actions {
+        @apply flex shrink-0 items-center gap-4;
+    }
+    a:focus-visible {
+        @apply outline-2 outline-offset-4 outline-primary;
+    }
+</style>

@@ -26,6 +26,18 @@ frontend.
 Follow the [quickstart guide](docs/quickstart.md) to run the CMS locally with
 PostgreSQL, local image storage, and no authentication.
 
+## Demo
+
+Select **Demo** below **Sign in** on the website to explore a sample library
+without signing in. The `/demo/` page is included in the normal frontend build.
+It supports metadata and equipment editing and local image uploads. Changes stay
+in the current tab's memory; reloading or selecting **Reset demo** restores the
+samples. **Exit demo** returns to the main website.
+
+The usual API serves demo photos from a separate demo database and image store.
+Edits and uploads remain local to the visitor's browser. Follow the
+[demo setup](docs/configuration.md#frontend-demo) to configure its data source.
+
 ## Docker image
 
 Images are published on [GHCR](https://github.com/agarmu/cms/pkgs/container/cms)

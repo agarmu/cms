@@ -37,6 +37,22 @@ test("creation links retain the library page or photo behind the modal", () => {
     );
 });
 
+test("demo links keep pagination, details, and creation under the demo route", () => {
+    expect(libraryUrl(0, undefined, "/demo/")).toBe("/demo/");
+    expect(libraryUrl(24, undefined, "/demo/")).toBe("/demo/?offset=24");
+    const detail = libraryUrl(24, id, "/demo/");
+    expect(detail).toBe(`/demo/?offset=24&photo=${id}`);
+    const create = createPhotoUrl(24, id, "/demo/");
+    expect(create).toBe(`${detail}&new=1`);
+    expect(
+        readRoute(new URL(create, "https://editor.example.com")),
+    ).toMatchObject({
+        offset: 24,
+        photo: id,
+        creating: true,
+    });
+});
+
 test.each([
     "-24",
     "1.5",

@@ -3,6 +3,7 @@ import { config } from "@/lib/config";
 import { Icon } from "astro-icon/components";
 import { Menu } from "@starwind-ui/astro/menu";
 import IconButton from "./IconButton.astro";
+import { isDemoPath } from "@/lib/demo-mode";
 
 interface Props {
     action: "sign-in" | "sign-out";
@@ -10,7 +11,7 @@ interface Props {
 const { action } = Astro.props;
 ---
 
-{config.auth.kind === "oidc" && (
+{!isDemoPath(Astro.url.pathname) && config.auth.kind === "oidc" && (
     <div
         class:list={["auth-control", `auth-control--${action}`]}
         data-auth-control={action}
@@ -18,9 +19,14 @@ const { action } = Astro.props;
     >
         <div class="auth-content">
             {action === "sign-in" ? (
-                <button type="button" data-auth-action disabled>
-                    Sign in
-                </button>
+                <div class="sign-in-actions">
+                    <button type="button" data-auth-action disabled>
+                        Sign in
+                    </button>
+                    <a class="demo-button" href="/demo/">
+                        Demo
+                    </a>
+                </div>
             ) : (
                 <Menu.Root>
                     <IconButton
@@ -140,6 +146,15 @@ const { action } = Astro.props;
 
     .auth-content {
         @apply flex max-w-full flex-col items-center gap-4;
+    }
+
+    .sign-in-actions {
+        @apply flex max-w-full flex-col gap-3;
+    }
+
+    .demo-button {
+        @apply inline-flex min-h-16 min-w-52 max-w-full items-center justify-center rounded-md border border-neutral-300 px-10 py-4 text-xl font-bold transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800;
+        @apply focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary;
     }
 
     button {

@@ -28,7 +28,7 @@ const photoPageSchema = z.object({
     limit: z.int().min(1).max(100),
     offset: z.int().nonnegative(),
 });
-const newPhotoSchema = photoSchema
+export const newPhotoSchema = photoSchema
     .pick({
         altText: true,
         caption: true,
@@ -57,7 +57,7 @@ const newPhotoSchema = photoSchema
             .nullable(),
     })
     .strict();
-const photoChangesSchema = newPhotoSchema
+export const photoChangesSchema = newPhotoSchema
     .partial()
     .refine((changes) =>
         Object.values(changes).some((value) => value !== undefined),
@@ -87,6 +87,21 @@ export class ApiError extends Error {
 
 type Fetcher = (url: URL, init: RequestInit) => Promise<Response>;
 
+export type LibraryClient = Pick<
+    CmsClient,
+    | "clearCache"
+    | "listPhotos"
+    | "readPhoto"
+    | "updatePhoto"
+    | "listEquipment"
+    | "renameEquipment"
+    | "replaceImage"
+    | "preparePhotoUpload"
+    | "createPhoto"
+    | "cancelPhotoUpload"
+    | "readImage"
+>;
+
 export class CmsClient {
     private readonly base: URL;
     private readonly reads = new Map<
@@ -104,6 +119,7 @@ export class CmsClient {
         private readonly fetcher: Fetcher = (url, init) => fetch(url, init),
         private readonly uploadFetcher: Fetcher = (url, init) =>
             fetch(url, init),
+        private readonly apiPrefix: "/api" | "/api/demo" = "/api",
     ) {
         this.base = new URL(baseUrl);
     }
@@ -174,7 +190,7 @@ export class CmsClient {
         const url = new URL(path, this.base);
         if (
             url.origin !== this.base.origin ||
-            !url.pathname.startsWith("/api/") ||
+            !url.pathname.startsWith(`${this.apiPrefix}/`) ||
             url.username ||
             url.password
         ) {
@@ -216,7 +232,7 @@ export class CmsClient {
     }
 
     async listPhotos(offset: number, limit: number, signal?: AbortSignal) {
-        const path = `/api/photos?limit=${limit}&offset=${offset}`;
+        const path = `${this.apiPrefix}/photos?limit=${limit}&offset=${offset}`;
         const cached = await this.cached<z.infer<typeof photoPageSchema>>(
             path,
             signal,
@@ -227,7 +243,7 @@ export class CmsClient {
         this.remember(path, page, cached.revision, signal);
         for (const photo of page.items)
             this.remember(
-                `/api/photos/${photo.id}`,
+                `${this.apiPrefix}/photos/${photo.id}`,
                 photo,
                 cached.revision,
                 signal,
@@ -236,7 +252,7 @@ export class CmsClient {
     }
 
     async readPhoto(id: string, signal?: AbortSignal) {
-        const path = `/api/photos/${encodeURIComponent(z.uuid().parse(id))}`;
+        const path = `${this.apiPrefix}/photos/${encodeURIComponent(z.uuid().parse(id))}`;
         const cached = await this.cached<Photo>(path, signal);
         if (cached.value) return cached.value;
         const response = await this.request(path, signal ? { signal } : {});
@@ -247,7 +263,7 @@ export class CmsClient {
 
     async updatePhoto(id: string, changes: PhotoChanges, signal?: AbortSignal) {
         const response = await this.request(
-            `/api/photos/${encodeURIComponent(z.uuid().parse(id))}`,
+            `${this.apiPrefix}/photos/${encodeURIComponent(z.uuid().parse(id))}`,
             {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
@@ -267,7 +283,7 @@ export class CmsClient {
         });
         for (let offset = 0; ; offset += 100) {
             const response = await this.request(
-                `/api/${kind === "camera" ? "cameras" : "lenses"}?offset=${offset}&limit=100`,
+                `${this.apiPrefix}/${kind === "camera" ? "cameras" : "lenses"}?offset=${offset}&limit=100`,
                 signal ? { signal } : {},
             );
             const page = pageSchema.parse(await response.json());
@@ -283,7 +299,7 @@ export class CmsClient {
         signal?: AbortSignal,
     ) {
         const response = await this.request(
-            `/api/${kind === "camera" ? "cameras" : "lenses"}/${z.uuid().parse(id)}`,
+            `${this.apiPrefix}/${kind === "camera" ? "cameras" : "lenses"}/${z.uuid().parse(id)}`,
             {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
@@ -297,7 +313,7 @@ export class CmsClient {
     }
 
     async replaceImage(id: string, file: File, signal?: AbortSignal) {
-        const path = `/api/photos/${z.uuid().parse(id)}/uploads`;
+        const path = `${this.apiPrefix}/photos/${z.uuid().parse(id)}/uploads`;
         await this.uploadImage(path, file, "completed", signal);
         return this.readPhoto(id, signal);
     }
@@ -308,7 +324,7 @@ export class CmsClient {
         progress?: (phase: UploadPhase) => void,
     ) {
         return this.uploadImage(
-            "/api/photo-uploads",
+            `${this.apiPrefix}/photo-uploads`,
             file,
             "ready",
             signal,
@@ -325,7 +341,7 @@ export class CmsClient {
             uploadId: z.uuid().parse(uploadId),
             ...newPhotoSchema.parse(metadata),
         };
-        const response = await this.request("/api/photos", {
+        const response = await this.request(`${this.apiPrefix}/photos`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),
@@ -336,7 +352,7 @@ export class CmsClient {
 
     async cancelPhotoUpload(uploadId: string) {
         await this.request(
-            `/api/photo-uploads/${z.uuid().parse(uploadId)}/cancel`,
+            `${this.apiPrefix}/photo-uploads/${z.uuid().parse(uploadId)}/cancel`,
             {
                 method: "POST",
                 signal: AbortSignal.timeout(5000),

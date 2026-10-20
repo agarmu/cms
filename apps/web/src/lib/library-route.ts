@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { libraryHome } from "./demo-mode";
 
 export const pageSize = 24;
 const photoId = z.uuid();
@@ -19,14 +20,18 @@ export function readRoute(url: URL) {
     };
 }
 
-export function createPhotoUrl(offset: number, photo?: string) {
-    const library = libraryUrl(offset, photo);
+export function createPhotoUrl(
+    offset: number,
+    photo?: string,
+    home = libraryHome,
+) {
+    const library = libraryUrl(offset, photo, home);
     return `${library}${library.includes("?") ? "&" : "?"}new=1`;
 }
 
-export function libraryUrl(offset: number, photo?: string) {
+export function libraryUrl(offset: number, photo?: string, home = libraryHome) {
     const params = new URLSearchParams();
     if (offset > 0) params.set("offset", String(offset));
     if (photo) params.set("photo", photo);
-    return params.size ? `/?${params}` : "/";
+    return params.size ? `${home}?${params}` : home;
 }
