@@ -127,12 +127,8 @@ export function mountLibrary(root: HTMLElement) {
                 createView.hidden = false;
                 creator.load(creationRequest.signal);
             }
-            document.title = "Add photo · Photos CMS";
         } else if (creationRequest) {
             resetCreator();
-            document.title = route.photo
-                ? "Photos CMS"
-                : "Your photos · Photos CMS";
             addPhoto.focus({ preventScroll: true });
         }
     }
@@ -428,7 +424,6 @@ export function mountLibrary(root: HTMLElement) {
             status.hidden = true;
             statusTitle.textContent = "";
             statusDescription.textContent = "";
-            document.title = "Photos CMS";
             return;
         }
         const route = readRoute(new URL(window.location.href));
@@ -519,7 +514,6 @@ export function mountLibrary(root: HTMLElement) {
                 }
                 detail.hidden = false;
                 status.hidden = true;
-                document.title = "Photos CMS";
                 const frame = element(root, "[data-photo-image]");
                 const width =
                     (frame.clientWidth || 320) *
@@ -561,7 +555,6 @@ export function mountLibrary(root: HTMLElement) {
                 next.hidden = page.items.length <= pageSize;
                 next.href = libraryUrl(route.offset + pageSize);
                 list.hidden = !photos.length && !route.offset;
-                document.title = "Your photos · Photos CMS";
                 if (focus && photos.length && !creationRequest) grid.focus();
             }
         } catch (error) {
@@ -582,10 +575,7 @@ export function mountLibrary(root: HTMLElement) {
             }
             if (focus && !creationRequest) statusTitle.focus();
         } finally {
-            if (!signal.aborted) {
-                root.removeAttribute("aria-busy");
-                if (creationRequest) document.title = "Add photo · Photos CMS";
-            }
+            if (!signal.aborted) root.removeAttribute("aria-busy");
         }
     }
 
