@@ -1,0 +1,19 @@
+# Copy to apps/web/config.toml. Public settings only.
+
+[api]
+baseUrl = "https://cms.example.com/"
+
+[auth]
+kind = "oidc"
+issuer = "https://auth.example.com/"
+clientId = "replace-with-your-public-browser-client-id"
+resource = "https://cms.example.com/"
+scopes = [
+  "openid", "offline_access",
+  "photos:read", "photos:read:hidden", "photos:create",
+  "photos:text:update", "photos:metadata:update", "photos:assets:write",
+  "cameras:read", "cameras:create", "cameras:update",
+  "lenses:read", "lenses:create", "lenses:update",
+]
+
+# audience = "https://cms.example.com/"

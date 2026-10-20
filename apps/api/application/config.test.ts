@@ -89,8 +89,8 @@ async function withFiles(
 
 test("loads every example table and maps secrets and database units into client options", async () => {
     const config = await ApplicationConfig.fromFiles(
-        "config.example.toml",
-        "secrets.example.toml",
+        "docs/config.example.toml",
+        "docs/secrets.example.toml",
     );
     expect(config.database.clientOptions()).toMatchObject({
         url: "postgres://example-user@localhost:5432/photos_cms",
@@ -280,8 +280,8 @@ test.each([
 
 test("example configuration leaves MCP disabled", async () => {
     const config = await ApplicationConfig.fromFiles(
-        "config.example.toml",
-        "secrets.example.toml",
+        "docs/config.example.toml",
+        "docs/secrets.example.toml",
     );
     expect(config.baseUrl?.href).toBe("https://photos.example.com/");
     expect(config.mcp).toBeUndefined();

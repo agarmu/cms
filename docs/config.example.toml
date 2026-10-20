@@ -11,8 +11,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-# Example config file
-# All durations are in milliseconds.
+# Copy to config.toml. Durations are in milliseconds.
 [serve]
 baseUrl = "https://photos.example.com"
 port = 3000
@@ -22,23 +21,16 @@ bindLocal = false
 [mcp]
 enabled = false
 
-# For local tests, replace this section with:
-# [auth]
-# kind = "no-auth"
 [auth]
 kind = "rfc-9068"
 algorithm = "ES384"
-issuer = "https://your-tenant.logto.app/oidc"
-jwksUrl = "https://your-tenant.logto.app/oidc/jwks"
-# Optional API identifier; defaults to serve.baseUrl (normalized with a trailing /).
-# Set this when the registered identifier differs from the URL serving the API.
+issuer = "https://auth.example.com/"
+jwksUrl = "https://auth.example.com/.well-known/jwks.json"
 # audience = "https://photos.example.com/"
-# Optional restriction to specific users; otherwise API scopes control access.
 # allowedSubjects = ["replace-with-your-user-id"]
 
 [database]
-# Public connection details
-# keep the password in secrets.toml.
+# Password goes in secrets.toml.
 url = "postgres://example-user@localhost:5432/photos_cms"
 connectTimeout = 10_000
 
@@ -51,20 +43,16 @@ mode = "disable"
 
 [storage]
 backend = "s3"
-# virtualHostedStyle endpoint (required for s3)
+# Use the bucket's hostname, without a path.
 endpoint = "https://example-photo-bucket.s3.us-east-1.amazonaws.com"
-# set region explicitly for providers that require a different signing region.
 # region = "auto"
-# For local storage, replace the settings above with:
-# backend = "local"
-# directory = "./data/blobs"
 
 [images]
 maxBytes = 26_214_400
 maxPixels = 60_000_000
-quality = 82 # webp quality
+quality = 82
 
-# variants are generated only when the original's shorter side is large enough.
+# minSide is the shorter side in pixels.
 [[images.variants]]
 name = "large"
 minSide = 1920
@@ -82,17 +70,15 @@ interval = 5_000
 batchSize = 10
 
 [workers.backoff]
-# Exponential backoff after failed attempts.
-maxRetries = 5 # Retries after the initial attempt.
-multiplier = 2 # Retry-delay multiplier.
+maxRetries = 5
+multiplier = 2
 
 [workers.upload]
 waitTime = 3_600_000
-retryTime = 10_000 # Initial delay for both workers; exponential backoff starts here.
+retryTime = 10_000
 
 [http]
 maxBodyBytes = 65_536
-# Browser origins allowed to call /api with bearer tokens (no cookies).
 allowedOrigins = ["http://localhost:4321"]
 
 [telemetry]
@@ -111,9 +97,7 @@ endpoint = "https://collector.example.com/v1/metrics"
 enabled = true
 endpoint = "https://collector.example.com/v1/logs"
 
-# Optional: public, read-only demo routes in this same API process.
-# Supply a separate PostgreSQL database and image store containing sample content.
-# All photos in this database, including hidden samples, are publicly readable.
+# Demo data is public; use a separate database and image store.
 # [demo.database]
 # url = "postgres://demo-user@localhost:5432/photos_cms_demo"
 # [demo.storage]
