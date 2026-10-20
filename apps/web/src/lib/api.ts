@@ -1,5 +1,5 @@
 import { config } from "./config";
-import { auth, invalidateSession } from "./auth";
+import { auth, invalidateSession, subscribeSession } from "./auth";
 import { ApiError, CmsClient } from "./cms-client";
 
 export const cms = new CmsClient(
@@ -24,3 +24,5 @@ export const cms = new CmsClient(
         return response;
     },
 );
+
+subscribeSession(() => cms.clearCache());

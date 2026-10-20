@@ -26,6 +26,181 @@ const photo = {
     assets: [asset],
 };
 
+test("opening a listed photo and returning to the page reuse validated metadata", async () => {
+    let reads = 0;
+    const client = new CmsClient(
+        "https://cms.example.com/",
+        async () => "token",
+        async () => {
+            reads++;
+            return Response.json({ items: [photo], offset: 0, limit: 25 });
+        },
+    );
+    await client.listPhotos(0, 25);
+    expect(await client.readPhoto(id)).toEqual(photo);
+    await client.listPhotos(0, 25);
+    expect(reads).toBe(1);
+});
+
+test("cached reads require current credentials and never cross session changes", async () => {
+    let token: string | undefined = "first-user";
+    let reads = 0;
+    const client = new CmsClient(
+        "https://cms.example.com/",
+        async () => {
+            if (!token) throw new Error("Signed out");
+            return token;
+        },
+        async () => {
+            reads++;
+            return Response.json(photo);
+        },
+    );
+    await client.readPhoto(id);
+    token = undefined;
+    await expect(client.readPhoto(id)).rejects.toThrow("Signed out");
+    token = "second-user";
+    await client.readPhoto(id);
+    expect(reads).toBe(2);
+    client.clearCache();
+    await client.readPhoto(id);
+    expect(reads).toBe(3);
+});
+
+test("writes invalidate page metadata while retaining immutable image bytes", async () => {
+    const reads: string[] = [];
+    const client = new CmsClient(
+        "https://cms.example.com/",
+        async () => "token",
+        async (url, init) => {
+            reads.push(url.pathname + (init.method ?? "GET"));
+            if (url.pathname.endsWith(".webp"))
+                return new Response("image", {
+                    headers: { "Content-Type": "image/webp" },
+                });
+            if (init.method === "PATCH")
+                return Response.json({ ...photo, caption: "Updated" });
+            return Response.json({ items: [photo], offset: 0, limit: 25 });
+        },
+    );
+    await client.listPhotos(0, 25);
+    await client.readImage(asset.url);
+    await client.updatePhoto(id, { caption: "Updated" });
+    await client.listPhotos(0, 25);
+    await client.readImage(asset.url);
+    expect(reads.filter((path) => path.endsWith(".webpGET"))).toHaveLength(1);
+    expect(reads.filter((path) => path === "/api/photosGET")).toHaveLength(2);
+    await client.request(`/api/photos/${id}`, { method: "DELETE" });
+    await client.readImage(asset.url);
+    expect(reads.filter((path) => path.endsWith(".webpGET"))).toHaveLength(2);
+});
+
+test("invalidating the cache during a read prevents the late response from repopulating it", async () => {
+    let reads = 0;
+    const started = Promise.withResolvers<void>();
+    const pending = Promise.withResolvers<void>();
+    const client = new CmsClient(
+        "https://cms.example.com/",
+        async () => "token",
+        async () => {
+            reads++;
+            started.resolve();
+            await pending.promise;
+            return Response.json(photo);
+        },
+    );
+    const reading = client.readPhoto(id);
+    await started.promise;
+    client.clearCache();
+    pending.resolve();
+    await reading;
+    await client.readPhoto(id);
+    expect(reads).toBe(2);
+    const abort = new AbortController();
+    abort.abort();
+    await expect(client.readPhoto(id, abort.signal)).rejects.toThrow();
+    expect(reads).toBe(2);
+});
+
+test("metadata expires and signed image URLs are not reused beyond their lifetime", async () => {
+    let reads = 0;
+    const now = Date.now();
+    const originalNow = Date.now;
+    const client = new CmsClient(
+        "https://cms.example.com/",
+        async () => undefined,
+        async (url) => {
+            reads++;
+            return url.pathname.endsWith(".webp")
+                ? Response.json({
+                      url: "https://images.example.com/photo.webp",
+                      expiresAt: new Date(now + 60_000).toISOString(),
+                  })
+                : Response.json(photo);
+        },
+    );
+    try {
+        await client.readPhoto(id);
+        await client.readImage(asset.url);
+        await client.readPhoto(id);
+        await client.readImage(asset.url);
+        expect(reads).toBe(2);
+        Date.now = () => now + 31_000;
+        await client.readPhoto(id);
+        await client.readImage(asset.url);
+        expect(reads).toBe(3);
+        Date.now = () => now + 61_000;
+        await client.readImage(asset.url);
+        expect(reads).toBe(4);
+    } finally {
+        Date.now = originalNow;
+    }
+});
+
+test("the read cache evicts older entries instead of retaining every viewed image", async () => {
+    let reads = 0;
+    const client = new CmsClient(
+        "https://cms.example.com/",
+        async () => undefined,
+        async () => {
+            reads++;
+            return new Response("image", {
+                headers: { "Content-Type": "image/webp" },
+            });
+        },
+    );
+    for (let i = 0; i < 101; i++)
+        await client.readImage(asset.url + "?variant=" + i);
+    await client.readImage(asset.url + "?variant=100");
+    expect(reads).toBe(101);
+    await client.readImage(asset.url + "?variant=0");
+    expect(reads).toBe(102);
+});
+
+test("oversized images bypass the memory cache without evicting smaller previews", async () => {
+    let reads = 0;
+    const large = new Blob([new Uint8Array(25 * 1024 * 1024)], {
+        type: "image/webp",
+    });
+    const client = new CmsClient(
+        "https://cms.example.com/",
+        async () => undefined,
+        async (url) => {
+            reads++;
+            return new Response(
+                url.search
+                    ? large
+                    : new Blob(["small"], { type: "image/webp" }),
+            );
+        },
+    );
+    await client.readImage(asset.url);
+    await client.readImage(asset.url + "?large=1");
+    await client.readImage(asset.url + "?large=1");
+    await client.readImage(asset.url);
+    expect(reads).toBe(3);
+});
+
 test.each([undefined, null, 3_000_000_000])(
     "photo responses preserve byte counts, including legacy value %s",
     async (byteSize) => {

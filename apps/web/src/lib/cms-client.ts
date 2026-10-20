@@ -89,6 +89,14 @@ type Fetcher = (url: URL, init: RequestInit) => Promise<Response>;
 
 export class CmsClient {
     private readonly base: URL;
+    private readonly reads = new Map<
+        string,
+        { value: unknown; expiresAt: number; bytes: number; image: boolean }
+    >();
+    private cachedToken: string | undefined;
+    private revision = 0;
+    private cachedBytes = 0;
+    private readonly maxCachedBytes = 24 * 1024 * 1024;
 
     constructor(
         baseUrl: string,
@@ -98,6 +106,68 @@ export class CmsClient {
             fetch(url, init),
     ) {
         this.base = new URL(baseUrl);
+    }
+
+    clearCache() {
+        this.reads.clear();
+        this.cachedBytes = 0;
+        this.cachedToken = undefined;
+        this.revision++;
+    }
+
+    private forget(path: string) {
+        this.cachedBytes -= this.reads.get(path)?.bytes ?? 0;
+        this.reads.delete(path);
+    }
+
+    private async cached<T>(path: string, signal?: AbortSignal) {
+        signal?.throwIfAborted();
+        // Check the current credentials even when no network request is needed.
+        const token = await this.getAccessToken();
+        signal?.throwIfAborted();
+        if (token !== this.cachedToken) {
+            this.clearCache();
+            this.cachedToken = token;
+        }
+        const entry = this.reads.get(path);
+        if (entry && entry.expiresAt > Date.now()) {
+            this.reads.delete(path);
+            this.reads.set(path, entry);
+            return { value: entry.value as T, revision: this.revision };
+        }
+        this.forget(path);
+        return { value: undefined, revision: this.revision };
+    }
+
+    private remember(
+        path: string,
+        value: unknown,
+        revision: number,
+        signal?: AbortSignal,
+        ttl = 30_000,
+        image = false,
+        bytes = 0,
+    ) {
+        if (
+            revision !== this.revision ||
+            signal?.aborted ||
+            ttl <= 0 ||
+            bytes > this.maxCachedBytes
+        )
+            return;
+        this.forget(path);
+        while (
+            this.reads.size >= 100 ||
+            this.cachedBytes + bytes > this.maxCachedBytes
+        )
+            this.forget(this.reads.keys().next().value!);
+        this.reads.set(path, {
+            value,
+            expiresAt: Date.now() + ttl,
+            image,
+            bytes,
+        });
+        this.cachedBytes += bytes;
     }
 
     async request(path: string, init: RequestInit = {}) {
@@ -135,23 +205,44 @@ export class CmsClient {
                     `The CMS request failed (HTTP ${response.status}). Please try again.`,
             );
         }
+        const method = (init.method ?? "GET").toUpperCase();
+        if (method === "DELETE") this.clearCache();
+        else if (!["GET", "HEAD"].includes(method)) {
+            this.revision++;
+            for (const [path, entry] of this.reads)
+                if (!entry.image) this.forget(path);
+        }
         return response;
     }
 
     async listPhotos(offset: number, limit: number, signal?: AbortSignal) {
-        const response = await this.request(
-            `/api/photos?limit=${limit}&offset=${offset}`,
-            signal ? { signal } : {},
+        const path = `/api/photos?limit=${limit}&offset=${offset}`;
+        const cached = await this.cached<z.infer<typeof photoPageSchema>>(
+            path,
+            signal,
         );
-        return photoPageSchema.parse(await response.json());
+        if (cached.value) return cached.value;
+        const response = await this.request(path, signal ? { signal } : {});
+        const page = photoPageSchema.parse(await response.json());
+        this.remember(path, page, cached.revision, signal);
+        for (const photo of page.items)
+            this.remember(
+                `/api/photos/${photo.id}`,
+                photo,
+                cached.revision,
+                signal,
+            );
+        return page;
     }
 
     async readPhoto(id: string, signal?: AbortSignal) {
-        const response = await this.request(
-            `/api/photos/${encodeURIComponent(z.uuid().parse(id))}`,
-            signal ? { signal } : {},
-        );
-        return photoSchema.parse(await response.json());
+        const path = `/api/photos/${encodeURIComponent(z.uuid().parse(id))}`;
+        const cached = await this.cached<Photo>(path, signal);
+        if (cached.value) return cached.value;
+        const response = await this.request(path, signal ? { signal } : {});
+        const photo = photoSchema.parse(await response.json());
+        this.remember(path, photo, cached.revision, signal);
+        return photo;
     }
 
     async updatePhoto(id: string, changes: PhotoChanges, signal?: AbortSignal) {
@@ -329,10 +420,25 @@ export class CmsClient {
     }
 
     async readImage(path: string, signal?: AbortSignal): Promise<ImageSource> {
+        const cached = await this.cached<ImageSource>(path, signal);
+        if (cached.value) return cached.value;
         const response = await this.request(path, signal ? { signal } : {});
         const contentType = response.headers.get("Content-Type") ?? "";
         if (contentType.startsWith("image/")) {
-            return { kind: "blob", blob: await response.blob() };
+            const source = {
+                kind: "blob",
+                blob: await response.blob(),
+            } as const;
+            this.remember(
+                path,
+                source,
+                cached.revision,
+                signal,
+                120_000,
+                true,
+                source.blob.size,
+            );
+            return source;
         }
         if (contentType.split(";")[0]?.trim() === "application/json") {
             const signed = signedImageSchema.parse(await response.json());
@@ -351,7 +457,19 @@ export class CmsClient {
                 throw new Error("The CMS returned an unsafe image URL.");
             }
             // The browser loads this URL directly, without the CMS bearer token.
-            return { kind: "remote", url: url.href };
+            const source = { kind: "remote", url: url.href } as const;
+            this.remember(
+                path,
+                source,
+                cached.revision,
+                signal,
+                Math.min(
+                    120_000,
+                    Date.parse(signed.expiresAt) - Date.now() - 5000,
+                ),
+                true,
+            );
+            return source;
         }
         throw new Error("The CMS returned an unsupported image response.");
     }
