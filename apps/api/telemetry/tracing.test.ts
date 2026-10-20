@@ -52,6 +52,7 @@ import { ImageUploadWorker } from "../services/image-upload-worker";
 import { ImageGarbageCollector } from "../services/image-garbage-collector";
 import { Telemetry } from "./setup";
 import { Tracing } from "./tracing";
+import { Rfc9068AuthenticationProvider } from "../auth/rfc-9068";
 
 const exporter = new InMemorySpanExporter();
 const telemetry = new Telemetry();
@@ -171,6 +172,78 @@ test("handled API errors still mark and finish the HTTP and child spans", async 
     expect(transaction.events.some((event) => event.name === "exception")).toBe(
         true,
     );
+});
+
+test("token rejection traces identify verification failures without recording credentials", async () => {
+    const traceId = "51515151515151515151515151515151";
+    const application = new Application({
+        db,
+        authentication: new Rfc9068AuthenticationProvider(
+            testAuthSettings,
+            new URL("https://cms.example.com/"),
+        ),
+        reportError: (error) => {
+            throw error;
+        },
+        getBlobStorage: () => {
+            throw new Error("Storage should remain lazy");
+        },
+    });
+    const response = await requestAsUser(application.http, "/api/photos", {
+        headers: { traceparent: `00-${traceId}-${incomingSpan}-01` },
+    });
+    expect(response.status).toBe(401);
+    const spans = await spansFor(traceId);
+    const verification = spans.find(
+        (span) => span.name === "auth.token.verify",
+    )!;
+    expect(verification.status.code).toBe(SpanStatusCode.ERROR);
+    expect(verification.attributes["auth.failure.reason"]).toBe(
+        "ERR_JWS_INVALID",
+    );
+    const server = spans.find((span) => span.kind === SpanKind.SERVER)!;
+    expect(server.attributes["http.response.status_code"]).toBe(401);
+    expect(server.attributes["error.type"]).toBe("authentication");
+    expect(
+        JSON.stringify(
+            spans.map((span) => ({
+                attributes: span.attributes,
+                events: span.events,
+            })),
+        ),
+    ).not.toContain("test-token");
+});
+
+test("permission denial traces record required scopes and the granted scope count", async () => {
+    const traceId = "52525252525252525252525252525252";
+    const application = new Application({
+        db,
+        authentication: {
+            scheme: "bearer",
+            authenticate: async () => ({
+                ...testAuthIdentity,
+                scopes: new Set(),
+            }),
+        },
+        reportError: (error) => {
+            throw error;
+        },
+        getBlobStorage: () => {
+            throw new Error("Storage should remain lazy");
+        },
+    });
+    const response = await requestAsUser(application.http, "/api/photos", {
+        headers: { traceparent: `00-${traceId}-${incomingSpan}-01` },
+    });
+    expect(response.status).toBe(403);
+    const server = (await spansFor(traceId)).find(
+        (span) => span.kind === SpanKind.SERVER,
+    )!;
+    expect(server.status.code).toBe(SpanStatusCode.ERROR);
+    expect(server.attributes["http.response.status_code"]).toBe(403);
+    expect(server.attributes["auth.failure.reason"]).toBe("insufficient_scope");
+    expect(server.attributes["auth.required_scopes"]).toEqual(["photos:read"]);
+    expect(server.attributes["auth.granted_scope_count"]).toBe(0);
 });
 
 test("parallel asynchronous operations keep separate active child spans", async () => {

@@ -17,6 +17,7 @@ import type { Database, ReadDatabase } from "../api/database";
 import type { ReadScope, WriteScope, Scope } from "../api/scope";
 import { ForbiddenError } from "../lib/errors";
 import type { HttpAuthentication } from "./auth";
+import { Tracing } from "../telemetry/tracing";
 
 export class InsufficientScopeError extends ForbiddenError {
     constructor(readonly scopes: readonly Scope[]) {
@@ -34,8 +35,12 @@ export class HttpAccess {
         });
         const check = (request: Request, scopes: readonly Scope[]) => {
             const authIdentity = auth.identity(request);
-            if (!scopes.some((scope) => authIdentity.scopes.has(scope)))
+            if (!scopes.some((scope) => authIdentity.scopes.has(scope))) {
+                Tracing.setSpanAttributes({
+                    "auth.granted_scope_count": authIdentity.scopes.size,
+                });
                 throw new InsufficientScopeError(scopes);
+            }
             return authIdentity;
         };
         const error = z.object({

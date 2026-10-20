@@ -30,6 +30,7 @@ import {
     AuthenticationUnavailableError,
 } from "../auth/provider";
 import { InsufficientScopeError } from "./scope";
+import { Tracing } from "../telemetry/tracing";
 
 export class HttpErrorHandler {
     readonly plugin;
@@ -43,6 +44,9 @@ export class HttpErrorHandler {
                         ? caught.cause
                         : caught;
                 if (error instanceof AuthenticationError) {
+                    Tracing.setSpanAttributes({
+                        "error.type": "authentication",
+                    });
                     set.headers["WWW-Authenticate"] = request.headers.has(
                         "Authorization",
                     )
@@ -55,6 +59,11 @@ export class HttpErrorHandler {
                     return status(503, { error: error.message });
                 }
                 if (error instanceof InsufficientScopeError) {
+                    Tracing.setSpanAttributes({
+                        "error.type": "insufficient_scope",
+                        "auth.failure.reason": "insufficient_scope",
+                        "auth.required_scopes": [...error.scopes],
+                    });
                     set.headers["WWW-Authenticate"] =
                         error.scopes.length === 1
                             ? `Bearer error="insufficient_scope", scope="${error.scopes[0]}"`

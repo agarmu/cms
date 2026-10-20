@@ -15,6 +15,7 @@ import { createRemoteJWKSet, customFetch, errors, jwtVerify } from "jose";
 import { z } from "zod";
 import { Scopes } from "../api/scope";
 import type { Rfc9068Settings } from "./config";
+import { Tracing } from "../telemetry/tracing";
 import {
     AuthenticationError,
     AuthenticationUnavailableError,
@@ -56,6 +57,7 @@ export class Rfc9068AuthenticationProvider implements AuthenticationProvider {
         });
     }
 
+    @Tracing.traced("auth.token.verify")
     async authenticate(token?: string): Promise<AuthIdentity> {
         if (!token) throw new AuthenticationError();
         try {
@@ -68,7 +70,15 @@ export class Rfc9068AuthenticationProvider implements AuthenticationProvider {
             });
             const claims =
                 Rfc9068AuthenticationProvider.claims.safeParse(payload);
-            if (!claims.success) throw new AuthenticationError();
+            if (!claims.success) {
+                Tracing.setSpanAttributes({
+                    "auth.failure.reason": "invalid_claims",
+                    "auth.failure.claims": claims.error.issues.map((issue) =>
+                        issue.path.join("."),
+                    ),
+                });
+                throw new AuthenticationError();
+            }
             return {
                 subject: claims.data.sub,
                 issuer: this.config.issuer,
@@ -86,6 +96,12 @@ export class Rfc9068AuthenticationProvider implements AuthenticationProvider {
                 throw new AuthenticationUnavailableError(error);
             }
             if (error instanceof errors.JOSEError) {
+                Tracing.setSpanAttributes({
+                    "auth.failure.reason": error.code,
+                    ...(error instanceof errors.JWTClaimValidationFailed
+                        ? { "auth.failure.claims": [error.claim] }
+                        : {}),
+                });
                 throw new AuthenticationError();
             }
             throw error;
