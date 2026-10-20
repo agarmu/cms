@@ -15,58 +15,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 # CMS
 
-A photo CMS with PostgreSQL metadata, local or S3 image storage, an HTTP API, and
-MCP tools for uploading photos and editing metadata.
+A photo CMS with a website, HTTP API, and MCP tools. Photo details live in
+PostgreSQL; images live on disk or in S3-compatible storage.
 
-The Bun workspaces are `apps/api` for the backend and `apps/web` for the Astro
-frontend.
+[Documentation](docs/README.md)
 
-## Quickstart
-
-Follow the [quickstart guide](docs/quickstart.md) to run the CMS locally with
-PostgreSQL, local image storage, and no authentication.
-
-## Demo
-
-Select **Demo** below **Sign in** on the website to explore a sample library
-without signing in. The `/demo/` page is included in the normal frontend build.
-It supports metadata and equipment editing and local image uploads. Changes stay
-in the current tab's memory; reloading or selecting **Reset demo** restores the
-samples. **Exit demo** returns to the main website.
-
-The usual API serves demo photos from a separate demo database and image store.
-Edits and uploads remain local to the visitor's browser. Follow the
-[demo setup](docs/configuration.md#frontend-demo) to configure its data source.
-
-## Docker image
-
-Images are published on [GHCR](https://github.com/agarmu/cms/pkgs/container/cms)
-for x86-64 Linux. Replace `<tag>` with a published release tag:
-
-```sh
-docker pull ghcr.io/agarmu/cms:<tag>
-```
-
-The image also works with Podman. Mount your configuration files at
-`/app/config.toml` and `/app/secrets.toml`; see the
-[configuration reference](docs/configuration.md) for settings.
-
-## Documentation
-
-- [Quickstart](docs/quickstart.md)
-- [Configuration reference](docs/configuration.md)
-- [HTTP API](docs/http.md)
-- [MCP](docs/mcp.md)
-
-## License
-
-The CMS source code, configuration examples, and documentation are licensed
-under the GNU General Public License, version 3 or (at your option) any later
-version. See [COPYING](COPYING) for the full license text.
-
-This software is distributed without any warranty, including the implied
-warranties of merchantability or fitness for a particular purpose.
-
-This license does not apply to photographs or other content stored by the CMS.
-Their copyright and usage permissions remain separate. Third-party dependencies
-retain their respective licenses.
+Licensed under [GPL-3.0-or-later](COPYING). Photos retain their own copyrights.

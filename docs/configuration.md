@@ -15,134 +15,71 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 # Configuration reference
 
-The CMS loads `config.toml` and `secrets.toml` from the working directory at
-startup. Both files are required. Unknown keys are rejected.
+| File                                             | Example                                   |
+| ------------------------------------------------ | ----------------------------------------- |
+| `config.toml` — API settings                     | [API example](config.example.toml)        |
+| `secrets.toml` — passwords and keys              | [Secrets example](secrets.example.toml)   |
+| `apps/web/config.toml` — public website settings | [Frontend example](frontend.example.toml) |
 
-`config.toml` contains public settings. `secrets.toml` contains the database
-password, S3 credentials, and telemetry exporter headers. Examples:
-[config.example.toml](../config.example.toml) and
-[secrets.example.toml](../secrets.example.toml).
-
-All durations are in milliseconds.
+Both API files must exist; `secrets.toml` may be empty. The API requires
+`[auth]`, `[database]`, and `[storage]`. Unknown settings are rejected.
+Restart the API after changes; rebuild the website after frontend changes.
+Durations are in milliseconds. Paths are relative to the working directory.
 
 ## Serving
 
-Settings in `[serve]`:
+| `[serve]` setting | Default | Purpose                                                                 |
+| ----------------- | ------- | ----------------------------------------------------------------------- |
+| `baseUrl`         | Unset   | Public API URL; required for access tokens, MCP, and local HTTP uploads |
+| `port`            | `3000`  | TCP port                                                                |
+| `bindLocal`       | `false` | Listen only on localhost; always enabled without authentication         |
+| `unix`            | Unset   | Unix socket path instead of TCP                                         |
 
-| Key         | Default | Description                                                                                          |
-| ----------- | ------- | ---------------------------------------------------------------------------------------------------- |
-| `port`      | `3000`  | TCP port. `0` requests an allocated port.                                                            |
-| `baseUrl`   | Unset   | Public HTTP(S) origin. Required for bearer authentication, MCP, or local HTTP upload URLs.           |
-| `bindLocal` | `false` | Bind TCP to `127.0.0.1` instead of `0.0.0.0`. No-auth mode always binds to `127.0.0.1`.              |
-| `unix`      | Unset   | Unix socket path. Replaces TCP; `port` and `bindLocal` are ignored. The parent directory must exist. |
-
-`baseUrl` must use HTTPS unless its host is loopback. Credentials, non-root paths,
-queries, and fragments are not accepted. MCP validates the incoming host against
-this URL.
-
-TCP example:
-
-```toml
-[serve]
-port = 3000
-baseUrl = "http://localhost:3000"
-```
-
-Unix socket example:
-
-```toml
-[serve]
-unix = "./data/cms.sock"
-baseUrl = "https://photos.example.com"
-```
-
-For a Unix socket deployment, `baseUrl` is the public origin served by the reverse
-proxy. Startup removes abandoned sockets but preserves active listeners and
-regular files.
+Use HTTPS except on localhost. `baseUrl` must be an origin, such as
+`https://cms.example.com`, without a path or query.
 
 ## Authentication
 
-### No authentication
+Use `[auth] kind = "no-auth"` for local access without signing in. Remove all
+other `[auth]` fields in this mode.
 
-```toml
-[auth]
-kind = "no-auth"
-```
+### Access tokens
 
-This mode assigns every request the same identity and all scopes. The `[auth]`
-table accepts only `kind`; OAuth settings must be removed when switching modes.
-
-### RFC 9068 bearer tokens
-
-Settings in `[auth]`:
-
-| Key               | Requirement                               |
-| ----------------- | ----------------------------------------- |
-| `kind`            | `"rfc-9068"`                              |
-| `algorithm`       | `"ES256"` (default) or `"RS256"`          |
-| `issuer`          | Token issuer                              |
-| `jwksUrl`         | Signing-key endpoint                      |
-| `allowedSubjects` | Nonempty list of permitted token subjects |
-
-Tokens must use the configured `algorithm`, have type `at+jwt`, and include
-`sub`, `exp`, `iat`, `client_id`, and `jti`. The `sub` claim must be in
-`allowedSubjects`. Permissions are taken from the space-separated `scope` claim.
-
-Configure the authorization server to issue access tokens using the selected
-algorithm and publish the corresponding signing keys at `jwksUrl`. ES256 uses
-ECDSA with P-256 and SHA-256; RS256 uses RSA with SHA-256. Only the configured
-algorithm is accepted, even if JWKS publishes keys for both.
-
-For Logto using ES256:
+For sign-in, configure your provider:
 
 ```toml
 [auth]
 kind = "rfc-9068"
-algorithm = "ES256"
-# Set issuer, jwksUrl, and allowedSubjects for your deployment.
+issuer = "https://auth.example.com/"
+jwksUrl = "https://auth.example.com/.well-known/jwks.json"
 ```
 
-The token audience and MCP resource identifier are derived from `serve.baseUrl`,
-normalized with a trailing `/`. Register that exact URL as the API identifier
-with your authorization server (for example, `https://photos.example.com/`).
-There is no separate `auth.audience` setting.
+| Setting           | Default                             | Purpose                                             |
+| ----------------- | ----------------------------------- | --------------------------------------------------- |
+| `algorithm`       | `"ES256"`                           | Signing algorithm; also accepts `ES384` and `RS256` |
+| `audience`        | `serve.baseUrl` with a trailing `/` | API identifier registered with your provider        |
+| `allowedSubjects` | Unrestricted                        | Limit access to a list of user IDs (`sub`)          |
+
+Tokens must follow RFC 9068, including type `at+jwt`, and match the configured
+issuer, audience, and algorithm. Permissions come from the token's `scope` claim.
 
 ## Database
 
-```toml
-[database]
-url = "postgresql://mukul@localhost:5432/photos-cms"
-connectTimeout = 10_000
+Set `[database].url` to a PostgreSQL URL without a password or query. Put the
+password in `[database].password` in `secrets.toml`.
 
-[database.pool]
-maxConnections = 10
-idleTimeout = 30_000
+| Setting                        | Default     |
+| ------------------------------ | ----------- |
+| `database.connectTimeout`      | `10_000`    |
+| `database.pool.maxConnections` | `10`        |
+| `database.pool.idleTimeout`    | `30_000`    |
+| `database.tls.mode`            | `"disable"` |
 
-[database.tls]
-mode = "disable"
-```
-
-The timeout, pool, and TLS values shown above are the defaults.
-
-The connection URL must not contain a password, query, or fragment. Configure the
-password in `secrets.toml`:
-
-```toml
-[database]
-password = "your-password"
-```
-
-Supported TLS modes: `disable`, `allow`, `prefer`, `require`, `verify-ca`, and
-`verify-full`. Database migrations run automatically at startup.
+TLS modes: `disable`, `allow`, `prefer`, `require`, `verify-ca`, `verify-full`.
+Tables are migrated at startup; the database user must be able to create schemas
+and tables. See the [database schema](schema.txt) for table definitions.
 
 ## Storage
-
-Settings in `[storage]`:
-
-| Backend | Required public settings         | Secrets in `[storage]`                                    |
-| ------- | -------------------------------- | --------------------------------------------------------- |
-| `local` | `backend = "local"`, `directory` | None                                                      |
-| `s3`    | `backend = "s3"`, `endpoint`     | `accessKeyId`, `secretAccessKey`; optional `sessionToken` |
 
 ### Local storage
 
@@ -152,81 +89,114 @@ backend = "local"
 directory = "./data/blobs"
 ```
 
-HTTP PUT upload URLs require `serve.baseUrl`. They are single-use, expire after
-15 minutes, and are invalidated by a restart. MCP uploads do not use these URLs.
-
 ### S3 storage
 
-The endpoint must be a bucket-specific, virtual-hosted origin without a path or
-query. `region` is optional: recognized AWS endpoints supply the region;
-otherwise it defaults to `us-east-1`. Set it explicitly when another provider
-requires a different signing region.
+```toml
+[storage]
+backend = "s3"
+endpoint = "https://your-bucket.s3.us-east-1.amazonaws.com"
+```
+
+Use a bucket-specific endpoint. Set `region` if needed; it is inferred for AWS
+endpoints and otherwise defaults to `us-east-1`. Put `accessKeyId`,
+`secretAccessKey`, and optional `sessionToken` in `secrets.toml` under `[storage]`.
+For browser uploads, allow the website's origin to PUT with `Content-Type` in
+the bucket's CORS policy.
+
+## HTTP and CORS
+
+Allow your website's origin to call the API:
+
+```toml
+[http]
+allowedOrigins = ["http://localhost:4321"]
+```
+
+The list defaults to empty. Origins include scheme, hostname, and port, without
+a path or trailing slash. `http.maxBodyBytes` defaults to `65_536` for JSON;
+image uploads use `images.maxBytes`.
 
 ## Image processing
 
-Settings in `[images]`:
+| `[images]` setting | Default                                  |
+| ------------------ | ---------------------------------------- |
+| `maxBytes`         | `26_214_400` (25 MiB)                    |
+| `maxPixels`        | `60_000_000`                             |
+| `quality`          | `82`                                     |
+| `variants`         | large: 1920, medium: 960, thumbnail: 320 |
 
-| Key         | Default                                  | Description                                                              |
-| ----------- | ---------------------------------------- | ------------------------------------------------------------------------ |
-| `maxBytes`  | `26_214_400`                             | Maximum image file size: 25 MiB. For MCP, applies after base64 decoding. |
-| `maxPixels` | `60_000_000`                             | Decoder pixel limit.                                                     |
-| `quality`   | `82`                                     | WebP quality, from 1 to 100.                                             |
-| `variants`  | large: 1920; medium: 960; thumbnail: 320 | Output variants, specified by name and target shorter side (`minSide`).  |
-
-A variant is skipped if the original's shorter side is below its `minSide`.
-Processing always also produces an `original.webp` asset at the original
-resolution, with orientation applied. This is a WebP rendition, not the uploaded
-file's original bytes. The name `original` is reserved and cannot be used for a
-configured variant. Photos processed before this behavior was added need to be
-uploaded again to include the original-size asset.
-
-## Request limits
-
-`[http].maxBodyBytes` defaults to `65_536` bytes for JSON API requests. Local image
-PUTs use `images.maxBytes` instead.
-
-The MCP request-body limit is the larger of `http.maxBodyBytes` and the base64
-representation of `images.maxBytes` plus 64 KiB of JSON overhead. Decoded image
-bytes must still satisfy `images.maxBytes`.
+Uploads become WebP images at full resolution and the configured sizes.
+Variant sizes measure the shorter side; images too small for a size skip it.
+Set sizes with `[[images.variants]]` entries containing `name` and `minSide`.
+These replace the defaults; `variants = []` keeps only full resolution.
+The name `original` is reserved. Original uploaded bytes are not retained.
 
 ## Background workers
 
-| Setting                      | Default     | Description                                                                         |
-| ---------------------------- | ----------- | ----------------------------------------------------------------------------------- |
-| `workers.interval`           | `5_000`     | Delay before the first cycle and between one cycle's completion and the next cycle. |
-| `workers.batchSize`          | `10`        | Uploads or garbage objects checked per batch.                                       |
-| `workers.backoff.maxRetries` | `5`         | Retries after the initial attempt.                                                  |
-| `workers.backoff.multiplier` | `2`         | Exponential retry multiplier.                                                       |
-| `workers.upload.retryTime`   | `10_000`    | Initial retry delay for both upload processing and garbage collection.              |
-| `workers.upload.waitTime`    | `3_600_000` | Wait before failing an upload whose original is missing.                            |
+Workers finish pending uploads and remove unused image files.
+
+| Setting                      | Default     |
+| ---------------------------- | ----------- |
+| `workers.interval`           | `5_000`     |
+| `workers.batchSize`          | `10`        |
+| `workers.backoff.maxRetries` | `5`         |
+| `workers.backoff.multiplier` | `2`         |
+| `workers.upload.retryTime`   | `10_000`    |
+| `workers.upload.waitTime`    | `3_600_000` |
 
 ## MCP
 
-Settings in `[mcp]`:
-
-| Key              | Default               | Description                                                                                                     |
-| ---------------- | --------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `enabled`        | `false`               | Enable the `/mcp` endpoint. Requires `serve.baseUrl`.                                                           |
-| `allowedOrigins` | No additional origins | Browser origins permitted in addition to `serve.baseUrl`. Use origin strings without paths or trailing slashes. |
-
-See the [MCP reference](mcp.md) for tools and client configuration.
+`[mcp].enabled` defaults to `false`. Enabling it requires `serve.baseUrl`.
+Browser clients can use `[mcp].allowedOrigins` to allow origins beyond that URL.
+See [API access](README.md#api-access) to connect a client.
 
 ## Telemetry
 
-Settings in `[telemetry]`:
+`[telemetry].enabled` defaults to `true`; `serviceName` defaults to `"photos-cms"`.
+For each of `traces`, `metrics`, and `logs`, set `enabled = true` and an OTLP HTTP
+`endpoint` under `[telemetry.<signal>]`. Export headers go in `secrets.toml`
+under `[telemetry.<signal>.headers]`. Signals default to disabled.
 
-| Key           | Default        | Description                         |
-| ------------- | -------------- | ----------------------------------- |
-| `enabled`     | `true`         | Enable telemetry initialization.    |
-| `serviceName` | `"photos-cms"` | Service name attached to telemetry. |
+## Frontend configuration
 
-The `traces`, `metrics`, and `logs` tables each accept `enabled` (default `false`)
-and an OTLP HTTP `endpoint`, required when that signal is enabled.
-Exporter headers belong in `[telemetry.<signal>.headers]` in `secrets.toml`.
+These settings go in `apps/web/config.toml` and are embedded in the website.
 
-To disable telemetry:
+| Setting         | Required or default                                         |
+| --------------- | ----------------------------------------------------------- |
+| `api.baseUrl`   | Required; API origin                                        |
+| `auth.kind`     | Required; `"no-auth"` or `"oidc"`                           |
+| `auth.issuer`   | Required for OIDC; provider issuer URL                      |
+| `auth.clientId` | Required for OIDC; public browser client ID                 |
+| `auth.scopes`   | `["openid", "photos:read"]`; must include `openid`          |
+| `auth.resource` | Optional; API identifier for providers using this parameter |
+| `auth.audience` | Optional; API identifier for providers using this parameter |
+
+With `no-auth`, remove the other `[auth]` settings. For sign-in, register a public
+browser client with `/` and `/auth/silent` on your website as redirect URLs.
+Allow the website's origin in API `[http].allowedOrigins`.
+
+Build with `bun run build:web` and serve `apps/web/dist/`. Rebuild after changing
+frontend settings.
+
+## Frontend demo
+
+Create a separate database and image store, then add to `config.toml`:
 
 ```toml
-[telemetry]
-enabled = false
+[demo.database]
+url = "postgres://demo-user@localhost:5432/photos_cms_demo"
+
+[demo.storage]
+backend = "local"
+directory = "./data/demo-blobs"
 ```
+
+Put its password in `secrets.toml` under `[demo.database]`. Database and storage
+options work like their main-library counterparts.
+
+Restart the API to create the tables, then import sample records and matching
+images. Keep the demo database's own `photos_cms_internal.database_identity`
+row when importing; copying the main identity prevents startup.
+
+Everything in this database is public, including hidden photos. Put photo
+credits and licenses in each description.
