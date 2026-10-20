@@ -1,0 +1,79 @@
+PostgreSQL schema reference
+Source: apps/api/db/schema.ts; migrations/ contains the SQL history.
+Columns are NOT NULL unless marked with ?. Foreign keys use NO ACTION
+on update and delete. Application-level constraints are noted separately.
+
+table cameras:
+  id: uuid primary key default gen_random_uuid()
+  name: text
+
+table lenses:
+  id: uuid primary key default gen_random_uuid()
+  name: text
+
+table photos:
+  id: uuid primary key default gen_random_uuid()
+  taken_at: timestamp with time zone
+  posted_at: timestamp with time zone
+  alt_text: text
+  caption: text
+  description: text default '' (application stores Markdown source)
+  location: text?
+  visible: boolean
+  camera_id: uuid? references cameras.id
+  lens_id: uuid? references lenses.id
+
+table image_assets:
+  id: integer primary key generated always as identity
+  photo_id: uuid references photos.id
+  width: integer
+  height: integer
+  byte_size: bigint?
+  asset_location: text
+
+  check image_assets_width_positive: width > 0
+  check image_assets_height_positive: height > 0
+  check image_assets_byte_size_valid:
+    byte_size > 0 AND byte_size <= 9007199254740991
+    (NULL is allowed for assets whose byte count is unknown)
+
+table image_uploads:
+  id: uuid primary key
+  photo_id: uuid
+  kind: text default 'replacement'
+  owner_issuer: text?
+  owner_subject: text?
+  created: timestamp with time zone default now()
+  assets: jsonb?
+  consumed: timestamp with time zone?
+  input_hash: text?
+  expires: timestamp with time zone default now() + interval '24 hours'
+  cleaned: timestamp with time zone?
+  completed: timestamp with time zone?
+  cancelled: timestamp with time zone?
+  failed: text?
+  retry_count: integer default 0
+  next_check: timestamp with time zone default now() + interval '15 minutes'
+
+  index image_uploads_photo_id_idx: (photo_id)
+  index image_uploads_expiry_idx: (expires) WHERE cleaned IS NULL
+  index image_uploads_pending_idx: (next_check)
+    WHERE completed IS NULL AND failed IS NULL AND cancelled IS NULL
+
+  photo_id has no foreign key: creation uploads precede their photo row,
+  and upload receipts survive photo deletion.
+  Application kind values: 'creation' | 'replacement' (not a database enum).
+  Application assets payload: an array of objects with width, height,
+  assetLocation, and an optional nullable byteSize, using camelCase keys.
+
+table image_asset_garbage:
+  photo_id: uuid
+  asset_location: text
+  retry_count: integer default 0
+  failed: text?
+  next_check: timestamp with time zone default now() + interval '1 hour'
+
+  primary key: (photo_id, asset_location)
+  index image_asset_garbage_next_check_idx: (next_check)
+
+  photo_id has no foreign key: cleanup must survive photo deletion.
