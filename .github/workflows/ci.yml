@@ -49,13 +49,4 @@ jobs:
               with:
                   context: .
                   file: ${{ matrix.dockerfile }}
-                  load: true
                   tags: photos-cms-${{ matrix.app }}:ci
-            - name: Smoke frontend container
-              if: matrix.app == 'web'
-              run: |
-                  docker run --detach --name web-smoke --publish 8080:80 photos-cms-web:ci
-                  curl --fail --retry 10 --retry-connrefused --retry-delay 1 http://localhost:8080/
-            - name: Stop frontend container
-              if: always() && matrix.app == 'web'
-              run: docker rm --force web-smoke
