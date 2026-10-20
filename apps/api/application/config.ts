@@ -23,6 +23,7 @@ import { AuthenticationConfiguration } from "../auth/config";
 import type { AuthenticationSettings } from "../auth/config";
 import { McpConfiguration } from "../mcp/config";
 import { publicUrl } from "../lib/url";
+import { DemoConfiguration } from "./demo-config";
 
 export type ApplicationSettings = z.input<typeof ApplicationConfig.schema>;
 export type ApplicationSecrets = z.input<
@@ -51,6 +52,7 @@ export class ApplicationConfig {
                 })
                 .prefault({}),
             database: DatabaseConfiguration.schema,
+            demo: DemoConfiguration.schema.optional(),
             auth: AuthenticationConfiguration.schema,
             mcp: McpConfiguration.schema.optional(),
             storage: StorageConfiguration.schema,
@@ -63,14 +65,22 @@ export class ApplicationConfig {
             (settings) =>
                 !(settings.mcp?.enabled || settings.auth.kind === "rfc-9068") ||
                 settings.serve.baseUrl !== undefined,
+        )
+        .refine(
+            (settings) =>
+                !settings.demo ||
+                DemoConfiguration.databaseTarget(settings.demo.database.url) !==
+                    DemoConfiguration.databaseTarget(settings.database.url),
         );
     static readonly secretsSchema = z.strictObject({
         database: DatabaseConfiguration.secretsSchema.prefault({}),
+        demo: DemoConfiguration.secretsSchema.optional(),
         storage: StorageConfiguration.secretsSchema.prefault({}),
         telemetry: TelemetryConfiguration.secretsSchema.prefault({}),
     });
 
     readonly database: DatabaseConfiguration;
+    readonly demo: DemoConfiguration | undefined;
     readonly auth: AuthenticationSettings;
     readonly baseUrl: URL | undefined;
     readonly mcp: McpConfiguration | undefined;
@@ -99,6 +109,9 @@ export class ApplicationConfig {
             settings.database,
             settings.secrets.database,
         );
+        this.demo = settings.demo
+            ? new DemoConfiguration(settings.demo, settings.secrets.demo)
+            : undefined;
         this.auth = Object.freeze(settings.auth);
         this.baseUrl = settings.serve.baseUrl
             ? new URL(settings.serve.baseUrl)

@@ -16,6 +16,19 @@ import { relations, sql } from "drizzle-orm";
 import * as pg from "drizzle-orm/pg-core";
 
 export class DatabaseSchema {
+    // A fixed schema keeps the identity independent of a connection's search_path.
+    static readonly internalSchema = pg.pgSchema("photos_cms_internal");
+    static readonly databaseIdentity = DatabaseSchema.internalSchema.table(
+        "database_identity",
+        {
+            singleton: pg.boolean("singleton").primaryKey().default(true),
+            id: pg.uuid("id").notNull().defaultRandom(),
+        },
+        (table) => [
+            pg.check("database_identity_singleton", sql`${table.singleton}`),
+        ],
+    );
+
     static readonly cameras = pg.pgTable("cameras", {
         id: pg.uuid("id").$type<UUID>().primaryKey().defaultRandom(),
         name: pg.text("name").notNull(),

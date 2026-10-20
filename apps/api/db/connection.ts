@@ -17,6 +17,7 @@ import type { SQL } from "bun";
 import type { Database } from "../api/database";
 import { Tracing } from "../telemetry/tracing";
 import { DatabaseFactory } from "./index";
+import { initializeDatabaseIdentity } from "./demo-isolation";
 
 export interface DatabaseSession {
     db: Database;
@@ -49,6 +50,9 @@ export class DatabaseConnection implements DatabaseSession {
             );
             await Tracing.withSpan("db.migrate", () =>
                 migrate(db, { migrationsFolder }),
+            );
+            await Tracing.withSpan("db.identity.initialize", () =>
+                initializeDatabaseIdentity(db),
             );
             return new DatabaseConnection(client, db);
         } catch (error) {

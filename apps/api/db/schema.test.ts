@@ -18,6 +18,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { DatabaseSchema as schema } from "./schema";
+import { initializeDatabaseIdentity } from "./demo-isolation";
 
 const { cameras, imageAssets, photos, lenses } = schema;
 const client = new PGlite();
@@ -44,6 +45,24 @@ const imageMetadata = {
     location: null,
     visible: true,
 };
+
+test("ORM initialization creates one persistent database identity", async () => {
+    expect(await testDb.select().from(schema.databaseIdentity)).toEqual([]);
+    await initializeDatabaseIdentity(testDb);
+    const original = await testDb.select().from(schema.databaseIdentity);
+    expect(original).toHaveLength(1);
+    expect(original[0]).toMatchObject({
+        singleton: true,
+        id: expect.any(String),
+    });
+    await Promise.all([
+        initializeDatabaseIdentity(testDb),
+        initializeDatabaseIdentity(testDb),
+    ]);
+    expect(await testDb.select().from(schema.databaseIdentity)).toEqual(
+        original,
+    );
+});
 
 test("adding description preserves existing caption and alt text", async () => {
     const upgrade = new PGlite();

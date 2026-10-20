@@ -31,8 +31,12 @@ export function downloadResponse(stored: BlobDownload) {
     );
 }
 
-export function assetUrl(photoId: string, filename: string) {
-    return `/api/photos/${encodeURIComponent(photoId)}/assets/${encodeURIComponent(filename)}`;
+export function assetUrl(
+    photoId: string,
+    filename: string,
+    prefix = "/api/photos",
+) {
+    return `${prefix}/${encodeURIComponent(photoId)}/assets/${encodeURIComponent(filename)}`;
 }
 
 export function photoResponse(

@@ -22,6 +22,7 @@ import type { AuthenticationProvider } from "../auth/provider";
 import { Rfc9068AuthenticationProvider } from "../auth/rfc-9068";
 import { NoAuthenticationProvider } from "../auth/no-auth";
 import { removeStaleSocket } from "./unix-socket";
+import { assertDemoDatabaseIsolation } from "../db/demo-isolation";
 
 export type RuntimeDependencies = {
     authentication?: AuthenticationProvider;
@@ -32,6 +33,7 @@ export type RuntimeDependencies = {
 
 export class ApplicationRuntime {
     private connection: DatabaseSession | undefined;
+    private demoConnection: DatabaseSession | undefined;
     private application: Application | undefined;
     private server: ReturnType<typeof Bun.serve> | undefined;
     private starting: Promise<this> | undefined;
@@ -60,6 +62,15 @@ export class ApplicationRuntime {
                 this.connection = await (
                     this.options.connect ?? DatabaseConnection.open
                 )(this.config.database.clientOptions());
+                if (this.config.demo) {
+                    this.demoConnection = await (
+                        this.options.connect ?? DatabaseConnection.open
+                    )(this.config.demo.database.clientOptions());
+                    await assertDemoDatabaseIsolation(
+                        this.connection.db,
+                        this.demoConnection.db,
+                    );
+                }
                 const factory = new StorageFactory(
                     this.config.storage,
                     this.config.baseUrl
@@ -92,6 +103,16 @@ export class ApplicationRuntime {
                     workerConfig: this.config.workers,
                     httpConfig: this.config.http,
                     mcpConfig: this.config.mcp,
+                    demo:
+                        this.config.demo && this.demoConnection
+                            ? {
+                                  db: this.demoConnection.db,
+                                  getBlobStorage: () =>
+                                      new StorageFactory(
+                                          this.config.demo!.storage,
+                                      ).create(),
+                              }
+                            : undefined,
                 });
                 this.server = await Tracing.withSpan(
                     "http.server.start",
@@ -166,7 +187,11 @@ export class ApplicationRuntime {
                     try {
                         await this.application?.stop();
                     } finally {
-                        await this.connection?.close();
+                        try {
+                            await this.demoConnection?.close();
+                        } finally {
+                            await this.connection?.close();
+                        }
                     }
                 }
             },

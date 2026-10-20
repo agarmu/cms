@@ -23,6 +23,53 @@ const minimal =
     testAuthToml +
     '[database]\nurl = "postgres://user@localhost/cms"\n[storage]\nbackend = "local"\ndirectory = "./data/blobs"\n';
 
+test("demo configuration uses separate database credentials and storage", () => {
+    const config = new ApplicationConfig(
+        {
+            auth: { kind: "no-auth" },
+            database: { url: "postgres://user@localhost/cms" },
+            storage: { backend: "local", directory: "./data/blobs" },
+            demo: {
+                database: { url: "postgres://demo@localhost/cms_demo" },
+                storage: { backend: "local", directory: "./data/demo-blobs" },
+            },
+        },
+        {
+            database: { password: "real-password" },
+            demo: { database: { password: "demo-password" } },
+        },
+    );
+    expect(config.demo?.database.clientOptions()).toMatchObject({
+        url: "postgres://demo@localhost/cms_demo",
+        password: "demo-password",
+    });
+    expect(config.demo?.storage.directory).toBe("./data/demo-blobs");
+    expect(config.database.clientOptions()).toMatchObject({
+        password: "real-password",
+    });
+});
+
+test.each([
+    "postgresql://other-user@localhost:5432/cms",
+    "postgres://localhost/%63ms",
+])("demo cannot publish the main database through %s", (url) => {
+    expect(
+        () =>
+            new ApplicationConfig({
+                auth: { kind: "no-auth" },
+                database: { url: "postgres://user@localhost/cms" },
+                storage: { backend: "local", directory: "./data/blobs" },
+                demo: {
+                    database: { url },
+                    storage: {
+                        backend: "local",
+                        directory: "./data/demo-blobs",
+                    },
+                },
+            }),
+    ).toThrow("Invalid configuration");
+});
+
 async function withFiles(
     config: string,
     secrets: string,

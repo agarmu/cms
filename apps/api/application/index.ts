@@ -25,6 +25,7 @@ import { Tracing } from "../telemetry/tracing";
 import type { AuthenticationProvider } from "../auth/provider";
 import type { McpConfiguration } from "../mcp/config";
 import { LocalUploadStorage } from "../services/local-upload-storage";
+import type { ReadDatabase } from "../api/database";
 
 export type ApplicationDependencies = {
     authentication: AuthenticationProvider;
@@ -36,6 +37,7 @@ export type ApplicationDependencies = {
     workerConfig?: WorkerConfiguration;
     httpConfig?: HttpConfiguration;
     mcpConfig?: McpConfiguration | undefined;
+    demo?: { db: ReadDatabase; getBlobStorage: () => BlobStorage } | undefined;
 };
 
 export class Application {
@@ -64,6 +66,7 @@ export class Application {
                     dependencies,
                     workerConfig,
                 );
+                let demoStorage: ImageStorage | undefined;
                 return {
                     http: new HttpApplication(
                         {
@@ -80,6 +83,16 @@ export class Application {
                             authentication: options.authentication,
                             allowedSubjects: options.allowedSubjects,
                             mcp: options.mcpConfig,
+                            demo: options.demo
+                                ? {
+                                      db: options.demo.db,
+                                      getImageStorage: () =>
+                                          (demoStorage ??= new ImageStorage(
+                                              options.demo!.getBlobStorage(),
+                                              options.imageConfig,
+                                          )),
+                                  }
+                                : undefined,
                         },
                         options.httpConfig ?? new HttpConfiguration(),
                     ),

@@ -35,6 +35,7 @@ import type { LocalUploadStorage } from "../services/local-upload-storage";
 import { ImageUploadApi } from "../api/image-uploads";
 import { NotFoundError } from "../lib/errors";
 import { ImageConfiguration } from "../services/image-config";
+import { DemoRoutes, isDemoApiPath, type DemoReadDependencies } from "./demo";
 
 export class HttpApplication {
     readonly app;
@@ -50,6 +51,7 @@ export class HttpApplication {
             authentication: AuthenticationProvider;
             allowedSubjects?: readonly string[] | undefined;
             mcp?: McpConfiguration | undefined;
+            demo?: DemoReadDependencies | undefined;
         },
         config = new HttpConfiguration(),
     ) {
@@ -64,6 +66,7 @@ export class HttpApplication {
                     publicPaths.add(path);
             const protectedRequest = (request: Request) => {
                 const path = new URL(request.url).pathname.replace(/\/$/, "");
+                if (isDemoApiPath(path)) return false;
                 if (
                     request.method === "PUT" &&
                     /^\/api\/local-uploads\/[^/]+$/.test(path)
@@ -89,6 +92,11 @@ export class HttpApplication {
                 .use(new EquipmentRoutes("/api/cameras", CameraApi, access).app)
                 .use(new EquipmentRoutes("/api/lenses", LensApi, access).app)
                 .use(new PhotoRoutes(access, options.getImageStorage).app);
+            const demoRoutes = options.demo
+                ? new DemoRoutes(options.demo).app
+                : undefined;
+            const documented = new Elysia().use(routes);
+            if (demoRoutes) documented.use(demoRoutes);
             const app = new Elysia()
                 .use(new HttpTelemetry().plugin)
                 .use(new HttpErrorHandler(options.reportError).plugin)
@@ -114,6 +122,17 @@ export class HttpApplication {
                     }),
                 )
                 .onRequest(({ request }) => {
+                    if (
+                        isDemoApiPath(new URL(request.url).pathname) &&
+                        !["GET", "HEAD", "OPTIONS"].includes(request.method)
+                    )
+                        return Response.json(
+                            { error: "The demo API is read-only" },
+                            {
+                                status: 405,
+                                headers: { Allow: "GET, HEAD, OPTIONS" },
+                            },
+                        );
                     // Anonymous API preflights must finish before bearer authentication.
                     // MCP retains its own origin policy and OPTIONS handling.
                     if (
@@ -150,9 +169,13 @@ export class HttpApplication {
                     { parse: "none", detail: { hide: true } },
                 )
                 .get("/openapi.json", () =>
-                    HttpOpenApi.document(routes, options.authentication.scheme),
+                    HttpOpenApi.document(
+                        documented,
+                        options.authentication.scheme,
+                    ),
                 )
                 .use(routes);
+            if (demoRoutes) app.use(demoRoutes);
             if (options.mcp) {
                 const mcp = options.mcp;
                 const maxMcpBytes = Math.max(
