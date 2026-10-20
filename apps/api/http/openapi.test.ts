@@ -170,3 +170,26 @@ test("public documentation handles the trailing-slash alias without authenticati
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(document);
 });
+
+test.each(["/openapi", "/openapi/"])(
+    "%s serves the reference without a token while the library stays protected",
+    async (path) => {
+        const response = await requestApp(app, path);
+        expect(response.status).toBe(200);
+        expect(response.headers.get("content-type")).toContain("text/html");
+        const html = await response.text();
+        const configuration = /data-configuration='([^']+)'/.exec(html);
+        expect(configuration).not.toBeNull();
+        expect(JSON.parse(configuration![1]!)).toMatchObject({
+            url: "/openapi.json",
+            proxyUrl: "",
+        });
+        const schema = await requestApp(app, "/openapi.json");
+        expect(schema.status).toBe(200);
+        expect(((await schema.json()) as typeof document).paths).toHaveProperty(
+            "/api/photos",
+        );
+        expect((await requestApp(app, "/api/photos")).status).toBe(401);
+        expect((await requestApp(app, "/openapi/private")).status).toBe(401);
+    },
+);

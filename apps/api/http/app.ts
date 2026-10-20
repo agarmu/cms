@@ -56,7 +56,7 @@ export class HttpApplication {
         config = new HttpConfiguration(),
     ) {
         this.app = Tracing.withSyncSpan("http.app.initialize", () => {
-            const publicPaths = new Set(["/openapi.json"]);
+            const publicPaths = new Set(["/openapi", "/openapi.json"]);
             if (options.mcp) publicPaths.add("/mcp");
             if (options.mcp?.authorization)
                 for (const path of [
@@ -168,6 +168,9 @@ export class HttpApplication {
                     },
                     { parse: "none", detail: { hide: true } },
                 )
+                .get("/openapi", () => HttpOpenApi.reference(), {
+                    detail: { hide: true },
+                })
                 .get("/openapi.json", () =>
                     HttpOpenApi.document(
                         documented,

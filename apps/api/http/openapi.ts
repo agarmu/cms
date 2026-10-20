@@ -12,11 +12,31 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 import { toOpenAPISchema } from "@elysiajs/openapi";
+import { ScalarRender } from "@elysiajs/openapi/scalar";
 import type { AnyElysia } from "elysia";
 import { z } from "zod";
 import type { AuthenticationProvider } from "../auth/provider";
 
 export class HttpOpenApi {
+    static reference() {
+        return new Response(
+            ScalarRender(
+                {
+                    title: "Photos CMS API",
+                    description: "Manage photos, uploads, cameras, and lenses.",
+                    version: "1.0.0",
+                },
+                {
+                    url: "/openapi.json",
+                    proxyUrl: "",
+                    cdn: "https://cdn.jsdelivr.net/npm/@scalar/api-reference/dist/browser/standalone.min.js",
+                    customCss: "",
+                },
+            ),
+            { headers: { "Content-Type": "text/html; charset=utf-8" } },
+        );
+    }
+
     static document(
         app: AnyElysia,
         scheme: AuthenticationProvider["scheme"] = "bearer",
@@ -71,6 +91,7 @@ export class HttpOpenApi {
             openapi: "3.1.2",
             info: {
                 title: "Photos CMS",
+                description: "Manage photos, uploads, cameras, and lenses.",
                 version: "1.0.0",
                 license: {
                     name: "GNU General Public License v3.0 or later",
