@@ -25,10 +25,10 @@ import IconButton from "./IconButton.astro";
         @apply -ml-3 inline-flex text-muted-foreground;
     }
 
-    @media (min-width: 40rem) {
-        /* The photo column reserves this space, so the text needs no extra row. */
+    @media (min-width: 40rem) and (min-height: 30rem) {
+        /* The photo column reserves room for this pinned footer. */
         :global(body:has([data-photo-view]:not([hidden]))) footer {
-            @apply relative -mt-19 pointer-events-none;
+            @apply pointer-events-none fixed inset-x-0 bottom-0;
         }
 
         .repository-link {

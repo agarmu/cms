@@ -79,7 +79,17 @@ const { title = "Photos CMS", description, chrome = true } = Astro.props;
     }
 
     header {
-        @apply flex items-center justify-between gap-4;
+        @apply flex shrink-0 items-center justify-between gap-4;
+    }
+
+    @media (min-width: 40rem) and (min-height: 30rem) {
+        body:has([data-photo-view]:not([hidden])) {
+            @apply h-dvh overflow-hidden;
+        }
+
+        body:has([data-photo-view]:not([hidden])) main {
+            @apply min-h-0;
+        }
     }
 
     h1 {

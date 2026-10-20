@@ -175,6 +175,7 @@ export function mountLibrary(root: HTMLElement) {
         lightbox.reset();
         request?.abort();
         editor.reset();
+        element(detail, "[data-photo-text]").scrollTop = 0;
         resetCreator();
         displayedRoute = undefined;
         observer?.disconnect();

@@ -52,7 +52,11 @@ import { Icon } from "astro-icon/components";
             <figure class="photo-preview">
                 <div data-photo-image class="detail-image" />
                 <figcaption class="variant-sizes">
-                    <ul data-photo-variants aria-label="Image variant sizes" />
+                    <ul
+                        data-photo-variants
+                        aria-label="Image variant sizes"
+                        tabindex="0"
+                    />
                     <button
                         data-edit-field="image"
                         class="replace-image"
@@ -182,7 +186,12 @@ import { Icon } from "astro-icon/components";
                         ))}
                     </div>
                 </div>
-                <dl>
+                <dl
+                    data-photo-text
+                    class="detail-fields"
+                    tabindex="0"
+                    aria-label="Photo text"
+                >
                     {[
                         { field: "location", label: "Location" },
                         { field: "caption", label: "Caption" },
@@ -434,7 +443,7 @@ import { Icon } from "astro-icon/components";
         @apply flex min-h-10 min-w-0 max-w-full items-center justify-center gap-1.5 whitespace-normal rounded-md border border-neutral-200 px-2 py-2 text-center text-sm font-normal dark:border-neutral-800;
     }
     .entry-summary [data-photo-equipment] {
-        @apply min-w-0 break-words;
+        @apply min-w-0 truncate;
     }
     .date-item {
         @apply inline-flex w-full flex-wrap items-center justify-center gap-x-1.5 gap-y-1;
@@ -461,8 +470,7 @@ import { Icon } from "astro-icon/components";
         @apply w-full max-w-80 sm:max-w-none;
     }
     .photo-preview {
-        /* Reserve the 44px footer button and its 32px padding in this column. */
-        @apply mx-auto w-full min-w-0 max-w-80 sm:max-w-none sm:pb-19;
+        @apply mx-auto w-full min-w-0 max-w-80 sm:max-w-none;
     }
     .replace-image {
         @apply mx-auto mt-3 flex size-10 min-h-10 p-0;
@@ -502,6 +510,46 @@ import { Icon } from "astro-icon/components";
     .detail-copy {
         @apply min-w-0;
         container: photo-details / inline-size;
+    }
+    .detail-fields:focus-visible,
+    [data-photo-variants]:focus-visible {
+        @apply rounded-sm outline-2 -outline-offset-2 outline-primary;
+    }
+    @media (min-width: 40rem) and (min-height: 30rem) {
+        .photo-library {
+            @apply min-h-0;
+        }
+        [data-photo-view],
+        .entry-layout {
+            @apply h-full min-h-0;
+        }
+        .photo-preview {
+            /* Size the image around its variant rows and the pinned footer. */
+            @apply grid h-full min-h-0 grid-rows-[minmax(0,max-content)_max-content] content-start pb-19;
+            container-type: size;
+        }
+        .detail-image {
+            @apply h-full min-h-0;
+        }
+        .photo-preview .detail-image :global(.photo-open) {
+            @apply flex h-full w-full items-center justify-center;
+        }
+        .photo-preview .detail-image :global(img) {
+            @apply max-h-full;
+        }
+        .detail-toolbar {
+            @apply shrink-0;
+        }
+        .variant-sizes ul {
+            @apply max-h-[50cqh] overflow-y-auto overscroll-contain;
+        }
+        .detail-copy {
+            @apply flex h-full min-h-0 flex-col pb-6;
+        }
+        .detail-fields {
+            @apply min-h-0 overflow-y-auto overscroll-contain pb-1;
+            scrollbar-gutter: stable;
+        }
     }
     @container photo-details (min-width: 24rem) {
         .summary-dates {
@@ -755,8 +803,7 @@ import { Icon } from "astro-icon/components";
         @apply min-h-0 items-center justify-center;
     }
     .detail-image :global(img) {
-        /* Leave room for the header, variant controls, and footer in two columns. */
-        @apply block h-auto max-h-80 w-auto max-w-full object-contain sm:max-h-[max(10rem,calc(100dvh_-_22rem))];
+        @apply block h-auto max-h-80 w-auto max-w-full object-contain;
     }
     .detail-image :global(.photo-open) {
         @apply block w-fit max-w-full cursor-zoom-in appearance-none border-0 bg-transparent p-0;
