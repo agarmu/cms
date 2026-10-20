@@ -369,10 +369,7 @@ export function mountLibrary(root: HTMLElement) {
     }
 
     function renderCards(photos: Photo[], offset: number, signal: AbortSignal) {
-        const images = new Map<
-            HTMLElement,
-            { photo: Photo; asset: PhotoAsset | undefined }
-        >();
+        const images = new Map<HTMLElement, Photo>();
         observer = new IntersectionObserver(
             (entries) => {
                 for (const entry of entries) {
@@ -384,8 +381,14 @@ export function mountLibrary(root: HTMLElement) {
                     if (image && !signal.aborted) {
                         void loadImage(
                             frame,
-                            image.photo,
-                            image.asset,
+                            image,
+                            selectAsset(
+                                image.assets,
+                                frame.clientWidth *
+                                    Math.min(window.devicePixelRatio || 1, 2),
+                                frame.clientHeight *
+                                    Math.min(window.devicePixelRatio || 1, 2),
+                            ),
                             signal,
                             true,
                         );
@@ -406,13 +409,7 @@ export function mountLibrary(root: HTMLElement) {
             renderVisibility(visibility, photo.visible);
             visibility.hidden = true;
             const frame = element(card, "[data-thumbnail]");
-            images.set(frame, {
-                photo,
-                asset: selectAsset(
-                    photo.assets,
-                    Math.min(window.devicePixelRatio || 1, 2) * 400,
-                ),
-            });
+            images.set(frame, photo);
             grid.append(card);
             observer.observe(frame);
         }

@@ -201,6 +201,15 @@ test("oversized images bypass the memory cache without evicting smaller previews
     expect(reads).toBe(3);
 });
 
+test("portrait thumbnails are selected using the image's contained height", () => {
+    const assets = [
+        { ...asset, width: 320, height: 427 },
+        { ...asset, id: 2, width: 960, height: 1280 },
+    ];
+    expect(selectAsset(assets, 350, 262)).toBe(assets[0]);
+    expect(selectAsset(assets, 700, 524)).toBe(assets[1]);
+});
+
 test.each([undefined, null, 3_000_000_000])(
     "photo responses preserve byte counts, including legacy value %s",
     async (byteSize) => {

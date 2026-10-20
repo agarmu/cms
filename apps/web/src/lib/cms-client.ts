@@ -475,7 +475,17 @@ export class CmsClient {
     }
 }
 
-export function selectAsset(assets: PhotoAsset[], targetWidth: number) {
+export function selectAsset(
+    assets: PhotoAsset[],
+    targetWidth: number,
+    targetHeight = Infinity,
+) {
+    const reference = assets[0];
+    if (reference)
+        targetWidth = Math.min(
+            targetWidth,
+            (targetHeight * reference.width) / reference.height,
+        );
     const sorted = assets.toSorted((a, b) => a.width - b.width);
     return sorted.find((asset) => asset.width >= targetWidth) ?? sorted.at(-1);
 }
