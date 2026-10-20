@@ -18,11 +18,21 @@ import IconButton from "./IconButton.astro";
     @reference "../styles/theme.css";
 
     footer {
-        @apply mx-auto mt-auto flex w-full max-w-6xl px-6 py-4;
+        @apply mx-auto mt-auto flex w-full max-w-6xl justify-center px-6 py-4;
     }
 
     .repository-link {
-        @apply -ml-3 inline-flex text-muted-foreground;
+        @apply inline-flex text-muted-foreground;
+    }
+
+    @media (min-width: 40rem) {
+        :global(body:has([data-photo-view]:not([hidden]))) footer {
+            @apply grid grid-cols-[minmax(16rem,2fr)_minmax(0,3fr)] gap-6;
+        }
+
+        .repository-link {
+            @apply justify-self-center;
+        }
     }
 
     @media (min-width: 40rem) and (min-height: 30rem) {
