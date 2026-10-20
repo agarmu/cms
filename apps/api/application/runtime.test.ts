@@ -187,6 +187,14 @@ test("runtime verifies the token audience independently of its public URL", asyn
             limit: 50,
             offset: 0,
         });
+        const noPermissions = await accessToken("test-user", "");
+        expect(
+            (
+                await fetch(url, {
+                    headers: { Authorization: `Bearer ${noPermissions}` },
+                })
+            ).status,
+        ).toBe(403);
         expect(
             (
                 await fetch(url, {

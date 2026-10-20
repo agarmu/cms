@@ -124,6 +124,12 @@ test("accepts audience arrays and grants no scopes when the claim is absent", as
     expect(identity.scopes.size).toBe(0);
 });
 
+test("an empty scope claim authenticates the user without granting permissions", async () => {
+    const identity = await provider.authenticate(await token({ scope: "" }));
+    expect(identity.subject).toBe("test-user");
+    expect(identity.scopes.size).toBe(0);
+});
+
 test("an explicit audience replaces the base URL and preserves exact identifier spelling", async () => {
     const audience = "https://api.example.com";
     const auth = new Rfc9068AuthenticationProvider(

@@ -30,7 +30,9 @@ export class Rfc9068AuthenticationProvider implements AuthenticationProvider {
         jti: z.string().min(1),
         scope: z
             .string()
-            .regex(/^[\x21\x23-\x5b\x5d-\x7e]+(?: [\x21\x23-\x5b\x5d-\x7e]+)*$/)
+            .regex(
+                /^(?:[\x21\x23-\x5b\x5d-\x7e]+(?: [\x21\x23-\x5b\x5d-\x7e]+)*)?$/,
+            )
             .optional(),
     });
     private readonly keys;
