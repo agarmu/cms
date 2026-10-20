@@ -33,7 +33,9 @@ export function createSession(
     const signedOutKey = "cms.signed-out";
     const listeners = new Set<() => void>();
     let initialization: Promise<void> | undefined;
+    let initializing = true;
     let sessionError: string | undefined;
+    let redirecting = false;
     const notify = () => {
         for (const listener of listeners) listener();
     };
@@ -47,7 +49,10 @@ export function createSession(
     }
 
     manager?.events.addUserLoaded(() => {
-        if (manager && environment.storage.getItem(signedOutKey)) {
+        if (
+            manager &&
+            (redirecting || environment.storage.getItem(signedOutKey))
+        ) {
             manager.stopSilentRenew();
             void manager.removeUser().catch(notify);
             return;
@@ -57,6 +62,8 @@ export function createSession(
     });
     manager?.events.addUserUnloaded(notify);
     manager?.events.addAccessTokenExpired(() => {
+        // Startup may still be renewing an expired token loaded from storage.
+        if (initializing) return;
         void invalidateSession().catch(() => notify());
     });
     manager?.events.addSilentRenewError(() => {
@@ -104,7 +111,6 @@ export function createSession(
             ]) {
                 url.searchParams.delete(key);
             }
-            // Preserve in-memory tokens by staying in this document.
             environment.replaceUrl(url);
         }
     }
@@ -120,7 +126,8 @@ export function createSession(
             return {
                 ready:
                     !manager ||
-                    (!environment.storage.getItem(signedOutKey) &&
+                    (!redirecting &&
+                        !environment.storage.getItem(signedOutKey) &&
                         Boolean(user && !user.expired)),
                 error: sessionError,
             };
@@ -134,10 +141,17 @@ export function createSession(
                     if (environment.storage.getItem(signedOutKey)) return;
                     const user = await manager.getUser();
                     if (user && !user.expired) return;
-                    // Tokens stay in memory; recover the provider session after reload.
+                    // Renew an expired stored token, or recover a provider session
+                    // when this tab has no saved credentials.
                     try {
                         await manager.signinSilent();
                     } catch {
+                        if (
+                            user?.expired &&
+                            !redirecting &&
+                            !environment.storage.getItem(signedOutKey)
+                        )
+                            await invalidateSession();
                         // Blocked silent login falls back to explicit sign-in.
                     }
                 } catch (error) {
@@ -145,17 +159,26 @@ export function createSession(
                         error instanceof Error
                             ? error.message
                             : "Sign-in failed.";
+                } finally {
+                    initializing = false;
                 }
             })();
             return initialization;
         },
         async signIn() {
             if (!manager) return;
+            redirecting = true;
+            manager.stopSilentRenew();
             environment.storage.removeItem(signedOutKey);
             const url = environment.currentUrl();
-            await manager.signinRedirect({
-                state: { returnTo: url.pathname + url.search },
-            });
+            try {
+                await manager.signinRedirect({
+                    state: { returnTo: url.pathname + url.search },
+                });
+            } catch (error) {
+                redirecting = false;
+                throw error;
+            }
         },
         async signOut() {
             if (!manager) return;

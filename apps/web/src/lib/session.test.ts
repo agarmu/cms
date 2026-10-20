@@ -82,8 +82,8 @@ function fixture(initialUrl = "https://editor.example.com/") {
         environment,
         calls,
         callbacks,
-        loadUser() {
-            user = { expired: false };
+        loadUser(expired = false) {
+            user = { expired };
             callbacks["loaded"]?.();
         },
         get url() {
@@ -109,6 +109,83 @@ test("reload recovers the provider session once for concurrent consumers", async
     ]);
     expect(f.calls.silent).toBe(1);
     expect((await f.session.getSession()).ready).toBe(true);
+});
+
+test("an expired stored token is cleared when startup renewal fails", async () => {
+    const f = fixture();
+    f.loadUser(true);
+    f.silentFailure = true;
+    await f.session.initializeSession();
+    expect(await f.manager.getUser()).toBeNull();
+    expect(f.environment.storage.getItem("cms.signed-out")).toBe("true");
+    expect(await f.session.getSession()).toEqual({
+        ready: false,
+        error: "Your session has ended. Sign in again to continue.",
+    });
+});
+
+test("sign-out during startup renewal still discards a late successful response", async () => {
+    const f = fixture();
+    f.loadUser(true);
+    const started = Promise.withResolvers<void>();
+    const pending = Promise.withResolvers<void>();
+    f.manager.signinSilent = async () => {
+        started.resolve();
+        await pending.promise;
+        f.loadUser();
+    };
+    const initializing = f.session.initializeSession();
+    await started.promise;
+    f.callbacks["expired"]?.();
+    expect(f.environment.storage.getItem("cms.signed-out")).toBeNull();
+    await f.session.signOut();
+    pending.resolve();
+    await initializing;
+    expect(await f.manager.getUser()).toBeNull();
+    expect((await f.session.getSession()).ready).toBe(false);
+    expect(f.environment.storage.getItem("cms.signed-out")).toBe("true");
+});
+
+test("explicit sign-in can interrupt slow session recovery without restoring a late user", async () => {
+    const f = fixture("https://editor.example.com/?offset=24&photo=example");
+    let recovering!: () => void;
+    const started = new Promise<void>((resolve) => {
+        recovering = resolve;
+    });
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    f.manager.signinSilent = async () => {
+        recovering();
+        await pending;
+        f.loadUser();
+    };
+    const initializing = f.session.initializeSession();
+    await started;
+    try {
+        await f.session.signIn();
+        expect(f.calls.redirects).toEqual(["/?offset=24&photo=example"]);
+    } finally {
+        release();
+        await initializing;
+    }
+    expect((await f.session.getSession()).ready).toBe(false);
+    expect(await f.manager.getUser()).toBeNull();
+});
+
+test("failed sign-in redirects allow retry and do not discard later session recovery", async () => {
+    const f = fixture();
+    const redirect = f.manager.signinRedirect;
+    f.manager.signinRedirect = async () => {
+        throw new Error("Provider unavailable");
+    };
+    await expect(f.session.signIn()).rejects.toThrow("Provider unavailable");
+    f.loadUser();
+    expect((await f.session.getSession()).ready).toBe(true);
+    f.manager.signinRedirect = redirect;
+    await f.session.signIn();
+    expect(f.calls.redirects).toEqual(["/"]);
 });
 
 test("blocked silent login falls back to explicit sign-in and preserves the requested photo", async () => {

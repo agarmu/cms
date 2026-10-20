@@ -8,7 +8,7 @@ import {
 import { CmsUserManager, oidcSettings } from "./oidc-settings";
 import { createSession } from "./session";
 
-test("OIDC login exchanges a PKCE code, renews the API token, and signs out", async () => {
+test("OIDC login survives reload, renews expired tokens, and clears stored credentials on sign-out", async () => {
     const origin = "http://localhost:4321";
     const resource = "http://localhost:3000/";
     const clientId = "test-spa";
@@ -69,6 +69,8 @@ test("OIDC login exchanges a PKCE code, renews the API token, and signs out", as
                     ).toBe(authorization?.searchParams.get("code_challenge")!);
                 } else {
                     refreshes++;
+                    // Let the SDK's expiry timer fire while renewal is in flight.
+                    await Bun.sleep(1500);
                     expect(body.get("grant_type")).toBe("refresh_token");
                     expect(body.get("refresh_token")).toBe(
                         "test-refresh-token",
@@ -169,20 +171,45 @@ test("OIDC login exchanges a PKCE code, renews the API token, and signs out", as
         expect(page.href).toBe(`${origin}/?offset=24&new=1`);
         expect(exchanges).toBe(1);
         const firstToken = (await callbackManager.getUser())!.access_token;
-        await callbackManager.signinSilent();
-        if (requestError) throw requestError;
-        expect(refreshes).toBe(1);
-        expect((await callbackManager.getUser())!.access_token).not.toBe(
+        callbackManager.stopSilentRenew();
+
+        // A new document has a new manager and no access to the old one's memory.
+        const reloadedManager = manager();
+        const reloaded = createSession(reloadedManager, environment);
+        await reloaded.initializeSession();
+        expect((await reloaded.getSession()).ready).toBe(true);
+        expect((await reloadedManager.getUser())!.access_token).toBe(
             firstToken,
         );
+        expect(exchanges).toBe(1);
+        expect(refreshes).toBe(0);
+
+        // Reloading after token expiry must use the saved refresh token rather
+        // than requiring an iframe login and third-party provider cookies.
+        const expiredUser = (await reloadedManager.getUser())!;
+        expiredUser.expires_at = Math.floor(Date.now() / 1000) - 10;
+        reloadedManager.stopSilentRenew();
+        await reloadedManager.storeUser(expiredUser);
+        const renewedManager = manager();
+        const renewed = createSession(renewedManager, environment);
+        await renewed.initializeSession();
+        if (requestError) throw requestError;
+        expect((await renewed.getSession()).ready).toBe(true);
+        expect(refreshes).toBe(1);
+        expect((await renewedManager.getUser())!.access_token).not.toBe(
+            firstToken,
+        );
+        expect(exchanges).toBe(1);
+
+        await renewed.signOut();
+        expect((await renewed.getSession()).ready).toBe(false);
+        expect(await renewedManager.getUser()).toBeNull();
+        expect(await manager().getUser()).toBeNull();
         for (let i = 0; i < storage.length; i++) {
             const value = storage.getItem(storage.key(i)!);
             expect(value).not.toContain("test-refresh-token");
             expect(value).not.toContain(firstToken);
         }
-        await session.signOut();
-        expect((await session.getSession()).ready).toBe(false);
-        expect(await callbackManager.getUser()).toBeNull();
         expect(storage.getItem("cms.signed-out")).toBe("true");
         // The consumed state cannot be replayed in another document.
         page = callbackUrl;

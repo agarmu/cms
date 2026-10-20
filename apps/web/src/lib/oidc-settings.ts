@@ -1,5 +1,4 @@
 import {
-    InMemoryWebStorage,
     UserManager,
     WebStorageStateStore,
     type SigninSilentArgs,
@@ -46,11 +45,10 @@ export function oidcSettings(
             ? { audience: settings.audience }
             : {},
         loadUserInfo: false,
-        // Only the redirect transaction (including its PKCE verifier) persists.
+        // Tab-scoped storage preserves login across reloads without relying on
+        // a third-party iframe to recover the provider session.
         stateStore: new WebStorageStateStore({ store: storage }),
-        userStore: new WebStorageStateStore({
-            store: new InMemoryWebStorage(),
-        }),
+        userStore: new WebStorageStateStore({ store: storage }),
         automaticSilentRenew: true,
         silentRequestTimeoutInSeconds: 10,
     };
