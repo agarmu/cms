@@ -29,7 +29,7 @@ import { LensApi } from "../api/resources/lenses";
 import { ImageUploadApi } from "../api/image-uploads";
 import { HttpValidation } from "../http/validation";
 import { UploadValidation } from "../http/image-upload";
-import { photoResponse } from "../http/response";
+import { photoResponse, photoUpdateResponse } from "../http/response";
 import { DatabaseErrors } from "../db/errors";
 import { AppError, NotFoundError } from "../lib/errors";
 import {
@@ -141,7 +141,7 @@ export class PhotoMcpServer extends McpServer {
             "update_photo",
             {
                 description:
-                    "Update photo fields. altText, caption, and description require photos:text:update; all other fields require photos:metadata:update. Description is Markdown. Omitted fields stay unchanged.",
+                    "Update photo fields. altText, caption, and description require photos:text:update; all other fields require photos:metadata:update. Description is Markdown. Omitted fields stay unchanged. Returns the updated photo only with photos:read (and photos:read:hidden for hidden photos); otherwise returns only its ID.",
                 inputSchema: updateInput,
                 scopeChallenge: (context) => {
                     const input = updateInput.safeParse(
@@ -157,8 +157,9 @@ export class PhotoMcpServer extends McpServer {
             ({ id, changes }) =>
                 this.run(async () => {
                     PhotoAccess.requireChanges(identity, changes);
-                    return photoResponse(
+                    return photoUpdateResponse(
                         await PhotoApi.update(db, id, changes),
+                        identity,
                     );
                 }),
         );

@@ -37,6 +37,7 @@ import type { AuthIdentity } from "../auth/provider";
 import { testAuthIdentity, testAuthSettings } from "../auth/test-fixtures";
 import type { BlobStorage } from "../services/blob-storage";
 import { ImageStorage } from "../services/image-storage";
+import { photoUpdateResponse } from "../http/response";
 import { HttpApplication } from "../http/app";
 import { HttpConfiguration } from "../http/config";
 import { McpConfiguration } from "./config";
@@ -516,7 +517,7 @@ test.each(["legacy", "auto"] as const)(
             visible: true,
         });
         const text = await connect("text", mode);
-        output(
+        const textResult = output(
             await text.callTool({
                 name: "update_photo",
                 arguments: {
@@ -528,13 +529,15 @@ test.each(["legacy", "auto"] as const)(
                 },
             }),
         );
+        expect(textResult).toEqual({ id: saved.id });
         const metadata = await connect("metadata", mode);
-        output(
+        const metadataResult = output(
             await metadata.callTool({
                 name: "update_photo",
                 arguments: { id: saved.id, changes: { visible: false } },
             }),
         );
+        expect(metadataResult).toEqual({ id: saved.id });
         expect(await PhotoApi.read(db, saved.id)).toMatchObject({
             altText: "Accessible text",
             description: "A **Markdown** description",
@@ -869,3 +872,43 @@ test("no-auth MCP works without bearer tokens and retains origin checks and the 
         await client.close();
     }
 });
+
+test.each(["text", "metadata"])(
+    "HTTP photo updates do not disclose hidden metadata to %s writers",
+    async (token) => {
+        const saved = await photo(false);
+        const changes =
+            token === "text" ? { caption: "Edited" } : { location: "Edited" };
+        const response = await requestApp(app, `/api/photos/${saved.id}`, {
+            method: "PATCH",
+            headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(changes),
+        });
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({ id: saved.id });
+        expect(await PhotoApi.read(db, saved.id)).toMatchObject(changes);
+    },
+);
+
+test.each([
+    [false, [], false],
+    [false, [Scope.PhotosRead], false],
+    [false, [Scope.PhotosReadHidden], false],
+    [false, [Scope.PhotosRead, Scope.PhotosReadHidden], true],
+    [true, [], false],
+    [true, [Scope.PhotosRead], true],
+] as const)(
+    "photo update disclosure: visible=%s scopes=%j readable=%s",
+    async (visible, scopes, readable) => {
+        const saved = await photo(visible);
+        const result = photoUpdateResponse(saved, {
+            ...testAuthIdentity,
+            scopes: new Set<Scope>(scopes),
+        });
+        if (readable) expect(result).toHaveProperty("assets");
+        else expect(result).toEqual({ id: saved.id });
+    },
+);

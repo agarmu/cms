@@ -271,7 +271,9 @@ export class CmsClient {
                 ...(signal ? { signal } : {}),
             },
         );
-        return photoSchema.parse(await response.json());
+        return z
+            .union([photoSchema, z.strictObject({ id: z.uuid() })])
+            .parse(await response.json());
     }
 
     async listEquipment(kind: "camera" | "lens", signal?: AbortSignal) {

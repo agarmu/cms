@@ -603,3 +603,18 @@ test("a failed image upload cancels the receipt without publishing replacement a
         `/api/photos/${id}/uploads/${id}/cancel`,
     ]);
 });
+
+test("photo updates accept an ID-only acknowledgment without reading restricted metadata", async () => {
+    let requests = 0;
+    const client = new CmsClient(
+        "https://cms.example.com",
+        async () => "limited",
+        async (_url, init) => {
+            requests++;
+            expect(init.method).toBe("PATCH");
+            return Response.json({ id });
+        },
+    );
+    expect(await client.updatePhoto(id, { caption: "Edited" })).toEqual({ id });
+    expect(requests).toBe(1);
+});

@@ -11,6 +11,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
+import type { AuthIdentity } from "../auth/provider";
+import { Scope } from "../api/scope";
 import { z } from "zod";
 import { ApiValidation } from "../api/validation";
 import { equipmentResponse } from "./equipment";
@@ -95,3 +97,21 @@ export const photoSchema = z.object({
         }),
     ),
 });
+
+export function photoUpdateResponse(
+    photo: Awaited<ReturnType<typeof PhotoApi.read>>,
+    identity: AuthIdentity,
+) {
+    if (
+        !identity.scopes.has(Scope.PhotosRead) ||
+        (!photo.visible && !identity.scopes.has(Scope.PhotosReadHidden))
+    ) {
+        return { id: photo.id };
+    }
+    return photoResponse(photo);
+}
+
+export const photoUpdateSchema = z.union([
+    photoSchema,
+    z.strictObject({ id: ApiValidation.uuid }),
+]);

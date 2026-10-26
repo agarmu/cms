@@ -26,6 +26,8 @@ import {
     downloadResponse,
     downloadSchema,
     photoResponse,
+    photoUpdateResponse,
+    photoUpdateSchema,
     photoSchema,
 } from "./response";
 
@@ -148,8 +150,9 @@ export class PhotoRoutes {
                 "/:id",
                 async ({ db, params, body, authIdentity }) => {
                     PhotoAccess.requireChanges(authIdentity, body);
-                    return photoResponse(
+                    return photoUpdateResponse(
                         await PhotoApi.update(db, params.id, body),
+                        authIdentity,
                     );
                 },
                 {
@@ -157,7 +160,7 @@ export class PhotoRoutes {
                     write: [Scope.PhotosMetadataUpdate, Scope.PhotosTextUpdate],
                     params,
                     body: validation.photoChanges,
-                    response: photoSchema,
+                    response: photoUpdateSchema,
                 },
             )
             .delete(

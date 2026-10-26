@@ -459,6 +459,11 @@ export function mountPhotoEditor(
                           controller.signal,
                       );
                 if (controller.signal.aborted || photo !== current) return;
+                if (!("altText" in result)) {
+                    close();
+                    await callbacks.replace();
+                    return;
+                }
                 Object.assign(current, result);
             }
             if (controller.signal.aborted || photo !== current) return;
