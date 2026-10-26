@@ -7,7 +7,5 @@ RUN bun install --frozen-lockfile
 COPY apps/web ./apps/web
 RUN bun run build:web
 
-FROM nginx:stable-alpine
-COPY --from=build /app/apps/web/dist /usr/share/nginx/html
-COPY COPYING /usr/share/licenses/photos-cms/COPYING
-EXPOSE 80
+FROM scratch AS output
+COPY --from=build /app/apps/web/dist /
