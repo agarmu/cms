@@ -20,4 +20,6 @@ PostgreSQL; images live on disk or in S3-compatible storage.
 
 [Documentation](docs/README.md)
 
-Licensed under [GPL-3.0-or-later](COPYING). Photos retain their own copyrights.
+The source code in this rep is licensed under [GPL-3.0 (or later)](COPYING).
+Any uploaded photos, etc., are not necessarily licensed under GPL --- they
+should only be taken to have a copyleft license if stated.
