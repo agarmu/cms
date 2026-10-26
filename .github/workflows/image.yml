@@ -1,28 +1,34 @@
 name: Publish images
 
 on:
-    push:
-        tags: ["*"]
+    workflow_run:
+        workflows: [CI]
+        types: [completed]
 
 permissions:
     contents: read
-    packages: write
 
 jobs:
     publish:
+        if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
         runs-on: ubuntu-latest
         timeout-minutes: 20
+        permissions:
+            contents: read
+            packages: write
         strategy:
             matrix:
                 include:
                     - app: api
                       dockerfile: Dockerfile
-                      image-suffix: ""
+                      image-suffix: "-api"
                     - app: web
                       dockerfile: Dockerfile.web
                       image-suffix: "-web"
         steps:
             - uses: actions/checkout@v4
+              with:
+                  ref: ${{ github.event.workflow_run.head_sha }}
             - name: Configure frontend build
               if: matrix.app == 'web'
               run: cp docs/frontend.example.toml apps/web/config.toml
@@ -42,7 +48,7 @@ jobs:
               id: metadata
               with:
                   images: ${{ steps.image.outputs.name }}
-                  tags: type=ref,event=tag
+                  tags: type=raw,value=${{ github.event.workflow_run.head_branch }}
                   flavor: latest=false
             - uses: docker/build-push-action@v6
               with:
